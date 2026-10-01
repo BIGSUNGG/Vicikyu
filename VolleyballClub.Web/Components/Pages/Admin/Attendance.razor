@@ -1,0 +1,132 @@
+@page "/admin/attendance"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject IAttendanceService AttendanceSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>출석 관리 · 배구부</PageTitle>
+
+<h1 class="page-title">📋 출석 관리</h1>
+
+<div class="card">
+    <div class="field">
+        <input class="form-control" type="search" placeholder="이름 / 학번 검색"
+               value="@search" @oninput="OnSearchChanged" @onkeydown="OnSearchKeyDown" />
+    </div>
+    <p class="member-meta">오늘 출석 @(attendedCount)명 / 전체 @(members.Count)명</p>
+
+    @if (searched)
+    {
+        <div class="section-divider">검색 결과</div>
+    }
+    else
+    {
+        <div class="section-divider">오늘 출석 @(attendedCount)명</div>
+    }
+
+    <AttendanceMemberList Members="visibleMembers" OnToggled="ToggleAsync" />
+</div>
+
+@if (confirmTarget is not null)
+{
+    <div class="confirm-overlay" @onclick="CancelConfirm">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>출석 취소</h3>
+            <p>@confirmTarget.Name 님의 출석을 취소하시겠습니까?</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="CancelConfirm">아니오</button>
+                <button type="button" class="btn-primary" @onclick="ConfirmCancelAsync">취소하기</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<AttendanceMemberDto> members = [];
+    private string search = "";
+    private bool searched;
+    private AttendanceMemberDto? confirmTarget;
+    private int attendedCount;
+
+    private List<AttendanceMemberDto> visibleMembers => searched
+        ? members.Where(m => m.Name.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase)
+            || m.StudentNumber.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToList()
+        : members;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            members = await AttendanceSvc.GetTodayMembersAsync();
+            attendedCount = members.Count(m => m.IsAttended);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        search = e.Value?.ToString() ?? "";
+        searched = search.Trim().Length > 0;
+    }
+
+    private Task OnSearchKeyDown(KeyboardEventArgs e) => Task.CompletedTask;
+
+    private async Task ToggleAsync((AttendanceMemberDto Member, bool Checked) toggle)
+    {
+        var (member, isChecked) = toggle;
+        try
+        {
+            if (isChecked)
+            {
+                await AttendanceSvc.AdminAddAsync(member.UserId);
+                Snackbar.Add($"{member.Name} 출석 처리 완료", Severity.Success);
+            }
+            else
+            {
+                confirmTarget = member;
+                return;
+            }
+        }
+        catch (ConflictException ex) when (ex.Message.Contains("팀 편성이 완료"))
+        {
+            // 팀 편성 완료 상태 — 확인 받고 재시도
+            confirmTarget = member;
+            return;
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+
+        await LoadAsync();
+    }
+
+    private void CancelConfirm() => confirmTarget = null;
+
+    private async Task ConfirmCancelAsync()
+    {
+        if (confirmTarget is null)
+        {
+            return;
+        }
+
+        var target = confirmTarget;
+        confirmTarget = null;
+        try
+        {
+            await AttendanceSvc.AdminCancelAsync(target.UserId, confirmTeamImpact: true);
+            Snackbar.Add($"{target.Name} 출석 취소", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+
+        await LoadAsync();
+    }
+}

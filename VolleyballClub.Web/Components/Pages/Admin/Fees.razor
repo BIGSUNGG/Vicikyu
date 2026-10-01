@@ -1,0 +1,215 @@
+@page "/admin/fees"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject IFeeService FeeSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>회비 관리 · 배구부</PageTitle>
+
+<h1 class="page-title">💰 회비 관리</h1>
+
+<div class="card">
+    <h2 class="card-title">회비 기간</h2>
+    <div class="filter-group">
+        @foreach (var period in periods)
+        {
+            <button type="button" class="filter-btn @(selectedPeriodId == period.Id ? "active" : "")"
+                    @onclick="() => SelectPeriodAsync(period.Id)">@period.Name</button>
+        }
+    </div>
+
+    <button type="button" class="btn-secondary btn-block" @onclick="() => showCreatePeriod = !showCreatePeriod">
+        @(showCreatePeriod ? "취소" : "+ 기간 추가")
+    </button>
+
+    @if (showCreatePeriod)
+    {
+        <EditForm Model="periodForm" OnValidSubmit="CreatePeriodAsync" style="margin-top:14px">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label class="form-label">기간 이름 (예: 2026년 2학기)</label>
+                <InputText @bind-Value="periodForm.Name" class="form-control" />
+            </div>
+            <div class="btn-row">
+                <div class="field">
+                    <label class="form-label">시작일</label>
+                    <InputDate @bind-Value="periodForm.StartDate" class="form-control" />
+                </div>
+                <div class="field">
+                    <label class="form-label">종료일</label>
+                    <InputDate @bind-Value="periodForm.EndDate" class="form-control" />
+                </div>
+            </div>
+            <div class="field">
+                <label class="form-label">회비 금액(원)</label>
+                <InputNumber @bind-Value="periodForm.FeeAmount" class="form-control" />
+            </div>
+            <button type="submit" class="btn-primary btn-block">추가</button>
+        </EditForm>
+    }
+</div>
+
+@if (selectedPeriod is not null)
+{
+    <div class="card">
+        <div class="card-row">
+            <h2 class="card-title" style="margin:0">@selectedPeriod.Name — @(selectedPeriod.FeeAmount.ToString("N0"))원</h2>
+            <span class="badge badge-blue">납부 @paidCount / @(statuses.Count)명</span>
+        </div>
+
+        <div class="filter-group" style="margin-top:12px">
+            @foreach (var (value, label) in new[] { (FeeFilter.All, "전체"), (FeeFilter.Paid, "납부"), (FeeFilter.Unpaid, "미납") })
+            {
+                <button type="button" class="filter-btn @(filter == value ? "active" : "")" @onclick="() => ChangeFilterAsync(value)">@label</button>
+            }
+        </div>
+
+        <div class="field">
+            <input class="form-control" type="search" placeholder="이름 / 학번 검색" value="@search"
+                   @oninput='e => { search = e.Value?.ToString() ?? ""; }' />
+        </div>
+
+        <div class="card-list">
+            @foreach (var status in visibleStatuses)
+            {
+                <label class="member-row">
+                    <input type="checkbox" checked="@status.IsPaid" @onchange="e => SetPaidAsync(status, (bool)e.Value!)" />
+                    <div>
+                        <div class="member-name">@status.Name</div>
+                        <div class="member-meta">@status.StudentNumber · @status.Department</div>
+                    </div>
+                    @if (status.IsPaid)
+                    {
+                        <span class="member-time">✅ 납부</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-red">미납</span>
+                    }
+                </label>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<FeePeriodDto> periods = [];
+    private int? selectedPeriodId;
+    private FeePeriodDto? selectedPeriod;
+    private List<FeeStatusDto> statuses = [];
+    private FeeFilter filter = FeeFilter.All;
+    private string search = "";
+    private bool showCreatePeriod;
+    private PeriodForm periodForm = new() { StartDate = DateOnly.FromDateTime(DateTime.Today), EndDate = DateOnly.FromDateTime(DateTime.Today.AddMonths(4)) };
+
+    private int paidCount => statuses.Count(s => s.IsPaid);
+
+    private List<FeeStatusDto> visibleStatuses
+    {
+        get
+        {
+            var term = search.Trim();
+            var list = statuses;
+            if (filter == FeeFilter.Paid)
+            {
+                list = list.Where(s => s.IsPaid).ToList();
+            }
+            else if (filter == FeeFilter.Unpaid)
+            {
+                list = list.Where(s => !s.IsPaid).ToList();
+            }
+
+            if (!string.IsNullOrEmpty(term))
+            {
+                list = list.Where(s => s.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+                    || s.StudentNumber.Contains(term, StringComparison.CurrentCultureIgnoreCase)).ToList();
+            }
+
+            return list;
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            periods = await FeeSvc.GetPeriodsAsync();
+            if (selectedPeriodId is null)
+            {
+                var current = await FeeSvc.GetCurrentPeriodAsync();
+                selectedPeriodId = current?.Id ?? periods.FirstOrDefault()?.Id;
+            }
+
+            selectedPeriod = periods.FirstOrDefault(p => p.Id == selectedPeriodId);
+            if (selectedPeriodId is { } id)
+            {
+                statuses = await FeeSvc.GetPeriodStatusesAsync(id);
+            }
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task SelectPeriodAsync(int periodId)
+    {
+        selectedPeriodId = periodId;
+        await LoadAsync();
+    }
+
+    private async Task ChangeFilterAsync(FeeFilter value)
+    {
+        filter = value;
+        await Task.CompletedTask;
+    }
+
+    private async Task SetPaidAsync(FeeStatusDto status, bool isPaid)
+    {
+        try
+        {
+            await FeeSvc.SetPaidAsync(status.PeriodId, status.UserId, isPaid);
+            Snackbar.Add($"{status.Name} {(isPaid ? "납부 완료" : "미납 처리")}", Severity.Success);
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            await LoadAsync();
+        }
+    }
+
+    private async Task CreatePeriodAsync()
+    {
+        try
+        {
+            var created = await FeeSvc.CreatePeriodAsync(new FeePeriodCreateRequest(
+                periodForm.Name.Trim(), periodForm.StartDate, periodForm.EndDate, periodForm.FeeAmount));
+            Snackbar.Add($"{created.Name} 추가", Severity.Success);
+            selectedPeriodId = created.Id;
+            showCreatePeriod = false;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private class PeriodForm
+    {
+        [Required(ErrorMessage = "기간 이름을 입력하세요.")]
+        public string Name { get; set; } = "";
+
+        [Required]
+        public DateOnly StartDate { get; set; }
+
+        [Required]
+        public DateOnly EndDate { get; set; }
+
+        [Range(0, 10_000_000)]
+        public int FeeAmount { get; set; } = 30_000;
+    }
+}

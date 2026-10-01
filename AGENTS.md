@@ -86,5 +86,17 @@ ASP.NET 웹 백엔드 프로젝트. 이 파일은 pi 하네스가 매 세션 시
 
 ## 5. 명령
 
-아직 솔루션이 없다(하네스 선행 단계). 솔루션 생성 시 이 섹션에 검증된 빌드·테스트 명령을
-기입하고, 기입 전까지는 §3-1의 최소 컴파일 검증으로 대체한다.
+검증된 빌드·테스트 명령(VolleyballClub 솔루션):
+
+```bash
+dotnet build                 # 전체 솔루션 빌드(0 오류 기준)
+dotnet test                  # xUnit 전체(20개, VolleyballClub.Tests)
+
+# EF Core 마이그레이션(로컬 PostgreSQL 대상 — 연결 문자열은 Web 프로젝트 user-secrets)
+dotnet ef database update --project VolleyballClub.Infrastructure --startup-project VolleyballClub.Web
+
+# 실행(Development — 자동 마이그레이션+시드)
+dotnet run --project VolleyballClub.Web   # http://localhost:5121
+```
+
+관리자 계정(개발 시드): 학번 `admin` / `Admin1234!`

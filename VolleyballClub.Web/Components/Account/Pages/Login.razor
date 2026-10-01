@@ -1,0 +1,96 @@
+@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using VolleyballClub.Infrastructure.Identity
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>로그인 · 배구부</PageTitle>
+
+<div class="login-wrap">
+    <div class="login-logo">🏐</div>
+    <h1 class="login-title">배구부</h1>
+    <p class="login-sub">학번과 비밀번호로 로그인하세요</p>
+
+    <StatusMessage Message="@errorMessage" />
+    <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="login-form">
+        <DataAnnotationsValidator />
+        <div class="field">
+            <label for="student-number" class="form-label">학번</label>
+            <InputText @bind-Value="Input.StudentNumber" id="student-number" class="form-control" autocomplete="username" aria-required="true" placeholder="202512345" />
+            <ValidationMessage For="() => Input.StudentNumber" class="text-danger" />
+        </div>
+        <div class="field">
+            <label for="password" class="form-label">비밀번호</label>
+            <InputText type="password" @bind-Value="Input.Password" id="password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="비밀번호" />
+            <ValidationMessage For="() => Input.Password" class="text-danger" />
+        </div>
+        <button type="submit" class="btn-primary btn-block">로그인</button>
+    </EditForm>
+</div>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+    }
+
+    public async Task LoginUser()
+    {
+        if (!editContext.Validate())
+        {
+            return;
+        }
+
+        var user = await UserManager.FindByNameAsync(Input.StudentNumber.Trim());
+        if (user is null || !user.IsActive)
+        {
+            errorMessage = "Error: 학번 또는 비밀번호가 올바르지 않거나 비활성화된 계정입니다.";
+            return;
+        }
+
+        var result = await SignInManager.PasswordSignInAsync(user, Input.Password, isPersistent: false, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("{Name} logged in.", Input.StudentNumber);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User account locked out.");
+            errorMessage = "Error: 계정이 잠겼습니다. 회장에게 문의하세요.";
+        }
+        else
+        {
+            errorMessage = "Error: 학번 또는 비밀번호가 올바르지 않습니다.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "학번을 입력하세요.")]
+        public string StudentNumber { get; set; } = "";
+
+        [Required(ErrorMessage = "비밀번호를 입력하세요.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

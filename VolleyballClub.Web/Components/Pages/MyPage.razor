@@ -1,0 +1,161 @@
+@page "/my"
+@attribute [Authorize]
+
+@inject IMemberService Members
+@inject IAttendanceService Attendance
+@inject ICurrentUserService Me
+
+<PageTitle>MY · 배구부</PageTitle>
+
+<h1 class="page-title">👤 MY</h1>
+
+@if (profile is not null)
+{
+    <div class="card">
+        <div class="card-row">
+            <div>
+                <div class="card-value">@profile.Name</div>
+                <div class="member-meta">@profile.StudentNumber · @profile.Department</div>
+            </div>
+            <span class="badge @(profile.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(profile.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+        </div>
+        <div class="member-meta" style="margin-top:8px">가입일 @Domain.KstClock.ToKstDateString(profile.JoinedAt) · 총 출석 @(profile.TotalAttendance)회</div>
+    </div>
+}
+
+<div class="card">
+    <div class="card-row" style="margin-bottom:10px">
+        <button type="button" class="btn-ghost btn-sm" @onclick="() => ShiftMonth(-1)">◀</button>
+        <span style="font-weight:800">@(calendar.Year)년 @(calendar.Month)월</span>
+        <button type="button" class="btn-ghost btn-sm" @onclick="() => ShiftMonth(1)">▶</button>
+    </div>
+
+    <table class="calendar">
+        <tr>
+            <th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+        </tr>
+        @for (var week = 0; week < weeks.Count; week++)
+        {
+            <tr>
+                @for (var day = 0; day < 7; day++)
+                {
+                    var cell = weeks[week][day];
+                    <td>
+                        @if (cell is not null)
+                        {
+                            var selected = selectedDay?.Date == cell.Date;
+                            <button type="button"
+                                    class="day-cell @(cell.IsAttended ? "attended" : "") @(selected ? "selected" : "")"
+                                    @onclick="() => SelectDay(cell)">
+                                @cell.Date.Day
+                                @if (cell.IsAttended)
+                                {
+                                    <span class="mark">✔</span>
+                                }
+                            </button>
+                        }
+                    </td>
+                }
+            </tr>
+        }
+    </table>
+
+    @if (selectedDay is { } sel)
+    {
+        <div style="margin-top:12px;padding:12px;background:#fff7ed;border-radius:12px">
+            <div style="font-weight:800">@sel.Date.ToString("yyyy년 M월 d일 dddd")</div>
+            @if (sel.IsAttended)
+            {
+                <div class="member-meta" style="margin-top:4px">
+                    ✅ 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
+                    @(sel.TeamName is not null ? $" · {sel.TeamName}" : "")
+                </div>
+            }
+            else
+            {
+                <div class="member-meta" style="margin-top:4px">기록 없음</div>
+            }
+        </div>
+    }
+
+    <div class="btn-row" style="margin-top:14px">
+        <div class="card" style="margin:0;text-align:center">
+            <div class="card-title" style="margin-bottom:4px">이번 달</div>
+            <div class="card-value" style="font-size:1.2rem">@(calendar.MonthCount)회</div>
+        </div>
+        <div class="card" style="margin:0;text-align:center">
+            <div class="card-title" style="margin-bottom:4px">이번 학기</div>
+            <div class="card-value" style="font-size:1.2rem">@(calendar.SemesterCount)회</div>
+        </div>
+        <div class="card" style="margin:0;text-align:center">
+            <div class="card-title" style="margin-bottom:4px">전체</div>
+            <div class="card-value" style="font-size:1.2rem">@(calendar.TotalCount)회</div>
+        </div>
+    </div>
+</div>
+
+<div class="btn-row">
+    <a href="/Account/Logout" class="btn-ghost">로그아웃</a>
+    <AuthorizeView Roles="ADMIN">
+        <a href="/admin" class="btn-secondary">⚙ 관리자</a>
+    </AuthorizeView>
+</div>
+
+@code {
+    private ProfileDto? profile;
+    private MyCalendarDto calendar = new(0, 0, [], 0, 0, 0);
+    private CalendarDayDto? selectedDay;
+    private List<CalendarDayDto?[]> weeks = [];
+    private string myUserId = "";
+    private int year = DateTime.Now.Year;
+    private int month = DateTime.Now.Month;
+
+    protected override async Task OnInitializedAsync()
+    {
+        myUserId = await Me.RequireUserIdAsync();
+        profile = await Members.GetProfileAsync(myUserId);
+        (year, month) = (DateTime.Now.Year, DateTime.Now.Month);
+        await LoadCalendarAsync();
+    }
+
+    private async Task LoadCalendarAsync()
+    {
+        calendar = await Attendance.GetMyCalendarAsync(myUserId, year, month);
+        selectedDay = null;
+        weeks = BuildWeeks(year, month, calendar.Days);
+    }
+
+    private static List<CalendarDayDto?[]> BuildWeeks(int year, int month, List<CalendarDayDto> attendedDays)
+    {
+        var first = new DateOnly(year, month, 1);
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var byDate = attendedDays.ToDictionary(d => d.Date);
+        var cells = new List<CalendarDayDto?>();
+        for (var i = 0; i < (int)first.DayOfWeek; i++)
+        {
+            cells.Add(null);
+        }
+
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            var date = new DateOnly(year, month, day);
+            cells.Add(byDate.TryGetValue(date, out var dto) ? dto : new CalendarDayDto(date, false, null, null));
+        }
+
+        while (cells.Count % 7 != 0)
+        {
+            cells.Add(null);
+        }
+
+        return cells.Chunk(7).Select(chunk => chunk.Cast<CalendarDayDto?>().ToArray()).ToList();
+    }
+
+    private async Task ShiftMonth(int delta)
+    {
+        var date = new DateTime(year, month, 1).AddMonths(delta);
+        (year, month) = (date.Year, date.Month);
+        await LoadCalendarAsync();
+    }
+
+    private void SelectDay(CalendarDayDto day) => selectedDay = day;
+}

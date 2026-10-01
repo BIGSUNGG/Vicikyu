@@ -1,0 +1,41 @@
+@page "/teams"
+@attribute [Authorize]
+
+@inject ITeamService TeamSvc
+@inject ICurrentUserService Me
+
+<PageTitle>팀 · 배구부</PageTitle>
+
+<h1 class="page-title">🏐 오늘의 팀</h1>
+
+@if (teams.Count == 0)
+{
+    <div class="card">
+        <p class="empty">아직 팀이 편성되지 않았습니다.<br />편성 확정 후 확인할 수 있습니다.</p>
+    </div>
+}
+else
+{
+    var hasMyTeam = teams.Any(t => t.Members.Any(m => m.UserId == myUserId));
+    @if (!hasMyTeam)
+    {
+        <div class="card">
+            <p class="empty">오늘은 팀에 포함되지 않았습니다.</p>
+        </div>
+    }
+    @foreach (var team in teams)
+    {
+        <TeamCard Team="team" MyUserId="myUserId" />
+    }
+}
+
+@code {
+    private List<TeamResultDto> teams = [];
+    private string myUserId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        myUserId = await Me.RequireUserIdAsync();
+        teams = await TeamSvc.GetTodayTeamsAsync();
+    }
+}

@@ -1,0 +1,183 @@
+@page "/admin"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject IActivityService Activities
+@inject ITeamService Teams
+@inject ISnackbar Snackbar
+
+<PageTitle>관리자 · 배구부</PageTitle>
+
+<h1 class="page-title">⚙ 관리자</h1>
+
+@if (today is not null)
+{
+    <div class="card">
+        <h2 class="card-title">오늘 운동 · @today.ActivityDate.ToString("yyyy.MM.dd")</h2>
+        <div class="card-row" style="margin-bottom:10px">
+            <span class="badge @(StatusBadgeClass)">@today.StatusText</span>
+            <span style="font-weight:700">오늘 출석 @today.AttendanceCount / @(today.TotalActiveMembers)명</span>
+        </div>
+
+        @if (!string.IsNullOrEmpty(today.OtpCode))
+        {
+            <div style="margin-bottom:12px">
+                <div class="card-title">오늘 OTP</div>
+                <div class="otp-big">@today.OtpCode</div>
+            </div>
+        }
+
+        <div class="btn-row">
+            @if (today.Status == ActivityStatus.Ready)
+            {
+                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartAttendanceAsync)">출석 시작</button>
+            }
+            <button type="button" class="btn-secondary" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
+            @if (today.Status == ActivityStatus.AttendanceOpen)
+            {
+                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.CloseAttendanceAsync)">출석 마감</button>
+            }
+            @if (today.Status != ActivityStatus.ActivityClosed && today.Status != ActivityStatus.Ready)
+            {
+                <button type="button" class="btn-danger" @onclick="ConfirmCloseActivityAsync">활동 마감</button>
+            }
+            @if (today.Status == ActivityStatus.ActivityClosed)
+            {
+                <button type="button" class="btn-secondary" @onclick="ConfirmReopenAsync">활동 다시 열기</button>
+            }
+        </div>
+        <div style="height:10px"></div>
+        <div class="btn-row">
+            <a href="/admin/attendance" class="btn-ghost">출석 관리</a>
+            <a href="/admin/teams" class="btn-ghost">팀 뽑기</a>
+        </div>
+    </div>
+
+    @if (teams.Count > 0)
+    {
+        <div class="card">
+            <h2 class="card-title">현재 팀</h2>
+            @foreach (var team in teams)
+            {
+                <div class="card-row" style="padding:6px 0">
+                    <span style="font-weight:700">@team.Name</span>
+                    <span class="badge badge-orange">@(team.Members.Count)명</span>
+                </div>
+            }
+        </div>
+    }
+}
+
+<div class="card">
+    <h2 class="card-title">관리 메뉴</h2>
+    <div class="btn-row">
+        <a href="/admin/members" class="btn-ghost">부원 관리</a>
+        <a href="/admin/fees" class="btn-ghost">회비 관리</a>
+    </div>
+    <div style="height:8px"></div>
+    <div class="btn-row">
+        <a href="/admin/settings" class="btn-ghost">설정</a>
+        <a href="/admin/audit" class="btn-ghost">감사 로그</a>
+    </div>
+</div>
+
+@if (showCloseConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showCloseConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>오늘 활동 종료</h3>
+            <p>활동을 마감하면 출석·팀 변경이 불가합니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showCloseConfirm = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="CloseActivityAsync">마감</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showReopenConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showReopenConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>활동 다시 열기</h3>
+            <p>기록은 유지되고 수정이 가능해집니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showReopenConfirm = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="ReopenAsync">다시 열기</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private AdminTodayDto? today;
+    private List<TeamResultDto> teams = [];
+    private bool showCloseConfirm;
+    private bool showReopenConfirm;
+
+    private string StatusBadgeClass => today?.Status switch
+    {
+        ActivityStatus.AttendanceOpen => "badge-green",
+        ActivityStatus.ActivityClosed => "badge-red",
+        ActivityStatus.TeamCreated => "badge-orange",
+        _ => "badge-gray",
+    };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            today = await Activities.GetOrCreateTodayAsync();
+            teams = await Teams.GetTodayTeamsForAdminAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RunAsync(Func<Task<AdminTodayDto>> action)
+    {
+        try
+        {
+            today = await action();
+            Snackbar.Add("처리되었습니다.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task GenerateOtpAsync()
+    {
+        try
+        {
+            await Activities.GenerateOtpAsync();
+            Snackbar.Add("OTP가 갱신되었습니다.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void ConfirmCloseActivityAsync() => showCloseConfirm = true;
+
+    private async Task CloseActivityAsync()
+    {
+        showCloseConfirm = false;
+        await RunAsync(Activities.CloseActivityAsync);
+    }
+
+    private void ConfirmReopenAsync() => showReopenConfirm = true;
+
+    private async Task ReopenAsync()
+    {
+        showReopenConfirm = false;
+        await RunAsync(Activities.ReopenActivityAsync);
+    }
+}

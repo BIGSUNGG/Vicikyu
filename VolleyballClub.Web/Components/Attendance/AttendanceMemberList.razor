@@ -1,0 +1,39 @@
+@if (Members.Count == 0)
+{
+    <p class="empty">부원이 없습니다.</p>
+}
+else
+{
+    <div class="card-list">
+        @foreach (var member in Members)
+        {
+            <label class="member-row @(member.IsAttended ? "" : "unattended")">
+                <input type="checkbox" checked="@member.IsAttended" @onchange="e => ToggleAsync(member, (bool)e.Value!)" />
+                <div>
+                    <div class="member-name">@member.Name</div>
+                    <div class="member-meta">@member.StudentNumber · @member.Department</div>
+                </div>
+                @if (member.IsAttended)
+                {
+                    <span class="member-time">
+                        @(Domain.KstClock.ToKstTimeString(member.CheckedAt ?? DateTime.MinValue))
+                        @(member.AttendanceType == Domain.Enums.AttendanceType.Admin ? "(관리자)" : "")
+                    </span>
+                }
+            </label>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public List<AttendanceMemberDto> Members { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<(AttendanceMemberDto Member, bool Checked)> OnToggled { get; set; }
+
+    private async Task ToggleAsync(AttendanceMemberDto member, bool value)
+    {
+        await OnToggled.InvokeAsync((member, value));
+    }
+}

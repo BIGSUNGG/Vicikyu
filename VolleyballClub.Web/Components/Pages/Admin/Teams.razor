@@ -1,0 +1,367 @@
+@page "/admin/teams"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject ITeamService TeamSvc
+@inject ISettingService Settings
+@inject ISnackbar Snackbar
+
+<PageTitle>팀 뽑기 · 배구부</PageTitle>
+
+<h1 class="page-title">🎲 팀 뽑기</h1>
+
+@if (drawnTeams is { Count: > 0 })
+{
+    <div class="card">
+        <div class="card-row">
+            <h2 class="card-title" style="margin:0">편성 결과</h2>
+            <span class="badge badge-orange">@(selectedUserIds.Count)명 참가</span>
+        </div>
+    </div>
+
+    @foreach (var team in drawnTeams)
+    {
+        <TeamCard Team="team" Selectable="true" OnMemberSelected="SelectMemberAsync" />
+    }
+
+    @if (movingMember is not null)
+    {
+        <div class="confirm-overlay" @onclick="() => movingMember = null">
+            <div class="confirm-box" @onclick:stopPropagation>
+                <h3>@movingMember.Name 팀 이동</h3>
+                <div class="card-list" style="margin-bottom:16px">
+                    @foreach (var team in drawnTeams)
+                    {
+                        <label class="member-row">
+                            <input type="radio" name="moveTarget" checked="@(moveTargetTeamId == team.TeamId)"
+                                   @onchange="() => moveTargetTeamId = team.TeamId" />
+                            <span class="member-name">@team.Name (@(team.Members.Count)명)</span>
+                        </label>
+                    }
+                </div>
+                <div class="btn-row">
+                    <button type="button" class="btn-ghost" @onclick="() => movingMember = null">취소</button>
+                    <button type="button" class="btn-primary" @onclick="MoveMemberAsync">이동</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="btn-row">
+        <button type="button" class="btn-secondary" @onclick="RedrawAsync">🔄 다시 뽑기</button>
+        @if (canConfirm)
+        {
+            <button type="button" class="btn-primary" @onclick="ConfirmAsync">팀 편성 확정</button>
+        }
+    </div>
+    <div style="height:8px"></div>
+}
+else
+{
+    <div class="card">
+        <div class="section-divider">오늘 출석 @(participants.AttendedCount)명</div>
+        <div class="card-list">
+            @foreach (var p in participants.Participants)
+            {
+                <label class="member-row">
+                    <input type="checkbox"
+                           checked="@(p.IsGuest ? selectedGuestIds.Contains(p.GuestId!.Value) : selectedUserIds.Contains(p.UserId!))"
+                           @onchange="e => ToggleParticipant(p, (bool)e.Value!)" />
+                    <div>
+                        <div class="member-name">@p.Name@(p.IsGuest ? " (게스트)" : "")</div>
+                        <div class="member-meta">@p.Department</div>
+                    </div>
+                    @if (p.IsAttended && !p.IsGuest)
+                    {
+                        <span class="member-time">✅ 출석</span>
+                    }
+                </label>
+            }
+        </div>
+
+        <div style="margin-top:10px">
+            <input class="form-control" type="text" placeholder="게스트 이름" value="@newGuestName"
+                   @oninput='e => newGuestName = e.Value?.ToString() ?? ""' />
+            <div style="height:8px"></div>
+            <button type="button" class="btn-secondary btn-sm" @onclick="AddGuestAsync">+ 게스트 추가</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">팀 수 · 팀별 인원</h2>
+        <div class="filter-group">
+            @foreach (var n in new[] { 2, 3, 4, 5 })
+            {
+                <button type="button" class="filter-btn @(teamCount == n ? "active" : "")" @onclick="() => SetTeamCount(n)">@(n)팀</button>
+            }
+        </div>
+
+        <div class="card-row" style="margin-bottom:10px">
+            <span style="font-weight:700">팀 수 직접 입력</span>
+            <input class="form-control" type="number" min="2" max="10" style="width:90px;text-align:center"
+                   value="@teamCount" @onchange="e => SetTeamCount(int.TryParse(e.Value?.ToString(), out var n) ? n : teamCount)" />
+        </div>
+
+        @for (var i = 0; i < teamSizes.Count; i++)
+        {
+            var index = i;
+            <div class="card-row" style="padding:5px 0">
+                <span style="font-weight:700">@((char)('A' + index))팀</span>
+                <input class="form-control" type="number" min="1" style="width:90px;text-align:center"
+                       value="@teamSizes[index]" @onchange="e => SetTeamSize(index, e.Value?.ToString())" />
+            </div>
+        }
+
+        <p class="member-meta" style="margin-top:8px">
+            총 선택 인원: @(selectedUserIds.Count + selectedGuestIds.Count)명 · 팀별 합계: @(teamSizes.Sum())명
+        </p>
+        @if (sizeError is not null)
+        {
+            <p class="text-danger">@sizeError</p>
+        }
+
+        <button type="button" class="btn-primary btn-block" style="margin-top:10px" @onclick="DrawAsync">🎲 랜덤 팀 뽑기</button>
+    </div>
+}
+
+@if (showRedrawConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showRedrawConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>다시 뽑기</h3>
+            <p>팀을 다시 뽑으면 현재 팀 편성이 초기화됩니다. 계속하시겠습니까?</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showRedrawConfirm = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="BackToSelection">다시 뽑기</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showConfirmDialog)
+{
+    <div class="confirm-overlay" @onclick="() => showConfirmDialog = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>팀 편성 확정</h3>
+            <p>확정하면 모든 부원이 자기 팀을 확인할 수 있습니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showConfirmDialog = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="DoConfirmAsync">확정</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ParticipantListDto participants = new([], 0);
+    private HashSet<string> selectedUserIds = [];
+    private HashSet<int> selectedGuestIds = [];
+    private int teamCount = 3;
+    private List<int> teamSizes = [];
+    private List<TeamResultDto> drawnTeams = [];
+    private TeamMemberDto? movingMember;
+    private int moveTargetTeamId;
+    private bool canConfirm;
+    private bool showRedrawConfirm;
+    private bool showConfirmDialog;
+    private string newGuestName = "";
+    private string? sizeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        teamCount = await Settings.GetIntAsync("DefaultTeamCount", 3);
+        await LoadParticipantsAsync();
+
+        // 이미 편성되어 있으면 결과부터 표시
+        drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        if (drawnTeams.Count > 0)
+        {
+            SyncSelectionFromTeams();
+            canConfirm = true; // 확정 전 상태로 재접속해도 확정 버튼이 유지된다(서버는 멱등)
+        }
+        else
+        {
+            SetTeamCount(teamCount);
+        }
+    }
+
+    private async Task LoadParticipantsAsync()
+    {
+        try
+        {
+            participants = await TeamSvc.GetParticipantsAsync();
+            selectedUserIds = participants.Participants.Where(p => !p.IsGuest).Select(p => p.UserId!).ToHashSet();
+            selectedGuestIds = participants.Participants.Where(p => p.IsGuest).Select(p => p.GuestId!.Value).ToHashSet();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void SyncSelectionFromTeams()
+    {
+        selectedUserIds = drawnTeams.SelectMany(t => t.Members).Where(m => !m.IsGuest).Select(m => m.UserId!).ToHashSet();
+        selectedGuestIds = drawnTeams.SelectMany(t => t.Members).Where(m => m.IsGuest).Select(m => m.GuestId!.Value).ToHashSet();
+        var groups = drawnTeams.Select(t => t.Members.Count).Where(c => c > 0).ToList();
+        if (groups.Count > 0)
+        {
+            teamCount = groups.Count;
+            teamSizes = groups;
+        }
+    }
+
+    private void ToggleParticipant(ParticipantDto p, bool value)
+    {
+        if (p.IsGuest)
+        {
+            if (value)
+            {
+                selectedGuestIds.Add(p.GuestId!.Value);
+            }
+            else
+            {
+                selectedGuestIds.Remove(p.GuestId!.Value);
+            }
+        }
+        else
+        {
+            if (value)
+            {
+                selectedUserIds.Add(p.UserId!);
+            }
+            else
+            {
+                selectedUserIds.Remove(p.UserId!);
+            }
+        }
+
+        ValidateSizes();
+    }
+
+    private void SetTeamCount(int n)
+    {
+        teamCount = Math.Clamp(n, 2, 10);
+        var total = selectedUserIds.Count + selectedGuestIds.Count;
+        teamSizes = Enumerable.Range(0, teamCount)
+            .Select(i => total / teamCount + (i < total % teamCount ? 1 : 0))
+            .ToList();
+        ValidateSizes();
+    }
+
+    private void SetTeamSize(int index, string? value)
+    {
+        if (int.TryParse(value, out var size) && index >= 0 && index < teamSizes.Count)
+        {
+            teamSizes[index] = Math.Max(1, size);
+        }
+
+        ValidateSizes();
+    }
+
+    private void ValidateSizes()
+    {
+        var total = selectedUserIds.Count + selectedGuestIds.Count;
+        sizeError = teamSizes.Sum() != total
+            ? $"팀별 인원수 합계가 참가 인원 {total}명과 일치하지 않습니다."
+            : null;
+    }
+
+    private async Task DrawAsync()
+    {
+        ValidateSizes();
+        if (sizeError is not null)
+        {
+            Snackbar.Add(sizeError, Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            drawnTeams = await TeamSvc.GenerateAsync(new TeamCreateRequest(selectedUserIds.ToList(), selectedGuestIds.ToList(), teamSizes.ToList()));
+            canConfirm = true;
+            Snackbar.Add("팀을 편성했습니다. 확인 후 확정해 주세요.", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void RedrawAsync() => showRedrawConfirm = true;
+
+    private Task BackToSelection()
+    {
+        showRedrawConfirm = false;
+        drawnTeams = [];
+        return Task.CompletedTask;
+    }
+
+    private void SelectMemberAsync(TeamMemberDto member)
+    {
+        movingMember = member;
+        moveTargetTeamId = drawnTeams.FirstOrDefault(t => t.TeamId == drawnTeams.FirstOrDefault(x => x.Members.Any(m => m.TeamMemberId == member.TeamMemberId))?.TeamId)?.TeamId
+            ?? drawnTeams.FirstOrDefault()?.TeamId ?? 0;
+    }
+
+    private async Task MoveMemberAsync()
+    {
+        if (movingMember is null)
+        {
+            return;
+        }
+
+        var member = movingMember;
+        movingMember = null;
+        try
+        {
+            await TeamSvc.MoveMemberAsync(member.TeamMemberId, moveTargetTeamId);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+            Snackbar.Add($"{member.Name} 이동 완료", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+    }
+
+    private void ConfirmAsync() => showConfirmDialog = true;
+
+    private async Task DoConfirmAsync()
+    {
+        showConfirmDialog = false;
+        try
+        {
+            await TeamSvc.ConfirmAsync();
+            Snackbar.Add("팀 편성이 확정되었습니다.", Severity.Success);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AddGuestAsync()
+    {
+        var name = newGuestName.Trim();
+        if (name.Length == 0)
+        {
+            Snackbar.Add("게스트 이름을 입력해 주세요.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            await TeamSvc.AddGuestAsync(name);
+            newGuestName = "";
+            Snackbar.Add($"게스트 '{name}' 추가", Severity.Success);
+            await LoadParticipantsAsync();
+            SetTeamCount(teamCount);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

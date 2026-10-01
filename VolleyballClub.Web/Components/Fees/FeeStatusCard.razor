@@ -1,0 +1,22 @@
+<div class="card">
+    <h2 class="card-title">💰 회비</h2>
+    <div class="card-row">
+        <div>
+            <div class="member-name">@Status.PeriodName</div>
+            <div class="member-meta">회비 납부 현황</div>
+        </div>
+        @if (Status.IsPaid)
+        {
+            <span class="badge badge-green">✅ 납부 완료</span>
+        }
+        else
+        {
+            <span class="badge badge-red">❌ 미납</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public FeeStatusDto Status { get; set; } = null!;
+}

@@ -1,0 +1,29 @@
+<div class="card">
+    <h2 class="card-title">🏆 출석왕</h2>
+    @if (Rankings.Count == 0)
+    {
+        <p class="empty">아직 출석 기록이 없습니다.</p>
+    }
+    else
+    {
+        var i = 0;
+        foreach (var rank in Rankings)
+        {
+            i++;
+            _ = i; // 행 인덱스 미사용 — 순위는 rank.Rank 기준(공동 순위 반영)
+            <div class="rank-row @(rank.IsViewer ? "me" : "")">
+                <span class="rank-medal">@(rank.Rank == 1 ? "🥇" : rank.Rank == 2 ? "🥈" : rank.Rank == 3 ? "🥉" : $"{rank.Rank}위")</span>
+                <div>
+                    <div class="member-name">@rank.Name</div>
+                    <div class="member-meta">@rank.Department</div>
+                </div>
+                <span class="rank-count">@(rank.Count)회</span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public List<AttendanceRankingDto> Rankings { get; set; } = [];
+}

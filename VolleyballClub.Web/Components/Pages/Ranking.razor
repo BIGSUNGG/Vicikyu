@@ -1,0 +1,41 @@
+@page "/ranking"
+@attribute [Authorize]
+
+@inject IAttendanceService Attendance
+@inject ICurrentUserService Me
+
+<PageTitle>순위 · 배구부</PageTitle>
+
+<h1 class="page-title">🏆 출석왕</h1>
+
+<div class="filter-group">
+    @foreach (var (value, label) in new[] { (RankingPeriod.All, "전체"), (RankingPeriod.Semester, "이번 학기"), (RankingPeriod.Month, "이번 달") })
+    {
+        <button type="button" class="filter-btn @(period == value ? "active" : "")" @onclick="() => ChangePeriodAsync(value)">@label</button>
+    }
+</div>
+
+<AttendanceRanking Rankings="rankings" />
+
+@code {
+    private RankingPeriod period = RankingPeriod.Semester;
+    private List<AttendanceRankingDto> rankings = [];
+    private string? viewerId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        viewerId = await Me.GetUserIdAsync();
+        await LoadAsync();
+    }
+
+    private async Task ChangePeriodAsync(RankingPeriod value)
+    {
+        period = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        rankings = await Attendance.GetRankingAsync(period, viewerId);
+    }
+}

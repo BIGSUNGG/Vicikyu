@@ -1,0 +1,98 @@
+<div class="card">
+    <h2 class="card-title">✅ 오늘 출석</h2>
+
+    @if (Today is null)
+    {
+        <p class="empty">오늘 활동이 아직 없습니다.</p>
+    }
+    else if (Today.IsAttended)
+    {
+        <div class="card-row">
+            <span style="font-size:1.05rem;font-weight:700;color:var(--vb-success)">✅ 오늘 출석 완료</span>
+            <span class="badge badge-green">@CheckedAtText 출석</span>
+        </div>
+    }
+    else if (Today.Status == Domain.Enums.ActivityStatus.AttendanceOpen)
+    {
+        @if (showOtpInput)
+        {
+            <p style="margin:0 0 8px;font-weight:700">오늘 출석 OTP</p>
+            <input class="otp-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8"
+                   placeholder="_ _ _ _" value="@otp" @oninput="OnOtpChanged" />
+            <div style="height:12px"></div>
+            <button type="button" class="btn-primary btn-block" disabled="@submitting" @onclick="SubmitOtpAsync">
+                @(submitting ? "확인 중…" : "출석 확인")
+            </button>
+        }
+        else
+        {
+            <button type="button" class="btn-primary btn-block" @onclick="() => showOtpInput = true">
+                출석하기
+            </button>
+        }
+    }
+    else if (Today.Status == Domain.Enums.ActivityStatus.ActivityClosed)
+    {
+        <p class="empty">오늘 활동이 종료되었습니다.</p>
+    }
+    else
+    {
+        <p class="empty">출석이 마감되었습니다. 회장에게 문의하세요.</p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public MyTodayDto? Today { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    [Inject]
+    public IAttendanceService Attendance { get; set; } = null!;
+
+    [Inject]
+    public ISnackbar Snackbar { get; set; } = null!;
+
+    private bool showOtpInput;
+    private string otp = "";
+    private bool submitting;
+    private string? checkedAtText;
+
+    private string CheckedAtText => checkedAtText ?? (Today?.CheckedAt is { } t ? Domain.KstClock.ToKstTimeString(t) : "");
+
+    private void OnOtpChanged(ChangeEventArgs e)
+    {
+        otp = new string((e.Value?.ToString() ?? "").Where(char.IsDigit).ToArray());
+    }
+
+    private async Task SubmitOtpAsync()
+    {
+        if (otp.Length < 4)
+        {
+            Snackbar.Add("OTP 번호를 모두 입력해 주세요.", Severity.Warning);
+            return;
+        }
+
+        submitting = true;
+        try
+        {
+            var checkedAt = await Attendance.CheckInWithOtpAsync(otp);
+            checkedAtText = Domain.KstClock.ToKstTimeString(checkedAt);
+            Snackbar.Add("출석이 완료되었습니다.", Severity.Success);
+            await OnChanged.InvokeAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("출석 처리 중 오류가 발생했습니다. 다시 시도해 주세요.", Severity.Error);
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+}

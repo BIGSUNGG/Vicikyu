@@ -1,0 +1,39 @@
+<div class="card team-card">
+    <div class="team-card-header">
+        <span class="team-name">🏐 @Team.Name</span>
+        <span class="badge badge-orange">@(Team.Members.Count)명</span>
+    </div>
+    <div>
+        @foreach (var member in Team.Members)
+        {
+            var isMine = !member.IsGuest && member.UserId == MyUserId;
+            <button type="button"
+                    class="team-member-chip @(isMine ? "mine" : "") @(Selectable ? "clickable" : "")"
+                    @onclick="() => SelectMember(member)">
+                @member.Name@(member.IsGuest ? " (게스트)" : "")@(isMine ? " ★" : "")
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public TeamResultDto Team { get; set; } = null!;
+
+    [Parameter]
+    public string? MyUserId { get; set; }
+
+    [Parameter]
+    public bool Selectable { get; set; }
+
+    [Parameter]
+    public EventCallback<TeamMemberDto> OnMemberSelected { get; set; }
+
+    private async Task SelectMember(TeamMemberDto member)
+    {
+        if (Selectable)
+        {
+            await OnMemberSelected.InvokeAsync(member);
+        }
+    }
+}

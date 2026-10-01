@@ -1,0 +1,285 @@
+@page "/admin/members"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject IMemberService MemberSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>부원 관리 · 배구부</PageTitle>
+
+<h1 class="page-title">👥 부원 관리</h1>
+
+<div class="card">
+    <div class="field">
+        <input class="form-control" type="search" placeholder="이름 / 학번 검색"
+               value="@search" @oninput='e => { search = e.Value?.ToString() ?? ""; }' />
+    </div>
+
+    <button type="button" class="btn-secondary btn-block" @onclick="() => showAddForm = !showAddForm">
+        @(showAddForm ? "추가 취소" : "+ 부원 추가")
+    </button>
+
+    @if (showAddForm)
+    {
+        <EditForm Model="createForm" OnValidSubmit="AddMemberAsync" style="margin-top:14px">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label class="form-label">학번</label>
+                <InputText @bind-Value="createForm.StudentNumber" class="form-control" placeholder="202512345" />
+            </div>
+            <div class="field">
+                <label class="form-label">이름</label>
+                <InputText @bind-Value="createForm.Name" class="form-control" placeholder="김민수" />
+            </div>
+            <div class="field">
+                <label class="form-label">학과</label>
+                <InputText @bind-Value="createForm.Department" class="form-control" placeholder="컴퓨터공학과" />
+            </div>
+            <div class="field">
+                <label class="form-label">초기 비밀번호(8자 이상)</label>
+                <InputText type="password" @bind-Value="createForm.Password" class="form-control" />
+            </div>
+            <div class="field">
+                <label class="form-label">역할</label>
+                <select class="form-control" value="@createForm.Role" @onchange='e => createForm.Role = e.Value?.ToString() ?? "MEMBER"'>
+                    <option value="MEMBER">부원</option>
+                    <option value="ADMIN">관리자</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-primary btn-block">추가</button>
+        </EditForm>
+    }
+</div>
+
+@if (editing is not null)
+{
+    <div class="card">
+        <h2 class="card-title">부원 수정 — @editing.Name</h2>
+        <EditForm Model="editForm" OnValidSubmit="SaveEditAsync">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label class="form-label">학번</label>
+                <InputText @bind-Value="editForm.StudentNumber" class="form-control" />
+            </div>
+            <div class="field">
+                <label class="form-label">이름</label>
+                <InputText @bind-Value="editForm.Name" class="form-control" />
+            </div>
+            <div class="field">
+                <label class="form-label">학과</label>
+                <InputText @bind-Value="editForm.Department" class="form-control" />
+            </div>
+            <div class="field">
+                <label class="form-label">역할</label>
+                <select class="form-control" value="@editForm.Role" @onchange='e => editForm.Role = e.Value?.ToString() ?? "MEMBER"'>
+                    <option value="MEMBER">부원</option>
+                    <option value="ADMIN">관리자</option>
+                </select>
+            </div>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => editing = null">취소</button>
+                <button type="submit" class="btn-primary">저장</button>
+            </div>
+        </EditForm>
+        <div style="height:10px"></div>
+        <button type="button" class="btn-danger btn-block" @onclick="ToggleActiveAsync">
+            @(editing.IsActive ? "비활성화" : "활성화")
+        </button>
+    </div>
+}
+
+<div class="card">
+    <h2 class="card-title">부원 목록</h2>
+    <div class="card-list">
+        @foreach (var member in visibleMembers)
+        {
+            <div class="member-row" style="cursor:pointer" @onclick="() => BeginEdit(member)">
+                <div>
+                    <div class="member-name">
+                        @member.Name
+                        @if (!member.IsActive)
+                        {
+                            <span class="badge badge-gray">비활성</span>
+                        }
+                    </div>
+                    <div class="member-meta">@member.StudentNumber · @member.Department · 총 출석 @(member.TotalAttendance)회</div>
+                </div>
+                <div style="margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+                    <span class="badge @(member.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(member.Role == "ADMIN" ? "관리자" : "부원")</span>
+                    <span class="badge @(member.FeePaidCurrent ? "badge-green" : "badge-red")">@(member.FeePaidCurrent ? "납부" : "미납")</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (confirmDeactivate is not null)
+{
+    <div class="confirm-overlay" @onclick="() => confirmDeactivate = null">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>@(confirmDeactivate.IsActive ? "비활성화" : "활성화")</h3>
+            <p>@confirmDeactivate.Name 님을 @(confirmDeactivate.IsActive ? "비활성화" : "활성화")하시겠습니까? 출석 기록은 보존됩니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => confirmDeactivate = null">취소</button>
+                <button type="button" class="btn-primary" @onclick="DoToggleActiveAsync">확인</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<MemberListDto> members = [];
+    private string search = "";
+    private bool showAddForm;
+    private MemberListDto? editing;
+    private MemberListDto? confirmDeactivate;
+    private MemberCreateForm createForm = new();
+    private MemberEditForm editForm = new();
+
+    private List<MemberListDto> visibleMembers
+    {
+        get
+        {
+            var term = search.Trim();
+            return string.IsNullOrEmpty(term)
+                ? members
+                : members.Where(m => m.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+                    || m.StudentNumber.Contains(term, StringComparison.CurrentCultureIgnoreCase)).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            members = await MemberSvc.GetListAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AddMemberAsync()
+    {
+        try
+        {
+            await MemberSvc.AddAsync(new MemberCreateRequest(
+                createForm.StudentNumber.Trim(),
+                createForm.Name.Trim(),
+                createForm.Department.Trim(),
+                createForm.Password,
+                createForm.Role));
+            Snackbar.Add($"{createForm.Name} 추가 완료", Severity.Success);
+            createForm = new MemberCreateForm();
+            showAddForm = false;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void BeginEdit(MemberListDto member)
+    {
+        editing = member;
+        editForm = new MemberEditForm
+        {
+            StudentNumber = member.StudentNumber,
+            Name = member.Name,
+            Department = member.Department,
+            Role = member.Role,
+        };
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (editing is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await MemberSvc.UpdateAsync(editing.UserId, new MemberUpdateRequest(
+                editForm.Name.Trim(),
+                editForm.Department.Trim(),
+                editForm.StudentNumber.Trim(),
+                editForm.Role));
+            Snackbar.Add("수정 완료", Severity.Success);
+            editing = null;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void ToggleActiveAsync()
+    {
+        if (editing is not null)
+        {
+            confirmDeactivate = editing;
+        }
+    }
+
+    private async Task DoToggleActiveAsync()
+    {
+        if (confirmDeactivate is null)
+        {
+            return;
+        }
+
+        var target = confirmDeactivate;
+        confirmDeactivate = null;
+        try
+        {
+            await MemberSvc.UpdateAsync(target.UserId, new MemberUpdateRequest(
+                target.Name,
+                target.Department,
+                null,
+                null,
+                !target.IsActive));
+            Snackbar.Add(!target.IsActive ? $"{target.Name} 활성화" : $"{target.Name} 비활성화", Severity.Success);
+            editing = null;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private class MemberCreateForm
+    {
+        [Required(ErrorMessage = "학번을 입력하세요.")]
+        public string StudentNumber { get; set; } = "";
+
+        [Required(ErrorMessage = "이름을 입력하세요.")]
+        public string Name { get; set; } = "";
+
+        public string Department { get; set; } = "";
+
+        [Required(ErrorMessage = "초기 비밀번호를 입력하세요.")]
+        [MinLength(8, ErrorMessage = "비밀번호는 8자 이상이어야 합니다.")]
+        public string Password { get; set; } = "";
+
+        public string Role { get; set; } = "MEMBER";
+    }
+
+    private class MemberEditForm
+    {
+        [Required(ErrorMessage = "학번을 입력하세요.")]
+        public string StudentNumber { get; set; } = "";
+
+        [Required(ErrorMessage = "이름을 입력하세요.")]
+        public string Name { get; set; } = "";
+
+        public string Department { get; set; } = "";
+
+        public string Role { get; set; } = "MEMBER";
+    }
+}

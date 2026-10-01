@@ -1,0 +1,75 @@
+@page "/admin/settings"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject ISettingService SettingSvc
+@inject IAuditLogService Audit
+@inject ISnackbar Snackbar
+
+<PageTitle>설정 · 배구부</PageTitle>
+
+<h1 class="page-title">⚙ 설정</h1>
+
+<div class="card">
+    <h2 class="card-title">기본 정보</h2>
+    <div class="field">
+        <label class="form-label">학교명</label>
+        <input class="form-control" value="@schoolName" @oninput='e => schoolName = e.Value?.ToString() ?? ""' />
+    </div>
+    <div class="field">
+        <label class="form-label">동아리명</label>
+        <input class="form-control" value="@clubName" @oninput='e => clubName = e.Value?.ToString() ?? ""' />
+    </div>
+    <div class="field">
+        <label class="form-label">회비 사용 내역 URL (Google Sheets)</label>
+        <input class="form-control" type="url" placeholder="https://docs.google.com/…" value="@feeSheetUrl"
+               @oninput='e => feeSheetUrl = e.Value?.ToString() ?? ""' />
+    </div>
+    <div class="btn-row">
+        <div class="field">
+            <label class="form-label">기본 팀 수</label>
+            <input class="form-control" type="number" min="2" max="10" value="@defaultTeamCount"
+                   @onchange="e => defaultTeamCount = int.TryParse(e.Value?.ToString(), out var n) ? n : defaultTeamCount" />
+        </div>
+        <div class="field">
+            <label class="form-label">OTP 자릿수</label>
+            <input class="form-control" type="number" min="4" max="8" value="@otpLength"
+                   @onchange="e => otpLength = int.TryParse(e.Value?.ToString(), out var n) ? n : otpLength" />
+        </div>
+    </div>
+    <button type="button" class="btn-primary btn-block" @onclick="SaveAsync">저장</button>
+</div>
+
+@code {
+    private string schoolName = "";
+    private string clubName = "";
+    private string feeSheetUrl = "";
+    private int defaultTeamCount = 3;
+    private int otpLength = 4;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await SettingSvc.GetAllAsync();
+        schoolName = all.GetValueOrDefault("SchoolName", "");
+        clubName = all.GetValueOrDefault("ClubName", "");
+        feeSheetUrl = all.GetValueOrDefault("FeeSheetUrl", "");
+        defaultTeamCount = int.TryParse(all.GetValueOrDefault("DefaultTeamCount"), out var t) ? t : 3;
+        otpLength = int.TryParse(all.GetValueOrDefault("OtpLength"), out var o) ? o : 4;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!string.IsNullOrEmpty(feeSheetUrl) && !Uri.IsWellFormedUriString(feeSheetUrl, UriKind.Absolute))
+        {
+            Snackbar.Add("회비 사용 내역 URL 형식이 올바르지 않습니다.", Severity.Warning);
+            return;
+        }
+
+        await SettingSvc.SetAsync("SchoolName", schoolName.Trim());
+        await SettingSvc.SetAsync("ClubName", clubName.Trim());
+        await SettingSvc.SetAsync("FeeSheetUrl", feeSheetUrl.Trim());
+        await SettingSvc.SetAsync("DefaultTeamCount", Math.Clamp(defaultTeamCount, 2, 10).ToString());
+        await SettingSvc.SetAsync("OtpLength", Math.Clamp(otpLength, 4, 8).ToString());
+        await Audit.LogAsync(AdminAction.SettingChange, "Setting", "*", "사이트 설정 변경");
+        Snackbar.Add("저장되었습니다.", Severity.Success);
+    }
+}

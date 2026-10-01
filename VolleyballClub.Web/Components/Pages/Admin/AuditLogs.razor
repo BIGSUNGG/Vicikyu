@@ -1,0 +1,67 @@
+@page "/admin/audit"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject IAuditLogService Audit
+
+<PageTitle>감사 로그 · 배구부</PageTitle>
+
+<h1 class="page-title">📜 감사 로그</h1>
+
+<div class="card">
+    @if (logs.Count == 0)
+    {
+        <p class="empty">기록이 없습니다.</p>
+    }
+    else
+    {
+        <div class="card-list">
+            @foreach (var log in logs)
+            {
+                <div class="member-row" style="cursor:default">
+                    <div>
+                        <div class="member-name">@ActionText(log.Action)</div>
+                        <div class="member-meta">@log.Details</div>
+                    </div>
+                    <div style="margin-left:auto;text-align:right">
+                        <div class="member-meta">@log.AdminName</div>
+                        <div class="member-meta">@Domain.KstClock.ToKstDateString(log.CreatedAt) @Domain.KstClock.ToKstTimeString(log.CreatedAt)</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<AuditLogDto> logs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        logs = await Audit.GetRecentAsync(100);
+    }
+
+    private static string ActionText(AdminAction action) => action switch
+    {
+        AdminAction.ActivityCreate => "활동 생성",
+        AdminAction.ActivityReopen => "활동 다시 열기",
+        AdminAction.ActivityClose => "활동 마감",
+        AdminAction.AttendanceOpen => "출석 시작",
+        AdminAction.AttendanceClose => "출석 마감",
+        AdminAction.AttendanceAdd => "직접 출석 추가",
+        AdminAction.AttendanceRemove => "출석 취소",
+        AdminAction.OtpChange => "OTP 변경",
+        AdminAction.GuestAdd => "게스트 추가",
+        AdminAction.GuestRemove => "게스트 제거",
+        AdminAction.TeamCreate => "팀 편성",
+        AdminAction.TeamChange => "팀 변경",
+        AdminAction.TeamConfirm => "팀 편성 확정",
+        AdminAction.MemberCreate => "부원 추가",
+        AdminAction.MemberUpdate => "부원 수정",
+        AdminAction.MemberDisable => "부원 비활성화",
+        AdminAction.MemberEnable => "부원 활성화",
+        AdminAction.FeePeriodCreate => "회비 기간 생성",
+        AdminAction.FeeStatusChange => "회비 상태 변경",
+        AdminAction.SettingChange => "설정 변경",
+        _ => action.ToString(),
+    };
+}

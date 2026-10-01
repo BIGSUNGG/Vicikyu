@@ -1,0 +1,15 @@
+@page "/Account/Logout"
+
+<PageTitle>로그아웃</PageTitle>
+
+<div class="login-wrap">
+    <div class="login-logo">🏐</div>
+    <h1 class="login-title">로그아웃</h1>
+    <p class="login-sub">로그아웃하시겠습니까?</p>
+    <form action="Account/Logout" method="post" class="login-form">
+        <AntiforgeryToken />
+        <input type="hidden" name="returnUrl" value="" />
+        <button type="submit" class="btn-primary btn-block">로그아웃</button>
+        <a href="/" class="btn-ghost btn-block">취소</a>
+    </form>
+</div>
