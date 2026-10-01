@@ -399,3 +399,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# pi agent local folders
+.pi-glla/
+.pi-subagents/
