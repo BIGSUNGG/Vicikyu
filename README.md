@@ -7,8 +7,9 @@
 - OTP(4자리) 기반 당일 출석 + 관리자 직접 출석
 - 당일 활동 상태머신: `READY → ATTENDANCE_OPEN → ATTENDANCE_CLOSED → TEAM_CREATED → ACTIVITY_CLOSED`
 - 출석 인원 기반 랜덤 팀 편성(Fisher-Yates), 팀별 인원 지정, 팀원 이동, 확정
-- 월간 캘린더 개인 출석 기록, 개최일 기준 출석률, 출석왕 랭킹(전체/이번 학기/이번 달, 공동 순위)
-- 회비 기간·납부 관리, Google Sheets 사용 내역 링크
+- 월간 캘린더 개인 출석 기록, 개최일 기준 출석률, 홈 학기 출석 통계(순위 포함)
+- 회비 기간·납부 관리(관리자), 홈에 내 회비 납부 상태 표시
+- 하단 탭 홈·MY 두 개(+관리자 전용 ⚙ 탭), 홈에 오늘 나의 팀 강조 카드
 - ADMIN / MEMBER 역할 구분 — 화면 숨김과 별도로 **서비스 레이어에서 서버 권한 검증**
 - 관리자 작업 AuditLog, 주요 파라미터는 DB Setting으로 관리
 
@@ -29,7 +30,7 @@ VolleyballClub.sln
 ├─ VolleyballClub.Web             # Blazor UI · Composition Root(Program.cs)
 │  └─ Components/
 │     ├─ Layout/  Pages/  Account/
-│     ├─ Attendance/  Teams/  Ranking/  Fees/
+│     ├─ Attendance/  Teams/  Fees/
 ├─ VolleyballClub.Application     # 공개 계약: 서비스 인터페이스 · DTO · 예외
 ├─ VolleyballClub.Domain          # 엔티티 · 열거형 · 학기/KST 규칙 (의존성 없음)
 ├─ VolleyballClub.Infrastructure  # EF Core DbContext · 서비스 구현 · Identity · Seed
@@ -111,7 +112,10 @@ Development 환경 첫 기동 시 자동 생성(멱등 — 사용자가 이미 �
 
 ### MEMBER
 
-로그인 → OTP 출석 → 오늘 팀 확인 → 출석왕 순위 → MY(프로필·월간 캘린더·출석률) → 회비 납부 여부/사용 내역 링크
+하단 탭은 **홈·MY** 두 개(관리자에게만 ⚙ 관리자 탭 추가).
+로그인 → OTP 출석 → 홈에서 내 팀 확인(강조 카드)·이번 학기 출석/순위/회비 상태 → MY(프로필·월간 캘린더·출석률·로그아웃)
+
+> 팀 전체 목록·출석왕 순위 페이지·회비 페이지·Google Sheets 사용 내역 링크는 2026-10-02 요청으로 제거되었다. 홈에는 내 팀·학기 출석 통계·회비 납부 상태 카드가 표시된다.
 
 ### ADMIN (부원 기능 +)
 

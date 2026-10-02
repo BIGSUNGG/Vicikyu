@@ -608,6 +608,20 @@ table.grid-table {
 	white-space: pre-line;
 }
 
+/* 홈 히어로 팀 카드 — 오늘 나의 팀 강조 */
+.team-hero {
+	background: linear-gradient(135deg, #fff7ed, #ffedd5);
+	border: 2px solid var(--vb-primary);
+}
+
+.team-hero .card-value {
+	font-size: 1.9rem;
+}
+
+.team-hero .team-member-chip {
+	background: #fff;
+}
+
 /* 페이지 제목/빈 상태 */
 .page-title {
 	font-size: 1.25rem;

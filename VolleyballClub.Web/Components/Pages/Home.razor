@@ -38,7 +38,7 @@ else
 
 @if (myTeam is not null)
 {
-    <div class="card">
+    <div class="card team-hero">
         <h2 class="card-title">🏐 오늘 나는</h2>
         <div class="card-value" style="color:var(--vb-primary-dark)">@myTeam.Name</div>
         <div style="margin-top:8px">
@@ -48,7 +48,6 @@ else
                 <span class="team-member-chip @(isMine ? "mine" : "")">@teammate.Name@(teammate.IsGuest ? " (게스트)" : "")@(isMine ? " ★" : "")</span>
             }
         </div>
-        <a href="/teams" class="btn-ghost btn-block" style="margin-top:12px">전체 팀 보기</a>
     </div>
 }
 
