@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L3 · 컴팩트 리스트 — 오늘 출석 · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L3 · 컴팩트 리스트</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="top-bar">
+            <div>
+              <div class="tb-title">오늘 출석</div>
+              <div class="tb-sub">2026년 3월 26일 목요일</div>
+            </div>
+            <span
+              class="tb-badge"
+              style="
+                background: var(--mint-tint);
+                color: #0d9668;
+                border-color: #a7f3d0;
+              "
+              >출석 중</span
+            >
+          </header>
+
+          <main class="app-content" style="padding-bottom: 0">
+            <div class="list-card">
+              <div class="row">
+                <div class="r-icon">📅</div>
+                <div class="r-main">
+                  <div class="r-title">오늘 운동</div>
+                  <div class="r-sub">3월 26일 목요일 · 출석 진행 중</div>
+                </div>
+                <div class="r-right">
+                  <span class="badge badge-green">출석 중</span>
+                </div>
+              </div>
+              <div class="row">
+                <div class="r-icon">ℹ️</div>
+                <div class="r-main">
+                  <div class="r-title">OTP 안내</div>
+                  <div class="r-sub">
+                    체육관에 게시된 4자리 OTP를 입력하세요
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p class="note">
+              OTP가 맞지 않으면 회장에게 문의하세요<br />출석 마감 후에는 팀이
+              편성됩니다
+            </p>
+
+            <div class="sheet-space"></div>
+          </main>
+
+          <div class="sheet">
+            <div class="sh-label">오늘 출석 OTP</div>
+            <div class="sh-sub">4자리를 모두 입력하면 확인할 수 있습니다</div>
+            <div class="otp-line">
+              <div class="otp-box filled">4</div>
+              <div class="otp-box filled">7</div>
+              <div class="otp-box"></div>
+              <div class="otp-box"></div>
+            </div>
+            <button type="button" class="btn-primary">출석 확인</button>
+          </div>
+
+          <nav class="bottom-nav">
+            <a class="nav-item active" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

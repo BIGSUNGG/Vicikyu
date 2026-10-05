@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L4 · 세그먼트 탭 — 홈 · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L4 · 세그먼트 탭</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="app-header">
+            <div class="ah-row">
+              <div>
+                <div class="ah-title">홈</div>
+                <div class="ah-sub">2026년 3월 26일 목요일</div>
+              </div>
+              <span class="badge badge-orange">팀 확정</span>
+            </div>
+            <div class="segment">
+              <button type="button" class="seg-btn active">오늘</button>
+              <button type="button" class="seg-btn">통계</button>
+              <button type="button" class="seg-btn">회비</button>
+            </div>
+          </header>
+
+          <main class="app-content">
+            <div class="hero-card">
+              <div class="hc-label">🏐 오늘 나는</div>
+              <div class="hc-team">B팀</div>
+              <div class="chips">
+                <span class="team-member-chip mine">김민서 ★</span>
+                <span class="team-member-chip">이지훈</span>
+                <span class="team-member-chip">박서연</span>
+                <span class="team-member-chip">최도현</span>
+                <span class="team-member-chip">정하늘</span>
+                <span class="team-member-chip">한지민 (게스트)</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="card-title">✅ 오늘 운동 · 출석</h2>
+              <div class="chips" style="gap: 10px">
+                <span
+                  class="badge badge-orange"
+                  style="font-size: 0.78rem; padding: 7px 14px"
+                  >📅 3월 26일 목요일</span
+                >
+                <span
+                  class="badge badge-green"
+                  style="font-size: 0.78rem; padding: 7px 14px"
+                  >✅ 18:32 출석 완료</span
+                >
+              </div>
+            </div>
+
+            <p class="note">
+              통계 · 회비 탭을 누르면 해당 내용이 이 영역에 표시됩니다<br />(시안에서는
+              오늘 탭 상태만 정적으로 표현)
+            </p>
+          </main>
+
+          <nav class="bottom-nav">
+            <a class="nav-item active" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F3 · 나이트 매치 — 출석 관리 · 배구부 최종 조합 시안</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="variant-nav">
+	<a class="back" href="../index.html">← 전체 시안</a>
+	<span class="vname">F3 · 나이트 매치</span>
+	<a href="login.html">로그인</a>
+	<a href="home.html">홈</a>
+	<a href="attendance.html">출석</a>
+	<a href="team.html">팀</a>
+	<a href="my.html">MY</a>
+	<a href="admin.html">⚙대시</a>
+	<a href="admin-attendance.html">⚙출석</a>
+	<a href="admin-teams.html">⚙팀</a>
+	<a href="admin-members.html">⚙회원</a>
+</nav>
+
+<div class="stage">
+	<div class="phone">
+		<div class="screen">
+			<header class="app-header">
+				<div class="ah-row">
+					<div>
+						<div class="ah-title">📋 출석 관리</div>
+						<div class="ah-sub">2026년 3월 26일 목요일 · 직접 출석/취소</div>
+					</div>
+					<span class="badge badge-green">출석 중</span>
+				</div>
+				<div class="segment">
+					<a class="seg-btn" href="admin.html" style="text-decoration:none;text-align:center">대시보드</a>
+					<a class="seg-btn active" href="admin-attendance.html" style="text-decoration:none;text-align:center">출석 관리</a>
+					<a class="seg-btn" href="admin-teams.html" style="text-decoration:none;text-align:center">팀 뽑기</a>
+					<a class="seg-btn" href="admin-members.html" style="text-decoration:none;text-align:center">부원 관리</a>
+				</div>
+			</header>
+
+			<main class="app-content">
+				<div class="list-card" style="padding:12px 14px">
+					<div class="field" style="margin:0">
+						<input type="search" placeholder="이름 / 학번 검색">
+					</div>
+				</div>
+
+				<div class="list-card">
+					<div class="row" style="padding-bottom:6px">
+						<div class="section-divider" style="border:none;margin:0;padding:0 2px">오늘 출석 14명 / 전체 24명</div>
+					</div>
+					<div class="row">
+						<div class="r-icon">✅</div>
+						<div class="r-main">
+							<div class="r-title">김민서</div>
+							<div class="r-sub">202312345 · 체육교육과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-green">18:32</span></div>
+						<div class="toggle on"></div>
+					</div>
+					<div class="row">
+						<div class="r-icon">✅</div>
+						<div class="r-main">
+							<div class="r-title">이지훈</div>
+							<div class="r-sub">202311222 · 사회체육과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-green">18:35</span></div>
+						<div class="toggle on"></div>
+					</div>
+					<div class="row">
+						<div class="r-icon">✅</div>
+						<div class="r-main">
+							<div class="r-title">박서연</div>
+							<div class="r-sub">202415521 · 국어교육과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-green">18:41</span></div>
+						<div class="toggle on"></div>
+					</div>
+					<div class="row">
+						<div class="r-icon">⏳</div>
+						<div class="r-main">
+							<div class="r-title">강도윤</div>
+							<div class="r-sub">202209874 · 컴퓨터공학과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-gray">미출석</span></div>
+						<div class="toggle"></div>
+					</div>
+					<div class="row">
+						<div class="r-icon">⏳</div>
+						<div class="r-main">
+							<div class="r-title">신예은</div>
+							<div class="r-sub">202510032 · 경영학과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-gray">미출석</span></div>
+						<div class="toggle"></div>
+					</div>
+					<div class="row">
+						<div class="r-icon">⏳</div>
+						<div class="r-main">
+							<div class="r-title">오지호</div>
+							<div class="r-sub">202417701 · 화학과</div>
+						</div>
+						<div class="r-right"><span class="badge badge-gray">미출석</span></div>
+						<div class="toggle"></div>
+					</div>
+				</div>
+
+				<p class="note">토글로 직접 출석 처리 · 출석 취소 시 확인 창이 뜹니다<br>팀 편성 완료 후 취소는 팀 영향 안내 후 진행됩니다</p>
+			</main>
+
+			<nav class="bottom-nav">
+				<a class="nav-item" href="home.html"><span class="nav-icon">🏠</span>홈</a>
+				<a class="nav-item" href="my.html"><span class="nav-icon">👤</span>MY</a>
+				<a class="nav-item active" href="admin.html"><span class="nav-icon">⚙️</span>관리자</a>
+			</nav>
+		</div>
+	</div>
+</div>
+</body>
+</html>

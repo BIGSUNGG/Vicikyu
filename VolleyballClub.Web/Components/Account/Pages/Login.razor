@@ -12,14 +12,23 @@
 
 <PageTitle>로그인 · 배구부</PageTitle>
 
-<div class="login-wrap">
+<div class="login-top">
+    <div>
+        <div class="tb-title">🏐 배구부</div>
+        <div class="tb-sub">당일 출석과 팀 편성, 한 번에</div>
+    </div>
+</div>
+
+<div class="login-mini">
     <div class="login-logo">🏐</div>
     <h1 class="login-title">배구부</h1>
     <p class="login-sub">학번과 비밀번호로 로그인하세요</p>
+</div>
 
-    <StatusMessage Message="@errorMessage" />
-    <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="login-form">
-        <DataAnnotationsValidator />
+<StatusMessage Message="@errorMessage" />
+<EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="login-form">
+    <DataAnnotationsValidator />
+    <div class="form-list">
         <div class="field">
             <label for="student-number" class="form-label">학번</label>
             <InputText @bind-Value="Input.StudentNumber" id="student-number" class="form-control" autocomplete="username" aria-required="true" placeholder="202512345" />
@@ -30,9 +39,11 @@
             <InputText type="password" @bind-Value="Input.Password" id="password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="비밀번호" />
             <ValidationMessage For="() => Input.Password" class="text-danger" />
         </div>
-        <button type="submit" class="btn-primary btn-block">로그인</button>
-    </EditForm>
-</div>
+    </div>
+    <div style="height:14px"></div>
+    <button type="submit" class="btn-primary btn-block">로그인</button>
+</EditForm>
+<p class="empty" style="text-align:center;margin-top:16px">계정 문의는 회장에게</p>
 
 @code {
     private string? errorMessage;

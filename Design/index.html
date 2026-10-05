@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>배구부 앱 디자인 시안 — 전체 보기</title>
+    <style>
+      :root {
+        --ink: #1f2937;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          "Pretendard",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "Noto Sans KR",
+          Roboto,
+          sans-serif;
+        background: #fafafa;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 48px 24px 90px;
+      }
+      h1 {
+        font-size: 1.7rem;
+        letter-spacing: -0.03em;
+        margin: 0 0 6px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.92rem;
+        margin: 0 0 36px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+        gap: 22px;
+      }
+      .vcard {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .vhead {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .vnum {
+        width: 40px;
+        height: 40px;
+        border-radius: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 1rem;
+        color: #fff;
+        flex: none;
+      }
+      .vname {
+        font-size: 1.15rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .vtag {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .vdesc {
+        font-size: 0.86rem;
+        line-height: 1.65;
+        color: #374151;
+        margin: 0;
+      }
+      .swatches {
+        display: flex;
+        gap: 6px;
+      }
+      .sw {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 2px;
+      }
+      .links a {
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #374151;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+      }
+      .links a:hover {
+        background: #f3f4f6;
+      }
+      .links a.main {
+        background: #111827;
+        color: #fff;
+        border-color: #111827;
+      }
+      .foot {
+        margin-top: 40px;
+        font-size: 0.78rem;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>🏐 배구부 앱 디자인 시안</h1>
+      <p class="sub">
+        스타일 시안(V1~V4)은 색감·무드 탐색, 레이아웃 시안(L1~L4)은 바운스
+        클럽(V4) 색감을 고정하고 화면 구조만 변형한 탐색입니다. 각 시안당 회원
+        핵심 화면 5장.
+      </p>
+
+      <div class="grid">
+        <div class="vcard">
+          <div class="vhead">
+            <div
+              class="vnum"
+              style="background: linear-gradient(135deg, #ea580c, #fb923c)"
+            >
+              1
+            </div>
+            <div>
+              <div class="vname">코트 오렌지</div>
+              <div class="vtag">현재 MVP 오렌지 UI의 개선 진화판</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #f97316"></div>
+            <div class="sw" style="background: #ea580c"></div>
+            <div class="sw" style="background: #fff7ed"></div>
+            <div class="sw" style="background: #16a34a"></div>
+            <div class="sw" style="background: #1f2937"></div>
+          </div>
+          <p class="vdesc">
+            지금 서비스의 오렌지 아이덴티티를 유지하면서 그라디언트 헤더, 큰
+            라운딩, 포인트 섀도우로 완성도를 높인 방향. 익숙함을 기준으로 개선을
+            검토할 때 기준점이 됩니다.
+          </p>
+          <div class="links">
+            <a class="main" href="variant-1-court/home.html">홈부터 보기</a>
+            <a href="variant-1-court/login.html">로그인</a>
+            <a href="variant-1-court/attendance.html">OTP 출석</a>
+            <a href="variant-1-court/team.html">팀 결과</a>
+            <a href="variant-1-court/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div
+              class="vnum"
+              style="
+                background: linear-gradient(135deg, #0d1526, #1c2742);
+                color: #a3e635;
+              "
+            >
+              2
+            </div>
+            <div>
+              <div class="vname">나이트 매치</div>
+              <div class="vtag">다크 스포츠 · 네온 라임 액센트</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #0d1526"></div>
+            <div class="sw" style="background: #141e36"></div>
+            <div class="sw" style="background: #a3e635"></div>
+            <div class="sw" style="background: #22d3ee"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+          </div>
+          <p class="vdesc">
+            경기장 야간 조명 컨셉. 어두운 배경에 라임/시안 네온으로 상태를
+            강조하고 대문자 레이블·모노숫자로 스포츠 통계 앱의 느낌을 살린 방향.
+            팀 히어로와 OTP가 가장 강하게 보입니다.
+          </p>
+          <div class="links">
+            <a class="main" href="variant-2-night/home.html">홈부터 보기</a>
+            <a href="variant-2-night/login.html">로그인</a>
+            <a href="variant-2-night/attendance.html">OTP 출석</a>
+            <a href="variant-2-night/team.html">팀 결과</a>
+            <a href="variant-2-night/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #4f46e5">3</div>
+            <div>
+              <div class="vname">화이트 시트</div>
+              <div class="vtag">클린 미니멀 · 여백 중심</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #ffffff"></div>
+            <div class="sw" style="background: #f4f4f7"></div>
+            <div class="sw" style="background: #e8e9ee"></div>
+            <div class="sw" style="background: #4f46e5"></div>
+            <div class="sw" style="background: #111318"></div>
+          </div>
+          <p class="vdesc">
+            색을 최소화하고 헤어라인과 여백으로 정보를 정리하는 방향. OTP는
+            언더라인 입력으로, 배지는 절제된 톤으로 바꿨습니다. 운영 도구로서의
+            담백함을 중시할 때 적합합니다.
+          </p>
+          <div class="links">
+            <a class="main" href="variant-3-sheet/home.html">홈부터 보기</a>
+            <a href="variant-3-sheet/login.html">로그인</a>
+            <a href="variant-3-sheet/attendance.html">OTP 출석</a>
+            <a href="variant-3-sheet/team.html">팀 결과</a>
+            <a href="variant-3-sheet/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div
+              class="vnum"
+              style="background: linear-gradient(135deg, #fb7185, #fbbf24)"
+            >
+              4
+            </div>
+            <div>
+              <div class="vname">바운스 클럽</div>
+              <div class="vtag">소프트 캐주얼 · 파스텔 캔디</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+          </div>
+          <p class="vdesc">
+            동아리의 친근함을 최우선으로 한 방향. 굵은 라운딩과 파스텔 로테이션
+            칩, 눌리는 캔디 버튼, 도트 패턴 배경으로 장난기를 더했습니다. 부원
+            모집·홍보 인상에 유리합니다.
+          </p>
+          <div class="links">
+            <a class="main" href="variant-4-bounce/home.html">홈부터 보기</a>
+            <a href="variant-4-bounce/login.html">로그인</a>
+            <a href="variant-4-bounce/attendance.html">OTP 출석</a>
+            <a href="variant-4-bounce/team.html">팀 결과</a>
+            <a href="variant-4-bounce/my.html">MY</a>
+          </div>
+        </div>
+      </div>
+
+      <h2
+        style="font-size: 1.25rem; letter-spacing: -0.02em; margin: 48px 0 18px"
+      >
+        🎨 레이아웃 시안 — 바운스 클럽 색감 고정
+      </h2>
+      <div class="grid">
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #fbbf24; color: #3b3430">
+              L1
+            </div>
+            <div>
+              <div class="vname">타일 보드</div>
+              <div class="vtag">히어로 밴드 + 2칸 타일 그리드</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #fb7185"></div>
+          </div>
+          <p class="vdesc">
+            홈은 물결 히어로 밴드 + 2×2 타일 대시보드 + 팀 요약 행, 팀 화면은
+            코트 라인 다이어그램에 팀을 배치, OTP는 2×2 원형 배치, 로그인은 상단
+            컬러 모자이크. 정보를 한눈에 스캔하는 보드형.
+          </p>
+          <div class="links">
+            <a class="main" href="layout-1-board/home.html">홈부터 보기</a>
+            <a href="layout-1-board/login.html">로그인</a>
+            <a href="layout-1-board/attendance.html">OTP 출석</a>
+            <a href="layout-1-board/team.html">팀 결과</a>
+            <a href="layout-1-board/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div
+              class="vnum"
+              style="background: linear-gradient(135deg, #fb7185, #fbbf24)"
+            >
+              L2
+            </div>
+            <div>
+              <div class="vname">헤로 스토리</div>
+              <div class="vtag">풀블리드 헤로 + 타임라인 + 캐러셀</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #fda4af"></div>
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+          </div>
+          <p class="vdesc">
+            홈은 곡선 히어로에서 시작해 오늘의 흐름을 세로 타임라인으로 서사
+            전개, 팀은 가로 스와이프 캐러셀, 출석은 3단계 스탬프 진행 표시, MY는
+            출석률 도넛 링. 감성·스토리 중심 구성.
+          </p>
+          <div class="links">
+            <a class="main" href="layout-2-story/home.html">홈부터 보기</a>
+            <a href="layout-2-story/login.html">로그인</a>
+            <a href="layout-2-story/attendance.html">OTP 출석</a>
+            <a href="layout-2-story/team.html">팀 결과</a>
+            <a href="layout-2-story/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #38bdf8">L3</div>
+            <div>
+              <div class="vname">컴팩트 리스트</div>
+              <div class="vtag">행 기반 리스트 + 바텀시트 + 아코디언</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #ffffff"></div>
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #f0e6d8"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+          </div>
+          <p class="vdesc">
+            홈은 섹션 헤더 + 정보 행 리스트로 밀도 높게, 출석은 화면 하단 고정
+            바텀시트에서 OTP 입력, 팀은 아코디언(나의 팀 펼침), MY는 주간 스트립
+            + 월간 캘린더. 한 화면에 많은 정보를 담는 운영 친화형.
+          </p>
+          <div class="links">
+            <a class="main" href="layout-3-list/home.html">홈부터 보기</a>
+            <a href="layout-3-list/login.html">로그인</a>
+            <a href="layout-3-list/attendance.html">OTP 출석</a>
+            <a href="layout-3-list/team.html">팀 결과</a>
+            <a href="layout-3-list/my.html">MY</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #a78bfa">L4</div>
+            <div>
+              <div class="vname">세그먼트 탭</div>
+              <div class="vtag">탭 전환 + 커스텀 키패드 + 아바타 그리드</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+            <div class="sw" style="background: #3b3430"></div>
+          </div>
+          <p class="vdesc">
+            홈은 오늘/통계/회비 상단 세그먼트로 전환, 출석은 숫자 키패드로 직접
+            입력, 팀은 세그먼트로 팀을 골라 아바타 그리드로 확인, MY는 캘린더
+            헤드라인 + 기간 세그먼트. 앱스러운 인터랙션 강조형.
+          </p>
+          <div class="links">
+            <a class="main" href="layout-4-tabs/home.html">홈부터 보기</a>
+            <a href="layout-4-tabs/login.html">로그인</a>
+            <a href="layout-4-tabs/attendance.html">OTP 출석</a>
+            <a href="layout-4-tabs/team.html">팀 결과</a>
+            <a href="layout-4-tabs/my.html">MY</a>
+          </div>
+        </div>
+      </div>
+
+      <h2
+        style="font-size: 1.25rem; letter-spacing: -0.02em; margin: 48px 0 18px"
+      >
+        🎯 최종 조합 시안 — 홈·팀 L1 · 로그인 L3 · 출석 L4 · MY L2 · 관리자 4장
+      </h2>
+      <p class="sub" style="margin: -6px 0 18px">
+        혼합 레이아웃을 고정하고 색감만 4가지로 뽑은 최종 후보입니다. 각 시안당
+        회원 5장 + 관리자 4장(대시보드·출석 관리·팀 뽑기·부원 관리).
+      </p>
+      <div class="grid">
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #fb7185">F1</div>
+            <div>
+              <div class="vname">바운스 클럽 (기준)</div>
+              <div class="vtag">파스텔 캔디 · 도트 패턴 · 눌리는 버튼</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+          </div>
+          <p class="vdesc">
+            레이아웃 탐색에서 검증한 바운스 색감 그대로. 굵은 라운딩과 캔디
+            버튼의 원안으로, 다른 색감과 비교하는 기준점입니다.
+          </p>
+          <div class="links">
+            <a class="main" href="final-1-bounce/home.html">홈부터</a>
+            <a href="final-1-bounce/login.html">로그인</a>
+            <a href="final-1-bounce/attendance.html">출석</a>
+            <a href="final-1-bounce/team.html">팀</a>
+            <a href="final-1-bounce/my.html">MY</a>
+            <a href="final-1-bounce/admin.html">⚙대시</a>
+            <a href="final-1-bounce/admin-attendance.html">⚙출석</a>
+            <a href="final-1-bounce/admin-teams.html">⚙팀</a>
+            <a href="final-1-bounce/admin-members.html">⚙회원</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div
+              class="vnum"
+              style="background: linear-gradient(135deg, #ea580c, #fb923c)"
+            >
+              F2
+            </div>
+            <div>
+              <div class="vname">코트 오렌지</div>
+              <div class="vtag">현재 서비스 오렌지 아이덴티티 계승</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #f97316"></div>
+            <div class="sw" style="background: #ea580c"></div>
+            <div class="sw" style="background: #fff7ed"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #1f2937"></div>
+          </div>
+          <p class="vdesc">
+            지금 MVP가 쓰는 오렌지를 그대로 가져와 혼합 레이아웃에 이식. 캔디
+            그래픽은 부드러운 섀도우로 완화해 운영 도구로서의 안정감을
+            높였습니다.
+          </p>
+          <div class="links">
+            <a class="main" href="final-2-orange/home.html">홈부터</a>
+            <a href="final-2-orange/login.html">로그인</a>
+            <a href="final-2-orange/attendance.html">출석</a>
+            <a href="final-2-orange/team.html">팀</a>
+            <a href="final-2-orange/my.html">MY</a>
+            <a href="final-2-orange/admin.html">⚙대시</a>
+            <a href="final-2-orange/admin-attendance.html">⚙출석</a>
+            <a href="final-2-orange/admin-teams.html">⚙팀</a>
+            <a href="final-2-orange/admin-members.html">⚙회원</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #0d1526; color: #a3e635">
+              F3
+            </div>
+            <div>
+              <div class="vname">나이트 매치</div>
+              <div class="vtag">다크 스포츠 · 네온 라임</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #0d1526"></div>
+            <div class="sw" style="background: #141e36"></div>
+            <div class="sw" style="background: #a3e635"></div>
+            <div class="sw" style="background: #22d3ee"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+          </div>
+          <p class="vdesc">
+            야간 경기 조명 컨셉을 혼합 레이아웃에 이식. OTP와 팀 히어로가
+            네온으로 강조되고, 관리자 OTP 대형 표시가 가장 강하게 보입니다.
+          </p>
+          <div class="links">
+            <a class="main" href="final-3-night/home.html">홈부터</a>
+            <a href="final-3-night/login.html">로그인</a>
+            <a href="final-3-night/attendance.html">출석</a>
+            <a href="final-3-night/team.html">팀</a>
+            <a href="final-3-night/my.html">MY</a>
+            <a href="final-3-night/admin.html">⚙대시</a>
+            <a href="final-3-night/admin-attendance.html">⚙출석</a>
+            <a href="final-3-night/admin-teams.html">⚙팀</a>
+            <a href="final-3-night/admin-members.html">⚙회원</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #22c55e">F4</div>
+            <div>
+              <div class="vname">그린 코트</div>
+              <div class="vtag">신규 팔레트 · 배구 코트 그린</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #f2faf4"></div>
+            <div class="sw" style="background: #22c55e"></div>
+            <div class="sw" style="background: #86efac"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+          </div>
+          <p class="vdesc">
+            배구 코트 그린을 주제로 한 새 팔레트. 코트 다이어그램(팀 화면)이
+            실제 코트 색으로 표현되어 주제 일관성이 가장 높습니다.
+          </p>
+          <div class="links">
+            <a class="main" href="final-4-green/home.html">홈부터</a>
+            <a href="final-4-green/login.html">로그인</a>
+            <a href="final-4-green/attendance.html">출석</a>
+            <a href="final-4-green/team.html">팀</a>
+            <a href="final-4-green/my.html">MY</a>
+            <a href="final-4-green/admin.html">⚙대시</a>
+            <a href="final-4-green/admin-attendance.html">⚙출석</a>
+            <a href="final-4-green/admin-teams.html">⚙팀</a>
+            <a href="final-4-green/admin-members.html">⚙회원</a>
+          </div>
+        </div>
+      </div>
+
+      <h2
+        style="font-size: 1.25rem; letter-spacing: -0.02em; margin: 48px 0 18px"
+      >
+        📚 기록 페이지 시안 — 하단 탭 확장(홈 · 기록 · MY · 관리자)
+      </h2>
+      <p class="sub" style="margin: -6px 0 18px">
+        L1(바운스) 색감 + L2 홈 레이아웃(풀블리드 헤로 + 타임라인)을 고정하고,
+        기록 페이지의 콘텐츠 구성만 4가지로 탐색한 시안입니다.
+      </p>
+      <div class="grid">
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #fb7185">R1</div>
+            <div>
+              <div class="vname">월간 타임라인</div>
+              <div class="vtag">날짜별 활동 이력</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+          </div>
+          <p class="vdesc">
+            히어로에 이번 달 요약(3월 8회 · 학기 12회 · 5위), 본문은 최근 순
+            세로 타임라인. 각 활동에 배정 팀을 팀색 점 + 배지로 표시하고 하단에
+            “이전 기록 더 보기”.
+          </p>
+          <div class="links">
+            <a class="main" href="records/records-1.html">R1 보기</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #38bdf8">R2</div>
+            <div>
+              <div class="vname">팀 히스토리</div>
+              <div class="vtag">팀별 배정 누적 + 최근 배정</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+            <div class="sw" style="background: #ffffff"></div>
+            <div class="sw" style="background: #f4ead9"></div>
+          </div>
+          <p class="vdesc">
+            “B팀과 가장 많이” 같은 히어로 카피 + 팀별 배정 횟수 바(A 4 · B 5 · C
+            3) + 최근 배정 타임라인. 랜덤 편성 결과를 재미 요소로 소비하는 구성.
+          </p>
+          <div class="links">
+            <a class="main" href="records/records-2.html">R2 보기</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #fbbf24; color: #3b3430">
+              R3
+            </div>
+            <div>
+              <div class="vname">학기 아카이브</div>
+              <div class="vtag">통산 34회 · 학기별 모아보기</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #fbbf24"></div>
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+            <div class="sw" style="background: #3b3430"></div>
+          </div>
+          <p class="vdesc">
+            통산 34회 히어로 + 학기별 블록(2026-1 진행 중 12회 · 2025-2 14회 ·
+            2025-1 8회) + 월별 추이 바. 가입부터 이어지는 커리어 뷰.
+          </p>
+          <div class="links">
+            <a class="main" href="records/records-3.html">R3 보기</a>
+          </div>
+        </div>
+
+        <div class="vcard">
+          <div class="vhead">
+            <div class="vnum" style="background: #a78bfa">R4</div>
+            <div>
+              <div class="vname">연속 기록</div>
+              <div class="vtag">스트릭 · 8연속 출석 중</div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="sw" style="background: #34d399"></div>
+            <div class="sw" style="background: #fb7185"></div>
+            <div class="sw" style="background: #fef9f2"></div>
+            <div class="sw" style="background: #a78bfa"></div>
+            <div class="sw" style="background: #38bdf8"></div>
+          </div>
+          <p class="vdesc">
+            “8연속 출석 중 · 개인 최고 9연속” 히어로 + 연속 도트 + 연속 횟수가
+            누적되는 타임라인. 게임적 동기부여 중심 구성(스트릭 산정 로직은 구현
+            시 확정 필요).
+          </p>
+          <div class="links">
+            <a class="main" href="records/records-4.html">R4 보기</a>
+          </div>
+        </div>
+      </div>
+
+      <p class="foot">
+        · 기록 시안(R1~R4)은 모두 MVP 보유 데이터(날짜·출석 시간·배정 팀·학기
+        통계·순위)만으로 구성했습니다. 단 R4의 연속 기록(스트릕) 집계는 현재
+        MVP에 없는 계산이라 구현 시 규칙 확정이 필요합니다.<br />
+        · 최종 조합(F1~F4)은 레이아웃을 고정(홈·팀 L1 / 로그인 L3 / 출석 L4 / MY
+        L2)하고 색감만 교체한 후보군입니다. 관리자 4장은 상태머신 제어(출석
+        시작→OTP→마감→팀 뽑기→확정)를 실제 흐름대로 표현했습니다.<br />
+        · 레이아웃 시안(L1~L4)은 모두 바운스 클럽(V4) 색감을 공유합니다 — 색
+        토큰이 동일하므로 마음에 드는 레이아웃 언어를 고르면 그대로 조합할 수
+        있습니다.<br />
+        · 모든 시안은 동일한 HTML 골격 + 시안별 CSS로 제작되어, 방향 확정 후
+        실제 Blazor(MudBlazor) 화면에 토큰(색·라운딩·타이포)만 이식하면 되는
+        구조입니다.<br />
+        · 화면 속 데이터(팀 편성, 출석 기록 등)는 모두 가상 예시이며, 상태
+        흐름은 실제 서비스 상태머신 (출석 중 → 팀 확정 → 종료)를 따릅니다.
+      </p>
+    </div>
+  </body>
+</html>

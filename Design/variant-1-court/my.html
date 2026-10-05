@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>V1 · 코트 오렌지 — MY · 배구부 디자인 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">V1 · 코트 오렌지</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="app-header">
+            <div class="header-row">
+              <span class="app-title">👤 MY</span>
+              <span class="app-sub">김민서</span>
+            </div>
+          </header>
+
+          <main class="app-content">
+            <div class="card">
+              <div class="card-row">
+                <div style="display: flex; align-items: center; gap: 12px">
+                  <div class="profile-ava">김</div>
+                  <div>
+                    <div class="card-value">김민서</div>
+                    <div class="member-meta">202312345 · 체육교육과</div>
+                  </div>
+                </div>
+                <span class="badge badge-gray">부원</span>
+              </div>
+              <div class="member-meta" style="margin-top: 10px">
+                가입일 2025년 3월 2일 · 총 출석 34회
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="cal-nav">
+                <button type="button">◀</button>
+                <span class="cal-title">2026년 3월</span>
+                <button type="button">▶</button>
+              </div>
+              <table class="calendar">
+                <tr>
+                  <th class="sun">일</th>
+                  <th>월</th>
+                  <th>화</th>
+                  <th>수</th>
+                  <th>목</th>
+                  <th>금</th>
+                  <th>토</th>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">1</button></td>
+                  <td><button type="button" class="day-cell">2</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      3<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">4</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      5<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">6</button></td>
+                  <td><button type="button" class="day-cell">7</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">8</button></td>
+                  <td><button type="button" class="day-cell">9</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      10<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">11</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      12<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">13</button></td>
+                  <td><button type="button" class="day-cell">14</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">15</button></td>
+                  <td><button type="button" class="day-cell">16</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      17<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">18</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      19<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">20</button></td>
+                  <td><button type="button" class="day-cell">21</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">22</button></td>
+                  <td><button type="button" class="day-cell">23</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      24<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">25</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended selected">
+                      26<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">27</button></td>
+                  <td><button type="button" class="day-cell">28</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">29</button></td>
+                  <td><button type="button" class="day-cell">30</button></td>
+                  <td><button type="button" class="day-cell">31</button></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              </table>
+              <div class="day-detail">
+                <div class="dd-date">2026년 3월 26일 목요일</div>
+                <div class="dd-info">✅ 출석 — 18:32 · B팀</div>
+              </div>
+            </div>
+
+            <div class="stat-row">
+              <div class="stat-box">
+                <div class="stat-label">이번 달</div>
+                <div class="stat-num">8회</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">이번 학기</div>
+                <div class="stat-num">12회</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">전체</div>
+                <div class="stat-num">34회</div>
+              </div>
+            </div>
+
+            <div class="btn-row">
+              <button type="button" class="btn-ghost">로그아웃</button>
+              <button type="button" class="btn-ghost">⚙ 관리자</button>
+            </div>
+          </main>
+
+          <nav class="bottom-nav">
+            <a class="nav-item" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item active" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

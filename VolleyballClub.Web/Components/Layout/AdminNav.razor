@@ -1,0 +1,33 @@
+<header class="hero-band">
+    <div class="hb-row">
+        <div class="hb-title">@Title</div>
+        @if (Badge is not null)
+        {
+            <span class="badge @BadgeClass">@Badge</span>
+        }
+    </div>
+    <div class="hb-sub">@Sub</div>
+</header>
+<nav class="segment">
+    <a class="seg-btn @(Active == "dashboard" ? "active" : "")" href="/admin">대시보드</a>
+    <a class="seg-btn @(Active == "attendance" ? "active" : "")" href="/admin/attendance">출석 관리</a>
+    <a class="seg-btn @(Active == "teams" ? "active" : "")" href="/admin/teams">팀 뽑기</a>
+    <a class="seg-btn @(Active == "members" ? "active" : "")" href="/admin/members">부원 관리</a>
+</nav>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = "";
+
+    [Parameter]
+    public string Sub { get; set; } = "";
+
+    [Parameter]
+    public string Active { get; set; } = "";
+
+    [Parameter]
+    public string? Badge { get; set; }
+
+    [Parameter]
+    public string BadgeClass { get; set; } = "badge-gray";
+}

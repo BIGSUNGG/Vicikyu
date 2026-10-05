@@ -217,6 +217,44 @@ public class AttendanceService(
         return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount);
     }
 
+    public async Task<MyRecordsDto> GetMyRecordsAsync(string userId, int year, int month)
+    {
+        var first = new DateOnly(year, month, 1);
+        var last = first.AddMonths(1).AddDays(-1);
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var activities = await db.Activities.AsNoTracking()
+            .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
+            .Select(a => new { a.Id, a.ActivityDate, a.Status })
+            .ToListAsync();
+
+        var myAttendances = await db.Attendances.AsNoTracking()
+            .Where(x => x.UserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
+            .Select(x => new { x.ActivityId, x.CheckedAt })
+            .ToListAsync();
+
+        var myTeams = await db.TeamMembers.AsNoTracking()
+            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last)
+            .Select(m => new { ActivityId = m.Team!.ActivityId, m.Team.Name })
+            .ToListAsync();
+
+        var records = activities
+            .OrderByDescending(a => a.ActivityDate)
+            .Select(a =>
+            {
+                var attendance = myAttendances.FirstOrDefault(x => x.ActivityId == a.Id);
+                return new ActivityRecordDto(
+                    a.ActivityDate,
+                    a.Status,
+                    attendance is not null,
+                    attendance?.CheckedAt,
+                    myTeams.FirstOrDefault(t => t.ActivityId == a.Id)?.Name);
+            })
+            .ToList();
+
+        return new MyRecordsDto(year, month, records, myAttendances.Count, activities.Count);
+    }
+
     public async Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId)
     {
         var (semStart, semEnd) = Semester.Of(KstClock.Today(timeProvider));

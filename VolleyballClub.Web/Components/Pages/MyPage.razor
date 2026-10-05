@@ -7,32 +7,56 @@
 
 <PageTitle>MY · 배구부</PageTitle>
 
-<h1 class="page-title">👤 MY</h1>
+<header class="hero-band">
+    <span class="hf-date">가입일 @Domain.KstClock.ToKstDateString(profile?.JoinedAt ?? DateTime.MinValue)</span>
+    <div class="hf-label">👤 MY</div>
+    <div class="hf-title">@(profile?.Name ?? "")</div>
+    <div class="hf-chips">
+        <span class="hf-chip">@(profile?.StudentNumber) · @(profile?.Department)</span>
+        <span class="hf-chip">@(profile?.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+    </div>
+</header>
 
-@if (profile is not null)
+@if (semesterStats is not null)
 {
     <div class="card">
-        <div class="card-row">
-            <div>
-                <div class="card-value">@profile.Name</div>
-                <div class="member-meta">@profile.StudentNumber · @profile.Department</div>
+        <div class="ring-wrap">
+            <div class="ring" style="background:conic-gradient(var(--vb-success) 0 @semesterStats.AttendanceRatePercent%, #f0e6d8 @semesterStats.AttendanceRatePercent% 100%)">
+                <div class="ring-in">
+                    <div class="ring-num">@semesterStats.AttendanceRatePercent%</div>
+                    <div class="ring-label">출석률</div>
+                </div>
             </div>
-            <span class="badge @(profile.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(profile.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+            <div class="ring-side">
+                <div class="ring-stat">
+                    <div class="rs-icon">🏆</div>
+                    <div>
+                        <div class="rs-label">현재 순위</div>
+                        <div class="rs-value">@(semesterStats.Rank)위 / @(semesterStats.TotalActiveMembers)명</div>
+                    </div>
+                </div>
+                <div class="ring-stat">
+                    <div class="rs-icon">📅</div>
+                    <div>
+                        <div class="rs-label">이번 학기 출석</div>
+                        <div class="rs-value">@(semesterStats.MyAttendances)회 (@(semesterStats.SemesterActivities)회 중)</div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="member-meta" style="margin-top:8px">가입일 @Domain.KstClock.ToKstDateString(profile.JoinedAt) · 총 출석 @(profile.TotalAttendance)회</div>
     </div>
 }
 
 <div class="card">
-    <div class="card-row" style="margin-bottom:10px">
-        <button type="button" class="btn-ghost btn-sm" @onclick="() => ShiftMonth(-1)">◀</button>
-        <span style="font-weight:800">@(calendar.Year)년 @(calendar.Month)월</span>
-        <button type="button" class="btn-ghost btn-sm" @onclick="() => ShiftMonth(1)">▶</button>
+    <div class="cal-nav">
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
+        <span class="cal-title">@(calendar.Year)년 @(calendar.Month)월</span>
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(1)">▶</button>
     </div>
 
     <table class="calendar">
         <tr>
-            <th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+            <th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
         </tr>
         @for (var week = 0; week < weeks.Count; week++)
         {
@@ -62,35 +86,34 @@
 
     @if (selectedDay is { } sel)
     {
-        <div style="margin-top:12px;padding:12px;background:#fff7ed;border-radius:12px">
-            <div style="font-weight:800">@sel.Date.ToString("yyyy년 M월 d일 dddd")</div>
+        <div class="day-detail">
+            <div class="dd-date">@sel.Date.ToString("yyyy년 M월 d일 dddd")</div>
             @if (sel.IsAttended)
             {
-                <div class="member-meta" style="margin-top:4px">
+                <div class="dd-info">
                     ✅ 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
                     @(sel.TeamName is not null ? $" · {sel.TeamName}" : "")
                 </div>
             }
             else
             {
-                <div class="member-meta" style="margin-top:4px">기록 없음</div>
+                <div class="dd-info">기록 없음</div>
             }
         </div>
     }
 
     <div class="btn-row" style="margin-top:14px">
-        <div class="card" style="margin:0;text-align:center">
+        <div class="card" style="margin:0;text-align:center;padding:12px 8px">
             <div class="card-title" style="margin-bottom:4px">이번 달</div>
             <div class="card-value" style="font-size:1.2rem">@(calendar.MonthCount)회</div>
         </div>
-        <div class="card" style="margin:0;text-align:center">
+        <div class="card" style="margin:0;text-align:center;padding:12px 8px">
             <div class="card-title" style="margin-bottom:4px">이번 학기</div>
             <div class="card-value" style="font-size:1.2rem">@(calendar.SemesterCount)회</div>
         </div>
-        <div class="card" style="margin:0;text-align:center">
-            <div class="card-title" style="margin-bottom:4px">전체</div>
-            <div class="card-value" style="font-size:1.2rem">@(calendar.TotalCount)회</div>
-        </div>
+    </div>
+    <div style="text-align:center;margin-top:10px">
+        <span class="member-meta">전체 @(calendar.TotalCount)회</span>
     </div>
 </div>
 
@@ -103,6 +126,7 @@
 
 @code {
     private ProfileDto? profile;
+    private MySemesterStatsDto? semesterStats;
     private MyCalendarDto calendar = new(0, 0, [], 0, 0, 0);
     private CalendarDayDto? selectedDay;
     private List<CalendarDayDto?[]> weeks = [];
@@ -114,6 +138,7 @@
     {
         myUserId = await Me.RequireUserIdAsync();
         profile = await Members.GetProfileAsync(myUserId);
+        semesterStats = await Attendance.GetMySemesterStatsAsync(myUserId);
         (year, month) = (DateTime.Now.Year, DateTime.Now.Month);
         await LoadCalendarAsync();
     }

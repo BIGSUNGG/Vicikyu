@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L2 · 헤로 스토리 — 오늘 출석 · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L2 · 헤로 스토리</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="hero-full">
+            <span class="hf-date">2026년 3월 26일 목요일</span>
+            <div class="hf-label">✅ 오늘 출석</div>
+            <div class="hf-title">OTP 입력</div>
+            <div class="hf-chips">
+              <span class="hf-chip">출석 중</span>
+            </div>
+          </header>
+
+          <main class="app-content">
+            <div class="card">
+              <div class="stamp-row">
+                <div class="stamp done">
+                  <div class="st-circle">✔</div>
+                  <div class="st-label">운동 시작</div>
+                </div>
+                <div class="stamp-line done"></div>
+                <div class="stamp now">
+                  <div class="st-circle">🔢</div>
+                  <div class="st-label">OTP 출석</div>
+                </div>
+                <div class="stamp-line"></div>
+                <div class="stamp">
+                  <div class="st-circle">🏐</div>
+                  <div class="st-label">팀 편성</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="otp-band">
+              <div class="otp-box filled">4</div>
+              <div class="otp-box filled">7</div>
+              <div class="otp-box"></div>
+              <div class="otp-box"></div>
+            </div>
+
+            <button type="button" class="btn-primary">출석 확인</button>
+
+            <p class="note">
+              체육관에 게시된 4자리 OTP를 입력하세요<br />OTP가 맞지 않으면
+              회장에게 문의 · 출석은 회장이 마감합니다
+            </p>
+          </main>
+
+          <nav class="bottom-nav">
+            <a class="nav-item active" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

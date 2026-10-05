@@ -19,6 +19,9 @@ public interface IAttendanceService
 
     Task<MyCalendarDto> GetMyCalendarAsync(string userId, int year, int month);
 
+    /// <summary>기록 페이지용: 해당 월의 모든 활동(최신순)에 내 출석·배정 팀·활동 상태를 묶어 반환한다.</summary>
+    Task<MyRecordsDto> GetMyRecordsAsync(string userId, int year, int month);
+
     Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId);
 
     Task<List<AttendanceRankingDto>> GetRankingAsync(RankingPeriod period, string? viewerUserId = null);

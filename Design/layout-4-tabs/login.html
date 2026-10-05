@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L4 · 세그먼트 탭 — 로그인 · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L4 · 세그먼트 탭</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="split-top">
+            <div class="logo">🏐</div>
+            <div class="app-name">배구부</div>
+            <div class="app-tag">당일 출석과 팀 편성, 한 번에</div>
+          </header>
+
+          <main class="app-content">
+            <div class="card" style="margin-top: -6px">
+              <div class="segment" style="margin: 0 0 14px">
+                <button type="button" class="seg-btn active">
+                  부원 로그인
+                </button>
+                <button type="button" class="seg-btn">관리자</button>
+              </div>
+              <div class="field">
+                <label for="student-number">학번</label>
+                <input
+                  id="student-number"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="202312345"
+                />
+              </div>
+              <div class="field">
+                <label for="password">비밀번호</label>
+                <input id="password" type="password" placeholder="비밀번호" />
+              </div>
+              <button type="button" class="btn-primary">로그인</button>
+            </div>
+            <p class="note">
+              역할은 계정에 지정된 대로 서버에서 구분됩니다 · 계정 문의는
+              회장에게
+            </p>
+          </main>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

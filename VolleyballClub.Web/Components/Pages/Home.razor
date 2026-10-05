@@ -9,81 +9,109 @@
 
 <PageTitle>홈 · 배구부</PageTitle>
 
-<h1 class="page-title">@DateString</h1>
+<header class="hero-band">
+    <div class="hb-label">🏐 오늘 나는</div>
+    @if (MyTeam is not null)
+    {
+        <div class="hb-title">@MyTeam.Name</div>
+    }
+    else if (today is not null && today.Status == ActivityStatus.AttendanceOpen)
+    {
+        <div class="hb-title">출석 중</div>
+    }
+    else
+    {
+        <div class="hb-title">일정 없음</div>
+    }
+    <div class="hb-sub">@DateString@(today is not null ? $" · {today.StatusText}" : "")</div>
+</header>
 
-@if (today is not null)
-{
-    <div class="card">
-        <div class="card-row">
-            <div>
-                <div class="card-value">오늘 운동</div>
-                <div class="member-meta">@today.ActivityDate.ToString("yyyy년 M월 d일 dddd")</div>
-            </div>
-            <span class="badge @(StatusBadgeClass)">@today.StatusText</span>
-        </div>
+<div class="tile-grid">
+    <div class="tile sun">
+        <div class="t-icon">📅</div>
+        <div class="t-label">오늘 운동</div>
+        @if (today is not null)
+        {
+            <div class="t-value">@today.ActivityDate.ToString("M월 d일")</div>
+            <div class="t-meta">@today.ActivityDate.ToString("dddd") · @today.StatusText</div>
+        }
+        else
+        {
+            <div class="t-value">없음</div>
+            <div class="t-meta">오늘은 활동이 없습니다</div>
+        }
     </div>
-}
-else
-{
-    <div class="card">
-        <div class="card-row">
-            <div class="card-value">오늘 운동</div>
-            <span class="badge badge-gray">일정 없음</span>
-        </div>
-        <p class="empty">오늘은 활동이 없습니다.</p>
+    <div class="tile mint">
+        <div class="t-icon">✅</div>
+        <div class="t-label">오늘 출석</div>
+        @if (today?.IsAttended == true)
+        {
+            <div class="t-value">완료</div>
+            <div class="t-meta">@Domain.KstClock.ToKstTimeString(today.CheckedAt!.Value) 출석</div>
+        }
+        else if (today?.Status == ActivityStatus.AttendanceOpen)
+        {
+            <div class="t-value">출석 중</div>
+            <div class="t-meta">OTP로 출석해 주세요</div>
+        }
+        else
+        {
+            <div class="t-value">-</div>
+            <div class="t-meta">@(today is null ? "오늘 활동 없음" : "출석 기록 없음")</div>
+        }
     </div>
-}
+    @if (semesterStats is not null)
+    {
+        <div class="tile sky">
+            <div class="t-icon">🏆</div>
+            <div class="t-label">이번 학기</div>
+            <div class="t-value">@(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</div>
+            <div class="t-meta">출석률 @(semesterStats.AttendanceRatePercent)% (@(semesterStats.SemesterActivities)회 중)</div>
+        </div>
+    }
+    @if (feeStatus is not null)
+    {
+        <div class="tile lilac">
+            <div class="t-icon">💳</div>
+            <div class="t-label">회비</div>
+            <div class="t-value">@(feeStatus.IsPaid ? "납부 완료" : "미납")</div>
+            <div class="t-meta">@feeStatus.PeriodName</div>
+        </div>
+    }
+</div>
 
 <AttendanceStatusCard Today="today" OnChanged="LoadAsync" />
 
-@if (myTeam is not null)
+@if (teams.Count > 0)
 {
-    <div class="card team-hero">
-        <h2 class="card-title">🏐 오늘 나는</h2>
-        <div class="card-value" style="color:var(--vb-primary-dark)">@myTeam.Name</div>
-        <div style="margin-top:8px">
-            @foreach (var teammate in myTeam.Members)
-            {
-                var isMine = !teammate.IsGuest && teammate.UserId == myUserId;
-                <span class="team-member-chip @(isMine ? "mine" : "")">@teammate.Name@(teammate.IsGuest ? " (게스트)" : "")@(isMine ? " ★" : "")</span>
-            }
-        </div>
+    <div class="sec">
+        <span class="sec-title">오늘의 팀</span>
+        <span class="sec-more">@(teams.Sum(t => t.Members.Count))명 · @(teams.Count)팀</span>
     </div>
-}
-
-@if (semesterStats is not null)
-{
-    <div class="card">
-        <h2 class="card-title">🏆 이번 학기 내 출석</h2>
-        <div class="card-row">
-            <span class="card-value">@(semesterStats.MyAttendances)회</span>
-            <span class="badge badge-blue">현재 @(semesterStats.Rank)위 / @(semesterStats.TotalActiveMembers)명</span>
+    @foreach (var team in teams)
+    {
+        var isMine = team.Members.Any(m => !m.IsGuest && m.UserId == myUserId);
+        <div class="team-row @(isMine ? "my" : "")">
+            <div class="tr-emoji">🏐</div>
+            <div>
+                <div class="tr-name">@team.Name@(isMine ? " · 나의 팀" : "")</div>
+                <div class="tr-meta">@team.Members.First().Name 외 @(team.Members.Count - 1)명</div>
+            </div>
+            <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명</span>
         </div>
-        <div class="member-meta" style="margin-top:6px">출석률 @semesterStats.AttendanceRatePercent% (활동 @(semesterStats.SemesterActivities)회 중)</div>
-    </div>
-}
-
-@if (feeStatus is not null)
-{
-    <FeeStatusCard Status="feeStatus" />
+    }
 }
 
 @code {
     private MyTodayDto? today;
-    private TeamResultDto? myTeam;
+    private List<TeamResultDto> teams = [];
     private MySemesterStatsDto? semesterStats;
     private FeeStatusDto? feeStatus;
     private string myUserId = "";
 
     private string DateString => DateTime.Now.ToString("yyyy년 M월 d일 dddd");
 
-    private string StatusBadgeClass => today?.Status switch
-    {
-        ActivityStatus.AttendanceOpen => "badge-green",
-        ActivityStatus.ActivityClosed => "badge-red",
-        ActivityStatus.TeamCreated => "badge-orange",
-        _ => "badge-gray",
-    };
+    private TeamResultDto? MyTeam => teams.FirstOrDefault(t => t.Members.Any(m => !m.IsGuest && m.UserId == myUserId));
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -99,9 +127,7 @@ else
             today = null;
         }
 
-        var teams = await Teams.GetTodayTeamsAsync();
-        myTeam = teams.FirstOrDefault(t => t.Members.Any(m => m.UserId == myUserId));
-
+        teams = await Teams.GetTodayTeamsAsync();
         semesterStats = await Attendance.GetMySemesterStatsAsync(myUserId);
 
         var period = await Fees.GetCurrentPeriodAsync();

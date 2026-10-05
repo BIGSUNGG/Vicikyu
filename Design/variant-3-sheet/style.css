@@ -1,0 +1,562 @@
+/* ============================================================
+   시안 3 · 화이트 시트 — 클린 미니멀, 여백과 헤어라인 중심
+   ============================================================ */
+:root {
+	--bg: #ffffff;
+	--surface: #ffffff;
+	--ink: #111318;
+	--muted: #8a8f9c;
+	--line: #e8e9ee;
+	--accent: #4f46e5;
+	--accent-soft: #eef2ff;
+	--green: #15803d;
+	--green-soft: #f0fdf4;
+	--red: #dc2626;
+	--radius: 14px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", "Noto Sans KR",
+		Roboto, sans-serif;
+	background: #f4f4f7;
+	min-height: 100vh;
+	color: var(--ink);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ---- 시안 내비게이션 스트립 ---- */
+.variant-nav {
+	position: sticky;
+	top: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 10px 20px;
+	background: rgba(255, 255, 255, 0.92);
+	backdrop-filter: blur(10px);
+	border-bottom: 1px solid var(--line);
+	font-size: 0.82rem;
+}
+.variant-nav .vname {
+	font-weight: 700;
+	color: var(--accent);
+	font-size: 0.9rem;
+}
+.variant-nav a {
+	color: var(--muted);
+	text-decoration: none;
+	font-weight: 600;
+	padding: 4px 10px;
+	border-radius: 8px;
+}
+.variant-nav a:hover {
+	background: #f1f1f4;
+	color: var(--ink);
+}
+.variant-nav a.back {
+	margin-right: auto;
+}
+
+/* ---- 폰 프레임 ---- */
+.stage {
+	display: flex;
+	justify-content: center;
+	padding: 44px 16px 80px;
+}
+.phone {
+	width: 392px;
+	height: 830px;
+	background: #1a1c22;
+	border-radius: 48px;
+	padding: 12px;
+	box-shadow: 0 24px 60px rgba(17, 19, 24, 0.22);
+	position: relative;
+	flex: none;
+}
+.screen {
+	height: 100%;
+	border-radius: 38px;
+	overflow: hidden auto;
+	background: var(--bg);
+	display: flex;
+	flex-direction: column;
+	scrollbar-width: none;
+}
+.screen::-webkit-scrollbar {
+	display: none;
+}
+
+/* ---- 앱 헤더 ---- */
+.app-header {
+	background: rgba(255, 255, 255, 0.94);
+	backdrop-filter: blur(10px);
+	color: var(--ink);
+	padding: 24px 22px 16px;
+	border-bottom: 1px solid var(--line);
+	flex: none;
+}
+.app-header .app-title {
+	font-size: 1.22rem;
+	font-weight: 700;
+	letter-spacing: -0.03em;
+}
+.app-header .app-sub {
+	margin-top: 3px;
+	font-size: 0.78rem;
+	color: var(--muted);
+	font-weight: 500;
+}
+.header-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+/* ---- 본문 ---- */
+.app-content {
+	flex: 1;
+	padding: 20px 18px 108px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	background: var(--bg);
+}
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 18px;
+}
+.card-title {
+	margin: 0 0 10px;
+	font-size: 0.74rem;
+	font-weight: 700;
+	color: var(--muted);
+	letter-spacing: 0.02em;
+}
+.card-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+}
+.card-value {
+	font-size: 1.12rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+.member-meta {
+	font-size: 0.79rem;
+	color: var(--muted);
+	margin-top: 3px;
+}
+.empty {
+	margin: 6px 0 0;
+	font-size: 0.84rem;
+	color: var(--muted);
+}
+
+/* 배지 */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 10px;
+	border-radius: 7px;
+	font-size: 0.71rem;
+	font-weight: 700;
+	white-space: nowrap;
+}
+.badge-green {
+	background: var(--green-soft);
+	color: var(--green);
+}
+.badge-orange {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.badge-blue {
+	background: #f1f1f4;
+	color: #3f4350;
+}
+.badge-gray {
+	background: #f1f1f4;
+	color: var(--muted);
+}
+.badge-red {
+	background: #fef2f2;
+	color: var(--red);
+}
+
+/* 팀 히어로 */
+.team-hero {
+	background: var(--accent-soft);
+	border-color: #dbe2ff;
+}
+.team-hero .hero-label {
+	font-size: 0.74rem;
+	font-weight: 700;
+	color: var(--accent);
+}
+.team-hero .hero-team {
+	font-size: 2rem;
+	font-weight: 800;
+	color: var(--ink);
+	letter-spacing: -0.03em;
+	margin: 4px 0 12px;
+}
+
+/* 팀원 칩 */
+.chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.team-member-chip {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 12px;
+	border-radius: 999px;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	color: var(--ink);
+	font-size: 0.79rem;
+	font-weight: 600;
+}
+.team-member-chip.mine {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #fff;
+}
+
+/* 팀 카드 */
+.team-card {
+	border-color: var(--line);
+}
+.team-card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 10px;
+}
+.team-name {
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+/* 통계 */
+.stat-row {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+.stat-box {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 14px 8px;
+	text-align: center;
+}
+.stat-box .stat-label {
+	font-size: 0.7rem;
+	font-weight: 600;
+	color: var(--muted);
+	margin-bottom: 5px;
+}
+.stat-box .stat-num {
+	font-size: 1.25rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+
+/* OTP — 언더라인 스타일 */
+.otp-guide {
+	text-align: center;
+	margin: 4px 0 2px;
+}
+.otp-guide .otp-title {
+	font-size: 1rem;
+	font-weight: 700;
+}
+.otp-guide .otp-desc {
+	font-size: 0.79rem;
+	color: var(--muted);
+	margin-top: 5px;
+	line-height: 1.5;
+}
+.otp-boxes {
+	display: flex;
+	justify-content: center;
+	gap: 18px;
+	margin: 22px 0 24px;
+}
+.otp-box {
+	width: 52px;
+	height: 60px;
+	border: none;
+	border-bottom: 2px solid var(--line);
+	border-radius: 2px;
+	background: transparent;
+	font-size: 1.7rem;
+	font-weight: 700;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--ink);
+}
+.otp-box.filled {
+	border-bottom-color: var(--accent);
+	color: var(--accent);
+}
+.otp-box:focus {
+	outline: none;
+	border-bottom-color: var(--accent);
+}
+
+/* 버튼 */
+.btn-primary {
+	display: block;
+	width: 100%;
+	border: none;
+	border-radius: 12px;
+	padding: 14px;
+	background: var(--accent);
+	color: #fff;
+	font-size: 0.95rem;
+	font-weight: 700;
+	font-family: inherit;
+	cursor: pointer;
+}
+.btn-primary:disabled {
+	opacity: 0.5;
+}
+.btn-ghost {
+	display: block;
+	width: 100%;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 13px;
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 0.88rem;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	text-align: center;
+	text-decoration: none;
+}
+.btn-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+}
+
+/* 로그인 */
+.login-hero {
+	text-align: center;
+	padding: 52px 0 34px;
+}
+.login-hero .logo {
+	width: 76px;
+	height: 76px;
+	margin: 0 auto 18px;
+	border-radius: 20px;
+	background: var(--accent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 2.2rem;
+}
+.login-hero .app-name {
+	font-size: 1.45rem;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+}
+.login-hero .app-tag {
+	margin-top: 6px;
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+.field {
+	margin-bottom: 14px;
+}
+.field label {
+	display: block;
+	font-size: 0.76rem;
+	font-weight: 600;
+	color: var(--muted);
+	margin-bottom: 6px;
+}
+.field input {
+	width: 100%;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 13px 15px;
+	font-size: 0.95rem;
+	font-family: inherit;
+	background: var(--surface);
+	color: var(--ink);
+}
+.field input:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+.login-foot {
+	text-align: center;
+	font-size: 0.75rem;
+	color: var(--muted);
+	margin-top: 22px;
+}
+
+/* 캘린더 */
+.cal-nav {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+}
+.cal-nav .cal-title {
+	font-weight: 700;
+	font-size: 0.95rem;
+}
+.cal-nav button {
+	border: 1px solid var(--line);
+	background: var(--surface);
+	border-radius: 9px;
+	width: 32px;
+	height: 32px;
+	font-size: 0.8rem;
+	color: var(--muted);
+	cursor: pointer;
+}
+.calendar {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.calendar th {
+	font-size: 0.68rem;
+	font-weight: 700;
+	color: var(--muted);
+	padding: 6px 0;
+}
+.calendar th.sun {
+	color: var(--red);
+}
+.day-cell {
+	width: 36px;
+	height: 38px;
+	border-radius: 10px;
+	font-size: 0.8rem;
+	font-weight: 500;
+	background: transparent;
+	border: none;
+	color: var(--ink);
+	cursor: pointer;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 1px;
+	font-family: inherit;
+}
+.day-cell .mark {
+	font-size: 0.55rem;
+	color: var(--green);
+}
+.day-cell.attended {
+	background: var(--green-soft);
+	color: var(--green);
+	font-weight: 700;
+}
+.day-cell.selected {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+.day-detail {
+	margin-top: 12px;
+	padding: 13px 14px;
+	background: #fafafa;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+}
+.day-detail .dd-date {
+	font-weight: 700;
+	font-size: 0.86rem;
+}
+.day-detail .dd-info {
+	font-size: 0.78rem;
+	color: var(--muted);
+	margin-top: 4px;
+}
+
+/* 프로필 */
+.profile-ava {
+	width: 50px;
+	height: 50px;
+	border-radius: 999px;
+	background: #f1f1f4;
+	color: var(--ink);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 700;
+	font-size: 1.1rem;
+	flex: none;
+}
+
+/* 하단 탭 */
+.bottom-nav {
+	position: sticky;
+	bottom: 0;
+	z-index: 30;
+	display: flex;
+	height: 74px;
+	background: rgba(255, 255, 255, 0.95);
+	backdrop-filter: blur(10px);
+	border-top: 1px solid var(--line);
+	flex: none;
+	padding-bottom: 10px;
+}
+.nav-item {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	text-decoration: none;
+	color: var(--muted);
+	font-size: 0.67rem;
+	font-weight: 600;
+}
+.nav-item .nav-icon {
+	font-size: 1.3rem;
+	line-height: 1;
+}
+.nav-item.active {
+	color: var(--accent);
+}
+.nav-item.active::after {
+	content: "";
+	width: 4px;
+	height: 4px;
+	border-radius: 999px;
+	background: var(--accent);
+}
+
+/* 안내 */
+.note {
+	font-size: 0.75rem;
+	color: var(--muted);
+	text-align: center;
+	line-height: 1.6;
+}

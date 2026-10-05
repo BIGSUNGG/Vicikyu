@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L3 · 컴팩트 리스트 — MY · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L3 · 컴팩트 리스트</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="top-bar">
+            <div>
+              <div class="tb-title">MY</div>
+              <div class="tb-sub">김민서 · 202312345 · 체육교육과</div>
+            </div>
+            <span class="tb-badge">부원</span>
+          </header>
+
+          <main class="app-content">
+            <div class="list-card" style="padding: 14px">
+              <div class="sec-bar" style="margin-bottom: 8px">
+                <span class="sb-title">이번 주 · 3월 22일 ~ 28일</span>
+                <span class="sb-more">26일 출석 18:32</span>
+              </div>
+              <div class="week-strip">
+                <div class="wk">
+                  <span class="wk-label">일</span><span class="wk-day">22</span>
+                </div>
+                <div class="wk">
+                  <span class="wk-label">월</span><span class="wk-day">23</span>
+                </div>
+                <div class="wk attended">
+                  <span class="wk-label">화</span
+                  ><span class="wk-day">24 ✔</span>
+                </div>
+                <div class="wk">
+                  <span class="wk-label">수</span><span class="wk-day">25</span>
+                </div>
+                <div class="wk attended today">
+                  <span class="wk-label">목</span
+                  ><span class="wk-day">26 ✔</span>
+                </div>
+                <div class="wk">
+                  <span class="wk-label">금</span><span class="wk-day">27</span>
+                </div>
+                <div class="wk">
+                  <span class="wk-label">토</span><span class="wk-day">28</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="list-card" style="padding: 12px 14px">
+              <div class="cal-nav">
+                <button type="button">◀</button>
+                <span class="cal-title">2026년 3월</span>
+                <button type="button">▶</button>
+              </div>
+              <table class="calendar">
+                <tr>
+                  <th class="sun">일</th>
+                  <th>월</th>
+                  <th>화</th>
+                  <th>수</th>
+                  <th>목</th>
+                  <th>금</th>
+                  <th>토</th>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">1</button></td>
+                  <td><button type="button" class="day-cell">2</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      3<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">4</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      5<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">6</button></td>
+                  <td><button type="button" class="day-cell">7</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">8</button></td>
+                  <td><button type="button" class="day-cell">9</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      10<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">11</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      12<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">13</button></td>
+                  <td><button type="button" class="day-cell">14</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">15</button></td>
+                  <td><button type="button" class="day-cell">16</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      17<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">18</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      19<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">20</button></td>
+                  <td><button type="button" class="day-cell">21</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">22</button></td>
+                  <td><button type="button" class="day-cell">23</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended">
+                      24<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">25</button></td>
+                  <td>
+                    <button type="button" class="day-cell attended selected">
+                      26<span class="mark">✔</span>
+                    </button>
+                  </td>
+                  <td><button type="button" class="day-cell">27</button></td>
+                  <td><button type="button" class="day-cell">28</button></td>
+                </tr>
+                <tr>
+                  <td><button type="button" class="day-cell">29</button></td>
+                  <td><button type="button" class="day-cell">30</button></td>
+                  <td><button type="button" class="day-cell">31</button></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              </table>
+            </div>
+
+            <div class="list-card">
+              <div class="row">
+                <div class="r-icon">📆</div>
+                <div class="r-main">
+                  <div class="r-title">이번 달</div>
+                  <div class="r-sub">3월 출석</div>
+                </div>
+                <div class="r-right"><span class="r-value">8회</span></div>
+              </div>
+              <div class="row">
+                <div class="r-icon">🎓</div>
+                <div class="r-main">
+                  <div class="r-title">이번 학기</div>
+                  <div class="r-sub">출석률 80% · 5위 / 24명</div>
+                </div>
+                <div class="r-right"><span class="r-value">12회</span></div>
+              </div>
+              <div class="row">
+                <div class="r-icon">📈</div>
+                <div class="r-main">
+                  <div class="r-title">전체</div>
+                  <div class="r-sub">가입일 2025년 3월 2일부터</div>
+                </div>
+                <div class="r-right"><span class="r-value">34회</span></div>
+              </div>
+            </div>
+
+            <div
+              style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px"
+            >
+              <button type="button" class="btn-ghost">로그아웃</button>
+              <button type="button" class="btn-ghost">⚙ 관리자</button>
+            </div>
+          </main>
+
+          <nav class="bottom-nav">
+            <a class="nav-item" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item active" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

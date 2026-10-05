@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>L4 · 세그먼트 탭 — 오늘의 팀 · 배구부 레이아웃 시안</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav class="variant-nav">
+      <a class="back" href="../index.html">← 전체 시안</a>
+      <span class="vname">L4 · 세그먼트 탭</span>
+      <a href="login.html">로그인</a>
+      <a href="home.html">홈</a>
+      <a href="attendance.html">출석</a>
+      <a href="team.html">팀</a>
+      <a href="my.html">MY</a>
+    </nav>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <header class="app-header">
+            <div class="ah-row">
+              <div>
+                <div class="ah-title">오늘의 팀</div>
+                <div class="ah-sub">2026년 3월 26일 목요일 · 17명 3팀</div>
+              </div>
+              <span class="badge badge-orange">확정 완료</span>
+            </div>
+            <div class="segment">
+              <button type="button" class="seg-btn active">B팀 · 나</button>
+              <button type="button" class="seg-btn">A팀</button>
+              <button type="button" class="seg-btn">C팀</button>
+            </div>
+          </header>
+
+          <main class="app-content">
+            <div class="card">
+              <h2 class="card-title">🏐 B팀 · 6명</h2>
+              <div class="ava-grid">
+                <div class="ava-tile me">
+                  <div class="at-circle">김</div>
+                  <span class="at-name">김민서</span>
+                  <span class="at-tag">★ 나</span>
+                </div>
+                <div class="ava-tile">
+                  <div class="at-circle">이</div>
+                  <span class="at-name">이지훈</span>
+                  <span class="at-tag">부원</span>
+                </div>
+                <div class="ava-tile">
+                  <div class="at-circle">박</div>
+                  <span class="at-name">박서연</span>
+                  <span class="at-tag">부원</span>
+                </div>
+                <div class="ava-tile">
+                  <div class="at-circle">최</div>
+                  <span class="at-name">최도현</span>
+                  <span class="at-tag">부원</span>
+                </div>
+                <div class="ava-tile">
+                  <div class="at-circle">정</div>
+                  <span class="at-name">정하늘</span>
+                  <span class="at-tag">부원</span>
+                </div>
+                <div class="ava-tile">
+                  <div class="at-circle">한</div>
+                  <span class="at-name">한지민</span>
+                  <span class="at-tag">게스트</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="card-title">🏐 A팀 · 6명 (탭 전환 대상 예시)</h2>
+              <div class="chips">
+                <span class="team-member-chip">강도윤</span>
+                <span class="team-member-chip">신예은</span>
+                <span class="team-member-chip">오지호</span>
+                <span class="team-member-chip">문성빈</span>
+                <span class="team-member-chip">권태양</span>
+                <span class="team-member-chip">윤채원</span>
+              </div>
+            </div>
+
+            <p class="note">
+              세그먼트에서 팀을 고르면 해당 팀원이 아바타 그리드로 표시됩니다<br />팀은
+              출석 인원 기준 랜덤 편성 · 회장이 확정
+            </p>
+          </main>
+
+          <nav class="bottom-nav">
+            <a class="nav-item active" href="home.html"
+              ><span class="nav-icon">🏠</span>홈</a
+            >
+            <a class="nav-item" href="my.html"
+              ><span class="nav-icon">👤</span>MY</a
+            >
+            <a class="nav-item" href="#" title="관리자 전용"
+              ><span class="nav-icon">⚙️</span>관리자</a
+            >
+          </nav>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

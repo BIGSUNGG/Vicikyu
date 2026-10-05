@@ -7,7 +7,9 @@
 
 <PageTitle>관리자 · 배구부</PageTitle>
 
-<h1 class="page-title">⚙ 관리자</h1>
+<AdminNav Title="⚙ 관리자" Sub="@DateTime.Now.ToString("yyyy년 M월 d일 dddd")"
+          Active="dashboard" Badge="@(today?.StatusText)"
+          BadgeClass="@(StatusBadgeClass)" />
 
 @if (today is not null)
 {
@@ -21,8 +23,13 @@
         @if (!string.IsNullOrEmpty(today.OtpCode))
         {
             <div style="margin-bottom:12px">
-                <div class="card-title">오늘 OTP</div>
-                <div class="otp-big">@today.OtpCode</div>
+                <div class="card-title">오늘 OTP · 부원에게 보여주세요</div>
+                <div class="otp-big">
+                    @foreach (var ch in today.OtpCode)
+                    {
+                        <span>@ch</span>
+                    }
+                </div>
             </div>
         }
 

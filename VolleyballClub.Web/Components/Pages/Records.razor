@@ -1,0 +1,137 @@
+@page "/records"
+@attribute [Authorize]
+
+@inject IAttendanceService Attendance
+@inject ICurrentUserService Me
+
+<PageTitle>기록 · 배구부</PageTitle>
+
+<header class="hero-band">
+    <span class="hf-date">📚 나의 기록</span>
+    <div class="hf-title">@(records.Month)월 @(records.MonthCount)회 출석</div>
+    <div class="hf-chips">
+        <span class="hf-chip">활동 @(records.MonthActivities)회 중</span>
+        @if (semesterStats is not null)
+        {
+            <span class="hf-chip">이번 학기 @(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</span>
+            <span class="hf-chip">출석률 @(semesterStats.AttendanceRatePercent)%</span>
+        }
+    </div>
+</header>
+
+<div class="card">
+    <div class="cal-nav">
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
+        <span class="cal-title">@(records.Year)년 @(records.Month)월</span>
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(1)">▶</button>
+    </div>
+
+    @if (records.Records.Count == 0)
+    {
+        <p class="empty">이 달에 활동 기록이 없습니다.</p>
+    }
+    else
+    {
+        <div class="tl" style="margin-top:8px">
+            @foreach (var record in records.Records)
+            {
+                <div class="tl-item">
+                    <div class="tl-dot @TeamDotClass(record.TeamName)">@TeamInitial(record.TeamName)</div>
+                    <div class="tl-time">@record.Date.ToString("M월 d일 dddd")</div>
+                    <div class="tl-title">
+                        @(record.IsAttended ? "출석 완료" : "미출석")
+                        @if (record.TeamName is not null)
+                        {
+                            <span class="badge @TeamBadgeClass(record.TeamName)">@record.TeamName</span>
+                        }
+                        <span class="badge @StatusBadgeClass(record.Status)">@StatusText(record.Status)</span>
+                    </div>
+                    <div class="tl-desc">
+                        @if (record.IsAttended)
+                        {
+                            <text>✅ 출석 @Domain.KstClock.ToKstTimeString(record.CheckedAt!.Value)</text>
+                        }
+                        else
+                        {
+                            <text>출석 기록 없음</text>
+                        }
+                        @if (record.TeamName is not null)
+                        {
+                            <text> · 🏐 @record.TeamName 배정</text>
+                        }
+                        @if (record.Status == ActivityStatus.ActivityClosed)
+                        {
+                            <text> · 🔚 활동 종료</text>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<button type="button" class="more-btn" @onclick="() => ShiftMonth(-1)">이전 달 기록 보기</button>
+
+@code {
+    private MyRecordsDto records = new(0, 0, [], 0, 0);
+    private MySemesterStatsDto? semesterStats;
+    private string myUserId = "";
+    private int year;
+    private int month;
+
+    protected override async Task OnInitializedAsync()
+    {
+        myUserId = await Me.RequireUserIdAsync();
+        semesterStats = await Attendance.GetMySemesterStatsAsync(myUserId);
+        var today = Domain.KstClock.Today(TimeProvider.System);
+        (year, month) = (today.Year, today.Month);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        records = await Attendance.GetMyRecordsAsync(myUserId, year, month);
+    }
+
+    private async Task ShiftMonth(int delta)
+    {
+        var date = new DateTime(year, month, 1).AddMonths(delta);
+        (year, month) = (date.Year, date.Month);
+        await LoadAsync();
+    }
+
+    private static string TeamInitial(string? teamName) => teamName is null or "" ? "🏐" : teamName[..1];
+
+    private static string TeamDotClass(string? teamName) => teamName switch
+    {
+        ['A', ..] => "t-a",
+        ['B', ..] => "t-b",
+        ['C', ..] => "t-c",
+        _ => "neutral",
+    };
+
+    private static string TeamBadgeClass(string? teamName) => teamName switch
+    {
+        ['A', ..] => "badge-blue",
+        ['B', ..] => "badge-orange",
+        _ => "badge-gray",
+    };
+
+    private static string StatusText(ActivityStatus status) => status switch
+    {
+        ActivityStatus.Ready => "준비 중",
+        ActivityStatus.AttendanceOpen => "출석 중",
+        ActivityStatus.AttendanceClosed => "출석 마감",
+        ActivityStatus.TeamCreated => "팀 확정",
+        ActivityStatus.ActivityClosed => "종료",
+        _ => status.ToString(),
+    };
+
+    private static string StatusBadgeClass(ActivityStatus status) => status switch
+    {
+        ActivityStatus.AttendanceOpen => "badge-green",
+        ActivityStatus.ActivityClosed => "badge-gray",
+        ActivityStatus.TeamCreated => "badge-orange",
+        _ => "badge-gray",
+    };
+}

@@ -1,0 +1,612 @@
+/* ============================================================
+   시안 4 · 바운스 클럽 — 소프트 캐주얼, 파스텔 캔디 톤
+   ============================================================ */
+:root {
+	--bg: #fef9f2;
+	--card: #ffffff;
+	--ink: #3b3430;
+	--muted: #93887d;
+	--line: #f0e6d8;
+	--coral: #fb7185;
+	--coral-dark: #e04f66;
+	--sky: #38bdf8;
+	--sky-tint: #e8f6fe;
+	--mint: #34d399;
+	--mint-tint: #e9fbf3;
+	--sun: #fbbf24;
+	--sun-tint: #fef5dd;
+	--lilac: #a78bfa;
+	--lilac-tint: #f3efff;
+	--radius: 24px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	font-family:
+		"Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR",
+		Roboto, sans-serif;
+	background: #fbf1e3;
+	background-image: radial-gradient(
+		rgba(59, 52, 48, 0.07) 1.6px,
+		transparent 1.6px
+	);
+	background-size: 26px 26px;
+	min-height: 100vh;
+	color: var(--ink);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ---- 시안 내비게이션 스트립 ---- */
+.variant-nav {
+	position: sticky;
+	top: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 20px;
+	background: #fffdf8;
+	border-bottom: 2px dashed #ecdcc4;
+	font-size: 0.82rem;
+}
+.variant-nav .vname {
+	font-weight: 800;
+	color: var(--coral-dark);
+	font-size: 0.9rem;
+}
+.variant-nav a {
+	color: var(--muted);
+	text-decoration: none;
+	font-weight: 700;
+	padding: 5px 11px;
+	border-radius: 999px;
+}
+.variant-nav a:hover {
+	background: var(--sun-tint);
+	color: var(--ink);
+}
+.variant-nav a.back {
+	margin-right: auto;
+}
+
+/* ---- 폰 프레임 ---- */
+.stage {
+	display: flex;
+	justify-content: center;
+	padding: 44px 16px 80px;
+}
+.phone {
+	width: 392px;
+	height: 830px;
+	background: #fffdf8;
+	border: 3px solid var(--ink);
+	border-radius: 52px;
+	padding: 12px;
+	box-shadow: 10px 12px 0 rgba(59, 52, 48, 0.16);
+	position: relative;
+	flex: none;
+}
+.screen {
+	height: 100%;
+	border-radius: 40px;
+	overflow: hidden auto;
+	background: var(--bg);
+	display: flex;
+	flex-direction: column;
+	scrollbar-width: none;
+}
+.screen::-webkit-scrollbar {
+	display: none;
+}
+
+/* ---- 앱 헤더 ---- */
+.app-header {
+	background: linear-gradient(120deg, #fde68a55, #fef9f2 60%);
+	color: var(--ink);
+	padding: 24px 20px 16px;
+	border-bottom: 2px dashed #f2ddb8;
+	flex: none;
+}
+.app-header .app-title {
+	font-size: 1.3rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+}
+.app-header .app-sub {
+	margin-top: 3px;
+	font-size: 0.79rem;
+	color: var(--muted);
+	font-weight: 600;
+}
+.header-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+/* ---- 본문 ---- */
+.app-content {
+	flex: 1;
+	padding: 18px 16px 108px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.card {
+	background: var(--card);
+	border: 2px solid var(--line);
+	border-radius: var(--radius);
+	padding: 18px;
+	box-shadow: 0 5px 0 rgba(59, 52, 48, 0.06);
+}
+.card-title {
+	margin: 0 0 10px;
+	font-size: 0.84rem;
+	font-weight: 800;
+	color: var(--muted);
+}
+.card-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+}
+.card-value {
+	font-size: 1.15rem;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+}
+.member-meta {
+	font-size: 0.8rem;
+	color: var(--muted);
+	margin-top: 3px;
+	font-weight: 600;
+}
+.empty {
+	margin: 6px 0 0;
+	font-size: 0.84rem;
+	color: var(--muted);
+}
+
+/* 배지 — 스티커 */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 5px 12px;
+	border-radius: 999px;
+	font-size: 0.72rem;
+	font-weight: 800;
+	white-space: nowrap;
+	border: 2px solid transparent;
+}
+.badge-green {
+	background: var(--mint-tint);
+	color: #0d9668;
+	border-color: #a7f3d0;
+}
+.badge-orange {
+	background: var(--sun-tint);
+	color: #b45309;
+	border-color: #fde68a;
+}
+.badge-blue {
+	background: var(--sky-tint);
+	color: #0284c7;
+	border-color: #bae6fd;
+}
+.badge-gray {
+	background: #f6f1e9;
+	color: var(--muted);
+	border-color: var(--line);
+}
+.badge-red {
+	background: #ffe4e6;
+	color: #be123c;
+	border-color: #fecdd3;
+}
+
+/* 팀 히어로 */
+.team-hero {
+	background: linear-gradient(140deg, var(--sun-tint), #ffffff 70%);
+	border-color: #fde68a;
+	position: relative;
+}
+.team-hero .hero-label {
+	font-size: 0.84rem;
+	font-weight: 800;
+	color: #b45309;
+}
+.team-hero .hero-team {
+	font-size: 2.1rem;
+	font-weight: 900;
+	color: var(--ink);
+	letter-spacing: -0.03em;
+	margin: 4px 0 12px;
+}
+
+/* 팀원 칩 — 파스테 로테이션 */
+.chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.team-member-chip {
+	display: inline-flex;
+	align-items: center;
+	padding: 7px 13px;
+	border-radius: 999px;
+	background: var(--sky-tint);
+	border: 2px solid #bae6fd;
+	color: #0369a1;
+	font-size: 0.79rem;
+	font-weight: 800;
+}
+.team-member-chip:nth-child(3n) {
+	background: var(--lilac-tint);
+	border-color: #ddd6fe;
+	color: #6d28d9;
+}
+.team-member-chip:nth-child(3n + 1) {
+	background: var(--sun-tint);
+	border-color: #fde68a;
+	color: #b45309;
+}
+.team-member-chip.mine {
+	background: var(--coral);
+	border-color: var(--coral);
+	color: #fff;
+	box-shadow: 0 4px 0 var(--coral-dark);
+	transform: rotate(-2deg);
+}
+
+/* 팀 카드 */
+.team-card {
+	border-color: var(--line);
+}
+.team-card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 10px;
+}
+.team-name {
+	font-size: 1.05rem;
+	font-weight: 800;
+}
+
+/* 통계 — 파스텔 3색 */
+.stat-row {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+.stat-box {
+	border-radius: 18px;
+	padding: 14px 8px;
+	text-align: center;
+	border: 2px solid transparent;
+}
+.stat-box .stat-label {
+	font-size: 0.72rem;
+	font-weight: 800;
+	color: var(--muted);
+	margin-bottom: 5px;
+}
+.stat-box .stat-num {
+	font-size: 1.3rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+}
+.stat-row .stat-box:nth-child(1) {
+	background: var(--sky-tint);
+	border-color: #bae6fd;
+}
+.stat-row .stat-box:nth-child(2) {
+	background: var(--sun-tint);
+	border-color: #fde68a;
+}
+.stat-row .stat-box:nth-child(3) {
+	background: var(--mint-tint);
+	border-color: #a7f3d0;
+}
+
+/* OTP — 동그란 캔디 */
+.otp-guide {
+	text-align: center;
+	margin: 4px 0 2px;
+}
+.otp-guide .otp-title {
+	font-size: 1.05rem;
+	font-weight: 900;
+}
+.otp-guide .otp-desc {
+	font-size: 0.8rem;
+	color: var(--muted);
+	margin-top: 5px;
+	line-height: 1.5;
+	font-weight: 600;
+}
+.otp-boxes {
+	display: flex;
+	justify-content: center;
+	gap: 14px;
+	margin: 18px 0 22px;
+}
+.otp-box {
+	width: 62px;
+	height: 62px;
+	border-radius: 999px;
+	border: 2px solid var(--line);
+	background: #fff;
+	font-size: 1.65rem;
+	font-weight: 900;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--ink);
+}
+.otp-box.filled {
+	background: var(--mint);
+	border-color: var(--mint);
+	color: #fff;
+	box-shadow: 0 4px 0 #10b981;
+}
+.otp-box:focus {
+	outline: none;
+	border-color: var(--coral);
+}
+
+/* 버튼 — 눌리는 캔디 */
+.btn-primary {
+	display: block;
+	width: 100%;
+	border: 2px solid var(--coral-dark);
+	border-radius: 999px;
+	padding: 15px;
+	background: var(--coral);
+	color: #fff;
+	font-size: 1rem;
+	font-weight: 900;
+	font-family: inherit;
+	box-shadow: 0 5px 0 var(--coral-dark);
+	cursor: pointer;
+}
+.btn-primary:active {
+	transform: translateY(4px);
+	box-shadow: 0 1px 0 var(--coral-dark);
+}
+.btn-primary:disabled {
+	opacity: 0.55;
+}
+.btn-ghost {
+	display: block;
+	width: 100%;
+	border: 2px solid var(--line);
+	border-radius: 999px;
+	padding: 12px;
+	background: #fff;
+	color: var(--muted);
+	font-size: 0.9rem;
+	font-weight: 800;
+	font-family: inherit;
+	cursor: pointer;
+	text-align: center;
+	text-decoration: none;
+}
+.btn-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+}
+
+/* 로그인 */
+.login-hero {
+	text-align: center;
+	padding: 44px 0 30px;
+}
+.login-hero .logo {
+	width: 96px;
+	height: 96px;
+	margin: 0 auto 18px;
+	border-radius: 999px;
+	background: radial-gradient(circle at 32% 30%, #fff4e0, #fde68a);
+	border: 3px solid var(--ink);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 2.8rem;
+	box-shadow: 0 8px 0 rgba(59, 52, 48, 0.15);
+	transform: rotate(5deg);
+}
+.login-hero .app-name {
+	font-size: 1.65rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+}
+.login-hero .app-tag {
+	margin-top: 6px;
+	font-size: 0.83rem;
+	color: var(--muted);
+	font-weight: 600;
+}
+.field {
+	margin-bottom: 14px;
+}
+.field label {
+	display: block;
+	font-size: 0.79rem;
+	font-weight: 800;
+	color: var(--muted);
+	margin-bottom: 7px;
+}
+.field input {
+	width: 100%;
+	border: 2px solid var(--line);
+	border-radius: 18px;
+	padding: 14px 16px;
+	font-size: 0.95rem;
+	font-family: inherit;
+	background: #fff;
+	color: var(--ink);
+}
+.field input:focus {
+	outline: none;
+	border-color: var(--sky);
+	box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.15);
+}
+.login-foot {
+	text-align: center;
+	font-size: 0.76rem;
+	color: var(--muted);
+	margin-top: 22px;
+}
+
+/* 캘린더 */
+.cal-nav {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px;
+}
+.cal-nav .cal-title {
+	font-weight: 900;
+	font-size: 1rem;
+}
+.cal-nav button {
+	border: 2px solid var(--line);
+	background: #fff;
+	border-radius: 999px;
+	width: 36px;
+	height: 36px;
+	font-size: 0.85rem;
+	color: var(--muted);
+	cursor: pointer;
+}
+.calendar {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.calendar th {
+	font-size: 0.7rem;
+	font-weight: 800;
+	color: var(--muted);
+	padding: 6px 0;
+}
+.calendar th.sun {
+	color: var(--coral-dark);
+}
+.day-cell {
+	width: 36px;
+	height: 40px;
+	border-radius: 999px;
+	font-size: 0.82rem;
+	font-weight: 700;
+	background: transparent;
+	border: none;
+	color: var(--ink);
+	cursor: pointer;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 1px;
+	font-family: inherit;
+}
+.day-cell .mark {
+	font-size: 0.58rem;
+	color: #0d9668;
+}
+.day-cell.attended {
+	background: var(--mint-tint);
+	color: #0d9668;
+	border: 2px solid #a7f3d0;
+}
+.day-cell.selected {
+	outline: 2.5px solid var(--sun);
+	outline-offset: 1px;
+}
+.day-detail {
+	margin-top: 12px;
+	padding: 13px 15px;
+	background: var(--lilac-tint);
+	border: 2px solid #ddd6fe;
+	border-radius: 16px;
+}
+.day-detail .dd-date {
+	font-weight: 900;
+	font-size: 0.88rem;
+}
+.day-detail .dd-info {
+	font-size: 0.79rem;
+	color: var(--muted);
+	margin-top: 4px;
+	font-weight: 600;
+}
+
+/* 프로필 */
+.profile-ava {
+	width: 54px;
+	height: 54px;
+	border-radius: 999px;
+	background: var(--sky-tint);
+	border: 2px solid #bae6fd;
+	color: #0369a1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 900;
+	font-size: 1.15rem;
+	flex: none;
+}
+
+/* 하단 탭 — 둥근 플로팅 */
+.bottom-nav {
+	position: sticky;
+	bottom: 10px;
+	z-index: 30;
+	display: flex;
+	height: 66px;
+	margin: 0 12px 12px;
+	background: #fff;
+	border: 2px solid var(--line);
+	border-radius: 999px;
+	box-shadow: 0 6px 0 rgba(59, 52, 48, 0.08);
+	flex: none;
+}
+.nav-item {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	text-decoration: none;
+	color: var(--muted);
+	font-size: 0.67rem;
+	font-weight: 800;
+	margin: 5px;
+	border-radius: 999px;
+}
+.nav-item .nav-icon {
+	font-size: 1.35rem;
+	line-height: 1;
+}
+.nav-item.active {
+	background: var(--sun-tint);
+	color: #b45309;
+}
+
+/* 안내 */
+.note {
+	font-size: 0.76rem;
+	color: var(--muted);
+	text-align: center;
+	line-height: 1.6;
+	font-weight: 600;
+}

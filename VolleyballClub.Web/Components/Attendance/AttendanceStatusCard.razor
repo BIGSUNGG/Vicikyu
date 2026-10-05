@@ -1,24 +1,25 @@
 <div class="card">
-    <h2 class="card-title">✅ 오늘 출석</h2>
-
     @if (Today is null)
     {
         <p class="empty">오늘 활동이 아직 없습니다.</p>
     }
     else if (Today.IsAttended)
     {
-        <div class="card-row">
-            <span style="font-size:1.05rem;font-weight:700;color:var(--vb-success)">✅ 오늘 출석 완료</span>
-            <span class="badge badge-green">@CheckedAtText 출석</span>
+        <div class="otp-guide">
+            <div class="otp-title" style="color:var(--vb-success-dark)">✅ 오늘 출석 완료</div>
+            <div class="otp-desc">@CheckedAtText 출석</div>
         </div>
     }
     else if (Today.Status == Domain.Enums.ActivityStatus.AttendanceOpen)
     {
         @if (showOtpInput)
         {
-            <p style="margin:0 0 8px;font-weight:700">오늘 출석 OTP</p>
+            <div class="otp-guide">
+                <div class="otp-title">오늘 출석 OTP</div>
+                <div class="otp-desc">체육관에 게시된 4자리 OTP를 입력하세요</div>
+            </div>
             <input class="otp-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8"
-                   placeholder="_ _ _ _" value="@otp" @oninput="OnOtpChanged" />
+                   placeholder="- - - -" value="@otp" @oninput="OnOtpChanged" />
             <div style="height:12px"></div>
             <button type="button" class="btn-primary btn-block" disabled="@submitting" @onclick="SubmitOtpAsync">
                 @(submitting ? "확인 중…" : "출석 확인")
