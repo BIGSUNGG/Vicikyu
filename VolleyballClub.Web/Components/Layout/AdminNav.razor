@@ -1,12 +1,12 @@
 <header class="hero-band">
-    <div class="hb-row">
-        <div class="hb-title">@Title</div>
+    <div class="hb-title">@Title</div>
+    <div class="hf-chips">
+        <span class="hf-chip">@Sub</span>
         @if (Badge is not null)
         {
             <span class="badge @BadgeClass">@Badge</span>
         }
     </div>
-    <div class="hb-sub">@Sub</div>
 </header>
 <nav class="segment">
     <a class="seg-btn @(Active == "dashboard" ? "active" : "")" href="/admin">대시보드</a>

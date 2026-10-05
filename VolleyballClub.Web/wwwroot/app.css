@@ -94,14 +94,6 @@ body {
 	letter-spacing: -0.02em;
 }
 
-/* ---- 관리자 헤더 내부 행(히어로 밴드 안) ---- */
-.hb-row {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	gap: 10px;
-}
-
 /* ---- 세그먼트(관리자 내비) — 헤더 곡선 아래 소폭 간격 ---- */
 .segment {
 	display: flex;
@@ -507,7 +499,7 @@ body {
 }
 
 /* ============================================================
-   L1 홈 — 히어로 밴드 + 타일 그리드 + 팀 행
+   히어로 밴드(전 페이지 공용) — 큰 글씨 + 둥근 칩, 크기 통일
    ============================================================ */
 .hero-band {
 	flex: none;
@@ -515,55 +507,23 @@ body {
 	background: linear-gradient(135deg, #fde68a, #fcd34d 70%);
 	padding: 26px 22px 40px;
 	border-radius: 0 0 46% 46% / 0 0 30px 30px;
+	min-height: 150px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: flex-start;
 }
-
-.hero-band .hb-label {
-	font-size: 0.82rem;
-	font-weight: 800;
-	color: #92400e;
-}
-.hero-band .hb-title {
-	font-size: 2.1rem;
-	font-weight: 900;
-	letter-spacing: -0.03em;
-	color: #3f2d0c;
-	margin-top: 2px;
-}
-.hero-band .hb-sub {
-	font-size: 0.78rem;
-	font-weight: 700;
-	color: #92400e;
-	margin-top: 4px;
-}
-
-/* 히어로 밴드 안 통계 칩·배지(기록·MY·관리자 공용) */
-.hero-band .hf-date {
-	display: inline-block;
-	background: rgba(255, 255, 255, 0.55);
-	border: 1.5px solid rgba(146, 64, 14, 0.25);
-	color: #92400e;
-	padding: 4px 12px;
-	border-radius: 999px;
-	font-size: 0.72rem;
-	font-weight: 800;
-}
-.hero-band .hf-label {
-	margin-top: 12px;
-	font-size: 0.86rem;
-	font-weight: 800;
-	color: #92400e;
-}
+.hero-band .hb-title,
 .hero-band .hf-title {
 	font-size: 2.1rem;
 	font-weight: 900;
 	letter-spacing: -0.03em;
 	color: #3f2d0c;
-	margin-top: 10px;
 }
 .hero-band .hf-chips {
 	display: flex;
 	gap: 6px;
-	margin-top: 10px;
+	margin-top: 12px;
 	flex-wrap: wrap;
 }
 .hero-band .hf-chip {
@@ -571,11 +531,12 @@ body {
 	color: #92400e;
 	font-size: 0.7rem;
 	font-weight: 800;
-	padding: 4px 11px;
+	padding: 5px 12px;
 	border-radius: 999px;
 }
 .hero-band .badge {
 	background: rgba(255, 255, 255, 0.92);
+	padding: 5px 12px;
 }
 
 .tile-grid {

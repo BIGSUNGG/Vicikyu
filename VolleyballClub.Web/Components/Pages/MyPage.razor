@@ -8,12 +8,11 @@
 <PageTitle>MY · 배구부</PageTitle>
 
 <header class="hero-band">
-    <span class="hf-date">가입일 @Domain.KstClock.ToKstDateString(profile?.JoinedAt ?? DateTime.MinValue)</span>
-    <div class="hf-label">👤 MY</div>
     <div class="hf-title">@(profile?.Name ?? "")</div>
     <div class="hf-chips">
         <span class="hf-chip">@(profile?.StudentNumber) · @(profile?.Department)</span>
         <span class="hf-chip">@(profile?.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+        <span class="hf-chip">가입일 @Domain.KstClock.ToKstDateString(profile?.JoinedAt ?? DateTime.MinValue)</span>
     </div>
 </header>
 

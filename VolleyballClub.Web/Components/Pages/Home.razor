@@ -10,7 +10,6 @@
 <PageTitle>홈 · 배구부</PageTitle>
 
 <header class="hero-band">
-    <div class="hb-label">🏐 오늘 나는</div>
     @if (MyTeam is not null)
     {
         <div class="hb-title">@MyTeam.Name</div>
@@ -23,7 +22,13 @@
     {
         <div class="hb-title">일정 없음</div>
     }
-    <div class="hb-sub">@DateString@(today is not null ? $" · {today.StatusText}" : "")</div>
+    <div class="hf-chips">
+        <span class="hf-chip">📅 @DateString</span>
+        @if (today is not null)
+        {
+            <span class="hf-chip">@today.StatusText</span>
+        }
+    </div>
 </header>
 
 <div class="tile-grid">
