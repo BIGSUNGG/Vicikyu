@@ -12,6 +12,10 @@ public class TeamConfiguration : IEntityTypeConfiguration<Team>
 
         builder.HasIndex(t => t.ActivityId);
 
+        builder.HasIndex(t => new { t.ActivityId, t.DrawNumber });
+
+        builder.Property(t => t.DrawNumber).HasDefaultValue(1);
+
         builder.HasMany(t => t.Members)
             .WithOne(m => m.Team)
             .HasForeignKey(m => m.TeamId)

@@ -199,6 +199,8 @@ public sealed class ServiceHost : IAsyncDisposable
         {
             ActivityDate = date,
             Status = status,
+            // TeamCreated 이상은 1회차가 확정된 것으로 간주(마이그레이션 백필과 동일 불변식)
+            ConfirmedDrawNumber = status >= ActivityStatus.TeamCreated ? 1 : null,
             OtpCode = otp,
             AttendanceOpenedAt = DateTime.UtcNow,
             CreatedByUserId = "admin-1",

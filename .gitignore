@@ -403,3 +403,4 @@ FodyWeavers.xsd
 # pi agent local folders
 .pi-glla/
 .pi-subagents/
+.diag/

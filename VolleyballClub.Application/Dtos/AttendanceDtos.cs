@@ -12,11 +12,14 @@ public record AttendanceMemberDto(
     AttendanceType? AttendanceType,
     int AttendanceId);
 
+/// <summary>한 회차 팀 배정 — 기록·캘린더에 회차별로 표시된다.</summary>
+public record TeamAssignmentDto(int DrawNumber, string TeamName);
+
 public record CalendarDayDto(
     DateOnly Date,
     bool IsAttended,
     DateTime? CheckedAt,
-    string? TeamName);
+    List<TeamAssignmentDto> Teams);
 
 public record MyCalendarDto(
     int Year,
@@ -32,7 +35,7 @@ public record ActivityRecordDto(
     ActivityStatus Status,
     bool IsAttended,
     DateTime? CheckedAt,
-    string? TeamName);
+    List<TeamAssignmentDto> Teams);
 
 /// <summary>기록 페이지 월간 조회 결과 — 해당 월의 모든 활동(최신순)과 출석 수.</summary>
 public record MyRecordsDto(

@@ -13,9 +13,9 @@
 {
     <div class="card">
         <div class="card-row">
-            <h2 class="card-title" style="margin:0">편성 결과</h2>
-            <span class="badge badge-orange">@(selectedUserIds.Count)명 참가</span>
-        </div>
+                <h2 class="card-title" style="margin:0">편성 결과</h2>
+                <span class="badge badge-orange">@(drawnTeams[0].DrawNumber)회차 · @(selectedUserIds.Count)명 참가</span>
+            </div>
     </div>
 
     @foreach (var team in drawnTeams)
@@ -160,7 +160,7 @@ else
     private List<TeamResultDto> drawnTeams = [];
     private TeamMemberDto? movingMember;
     private int moveTargetTeamId;
-    private bool canConfirm;
+    private int? confirmedDraw;
     private bool showRedrawConfirm;
     private bool showConfirmDialog;
     private string newGuestName = "";
@@ -171,18 +171,21 @@ else
         teamCount = await Settings.GetIntAsync("DefaultTeamCount", 3);
         await LoadParticipantsAsync();
 
-        // 이미 편성되어 있으면 결과부터 표시
+        // 이미 편성되어 있으면 최신 회차를 표시. 확정된 회차와 다르면 재확정 대상.
         drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        confirmedDraw = await TeamSvc.GetConfirmedDrawNumberAsync();
         if (drawnTeams.Count > 0)
         {
             SyncSelectionFromTeams();
-            canConfirm = true; // 확정 전 상태로 재접속해도 확정 버튼이 유지된다(서버는 멱등)
         }
         else
         {
             SetTeamCount(teamCount);
         }
     }
+
+    /// <summary>최신 회차가 아직 확정되지 않았을 때만 확정 버튼을 노출한다.</summary>
+    private bool canConfirm => drawnTeams.Count > 0 && drawnTeams[0].DrawNumber != confirmedDraw;
 
     private async Task LoadParticipantsAsync()
     {
@@ -280,8 +283,7 @@ else
         try
         {
             drawnTeams = await TeamSvc.GenerateAsync(new TeamCreateRequest(selectedUserIds.ToList(), selectedGuestIds.ToList(), teamSizes.ToList()));
-            canConfirm = true;
-            Snackbar.Add("팀을 편성했습니다. 확인 후 확정해 주세요.", Severity.Success);
+            Snackbar.Add($"{drawnTeams[0].DrawNumber}회차 팀을 편성했습니다. 확인 후 확정해 주세요.", Severity.Success);
         }
         catch (AppException ex)
         {
@@ -335,7 +337,8 @@ else
         try
         {
             await TeamSvc.ConfirmAsync();
-            Snackbar.Add("팀 편성이 확정되었습니다.", Severity.Success);
+            confirmedDraw = drawnTeams[0].DrawNumber;
+            Snackbar.Add($"{confirmedDraw}회차 팀 편성이 확정되었습니다. 부원에게 공개됩니다.", Severity.Success);
             drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
         }
         catch (AppException ex)

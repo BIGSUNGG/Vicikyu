@@ -91,7 +91,7 @@
             {
                 <div class="dd-info">
                     ✅ 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
-                    @(sel.TeamName is not null ? $" · {sel.TeamName}" : "")
+                    @(sel.Teams.Count > 0 ? $" · {string.Join(", ", sel.Teams.Select(t => $"{t.DrawNumber}회차 {t.TeamName}"))}" : "")
                 </div>
             }
             else

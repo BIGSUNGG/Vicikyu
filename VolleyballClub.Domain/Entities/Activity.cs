@@ -20,6 +20,9 @@ public class Activity
 
     public DateTime? ActivityClosedAt { get; set; }
 
+    /// <summary>부원에게 공개(확정)된 최신 회차. null = 아직 확정된 회차 없음.</summary>
+    public int? ConfirmedDrawNumber { get; set; }
+
     public string CreatedByUserId { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }
@@ -40,7 +43,7 @@ public class Activity
 
     public bool CanDrawTeams => Status is ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
 
-    public bool CanConfirmTeams => Status == ActivityStatus.AttendanceClosed;
+    public bool CanConfirmTeams => Status is ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
 
     public bool CanClose => Status is ActivityStatus.AttendanceOpen or ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
 

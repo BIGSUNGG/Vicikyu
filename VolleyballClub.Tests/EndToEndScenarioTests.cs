@@ -106,7 +106,7 @@ public class EndToEndScenarioTests
         var calendar = await host.Attendance.GetMyCalendarAsync(m2, 2026, 10);
         Assert.Equal(1, calendar.MonthCount);
         var attendedDay = calendar.Days.Single(d => d.IsAttended);
-        Assert.NotNull(attendedDay.TeamName);
+        Assert.NotEmpty(attendedDay.Teams);
 
         var stats = await host.Attendance.GetMySemesterStatsAsync(m2);
         Assert.Equal(1, stats.MyAttendances);

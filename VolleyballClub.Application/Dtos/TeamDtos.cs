@@ -24,6 +24,7 @@ public record TeamResultDto(
     int TeamId,
     string Name,
     int Order,
+    int DrawNumber,
     List<TeamMemberDto> Members);
 
 public record TeamCreateRequest(

@@ -62,18 +62,24 @@ public class TeamGenerationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Redraw_ReplacesPreviousTeams()
+    public async Task Redraw_CreatesNextDraw_AndKeepsPrevious()
     {
         await GenerateAsync(3, 3);
         var redrawn = await GenerateAsync(2, 2, 2);
 
-        Assert.Equal(3, redrawn.Count);
+        // 새 회차는 2회차, 구성은 새로 뽑혀도 참가자 전원 1회씩
+        Assert.All(redrawn, t => Assert.Equal(2, t.DrawNumber));
         var assigned = redrawn.SelectMany(t => t.Members).Select(m => m.UserId).ToList();
         Assert.Equal(6, assigned.Distinct().Count());
 
+        // 이전 회차는 삭제되지 않고 유지된다
         await using var db = host.Db.CreateContext();
-        Assert.Equal(3, await db.Teams.CountAsync());
-        Assert.Equal(6, await db.TeamMembers.CountAsync());
+        Assert.Equal(5, await db.Teams.CountAsync());
+        Assert.Equal(12, await db.TeamMembers.CountAsync());
+
+        // 관리자 조회는 최신 회차만 반환한다
+        var adminView = await host.Team.GetTodayTeamsForAdminAsync();
+        Assert.All(adminView, t => Assert.Equal(2, t.DrawNumber));
     }
 
     [Fact]
@@ -121,5 +127,47 @@ public class TeamGenerationTests : IAsyncLifetime
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<ConflictException>(() => GenerateAsync(2, 2, 2));
+    }
+
+    [Fact]
+    public async Task Redraw_AfterConfirm_MemberKeepsPreviousDrawUntilReconfirm()
+    {
+        await GenerateAsync(2, 2, 2);
+        await host.Team.ConfirmAsync();
+
+        host.AsMember(memberIds[0]);
+        var published = await host.Team.GetTodayTeamsAsync();
+        Assert.All(published, t => Assert.Equal(1, t.DrawNumber));
+
+        // 2회차를 뽑아도 확정 전까지 부원은 1회차를 본다
+        host.AsAdmin();
+        await GenerateAsync(3, 3);
+
+        host.AsMember(memberIds[0]);
+        var stillPrevious = await host.Team.GetTodayTeamsAsync();
+        Assert.All(stillPrevious, t => Assert.Equal(1, t.DrawNumber));
+
+        // 재확정하면 2회차가 공개된다
+        host.AsAdmin();
+        await host.Team.ConfirmAsync();
+
+        host.AsMember(memberIds[0]);
+        var latest = await host.Team.GetTodayTeamsAsync();
+        Assert.Equal(2, latest.Count);
+        Assert.All(latest, t => Assert.Equal(2, t.DrawNumber));
+    }
+
+    [Fact]
+    public async Task MoveMember_InPreviousDraw_Throws()
+    {
+        await GenerateAsync(2, 2, 2);
+        await GenerateAsync(2, 2, 2); // 2회차 존재
+
+        await using var db = host.Db.CreateContext();
+        var oldMember = await db.TeamMembers.AsNoTracking().FirstAsync(m => m.Team!.DrawNumber == 1);
+        var latestTeam = await db.Teams.AsNoTracking().FirstAsync(t => t.DrawNumber == 2);
+
+        await Assert.ThrowsAsync<RuleViolationException>(
+            () => host.Team.MoveMemberAsync(oldMember.Id, latestTeam.Id));
     }
 }

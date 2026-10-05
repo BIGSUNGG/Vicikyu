@@ -191,8 +191,9 @@ public class AttendanceService(
             .ToListAsync();
 
         var myTeams = await db.TeamMembers.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last)
-            .Select(m => new { m.Team!.ActivityId, m.Team.Name })
+            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last
+                && m.Team!.Activity!.ConfirmedDrawNumber != null && m.Team!.DrawNumber <= m.Team!.Activity!.ConfirmedDrawNumber)
+            .Select(m => new { m.Team!.ActivityId, Draw = m.Team!.DrawNumber, m.Team.Name })
             .ToListAsync();
 
         var activityIdsByDate = await db.Activities.AsNoTracking()
@@ -203,8 +204,12 @@ public class AttendanceService(
         var days = myAttendances.Select(x =>
         {
             var activityId = activityIdsByDate.FirstOrDefault(a => a.ActivityDate == x.ActivityDate)?.Id;
-            var teamName = myTeams.FirstOrDefault(t => t.ActivityId == activityId)?.Name;
-            return new CalendarDayDto(x.ActivityDate, true, x.CheckedAt, teamName);
+            var teams = myTeams
+                .Where(t => t.ActivityId == activityId)
+                .OrderBy(t => t.Draw)
+                .Select(t => new TeamAssignmentDto(t.Draw, t.Name))
+                .ToList();
+            return new CalendarDayDto(x.ActivityDate, true, x.CheckedAt, teams);
         }).ToList();
 
         var (semStart, semEnd) = Semester.Of(KstClock.Today(timeProvider));
@@ -234,8 +239,9 @@ public class AttendanceService(
             .ToListAsync();
 
         var myTeams = await db.TeamMembers.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last)
-            .Select(m => new { ActivityId = m.Team!.ActivityId, m.Team.Name })
+            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last
+                && m.Team!.Activity!.ConfirmedDrawNumber != null && m.Team!.DrawNumber <= m.Team!.Activity!.ConfirmedDrawNumber)
+            .Select(m => new { ActivityId = m.Team!.ActivityId, Draw = m.Team!.DrawNumber, m.Team.Name })
             .ToListAsync();
 
         var records = activities
@@ -243,12 +249,17 @@ public class AttendanceService(
             .Select(a =>
             {
                 var attendance = myAttendances.FirstOrDefault(x => x.ActivityId == a.Id);
+                var teams = myTeams
+                    .Where(t => t.ActivityId == a.Id)
+                    .OrderBy(t => t.Draw)
+                    .Select(t => new TeamAssignmentDto(t.Draw, t.Name))
+                    .ToList();
                 return new ActivityRecordDto(
                     a.ActivityDate,
                     a.Status,
                     attendance is not null,
                     attendance?.CheckedAt,
-                    myTeams.FirstOrDefault(t => t.ActivityId == a.Id)?.Name);
+                    teams);
             })
             .ToList();
 

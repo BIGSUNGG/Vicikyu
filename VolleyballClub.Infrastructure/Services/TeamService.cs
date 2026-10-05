@@ -22,12 +22,12 @@ public class TeamService(
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.ActivityDate == today);
-        if (activity is null || activity.Status != ActivityStatus.TeamCreated)
+        if (activity is null || activity.Status != ActivityStatus.TeamCreated || activity.ConfirmedDrawNumber is not { } confirmed)
         {
             return [];
         }
 
-        return await LoadTeamsAsync(db, activity.Id);
+        return await LoadTeamsAsync(db, activity.Id, confirmed);
     }
 
     public async Task<List<TeamResultDto>> GetTodayTeamsForAdminAsync()
@@ -41,8 +41,26 @@ public class TeamService(
             return [];
         }
 
-        return await LoadTeamsAsync(db, activity.Id);
+        var latest = await LatestDrawNumberAsync(db, activity.Id);
+        return latest is null ? [] : await LoadTeamsAsync(db, activity.Id, latest);
     }
+
+    public async Task<int?> GetConfirmedDrawNumberAsync()
+    {
+        await currentUser.RequireAdminAsync();
+        var today = KstClock.Today(timeProvider);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.ActivityDate == today);
+        return activity?.ConfirmedDrawNumber;
+    }
+
+    /// <summary>해당 활동의 최신 회차 번호. 팀이 없으면 null.</summary>
+    private static async Task<int?> LatestDrawNumberAsync(ApplicationDbContext db, int activityId) =>
+        await db.Teams.AsNoTracking()
+            .Where(t => t.ActivityId == activityId)
+            .OrderByDescending(t => t.DrawNumber)
+            .Select(t => (int?)t.DrawNumber)
+            .FirstOrDefaultAsync();
 
     public async Task<ParticipantListDto> GetParticipantsAsync()
     {
@@ -133,9 +151,9 @@ public class TeamService(
             }
         }
 
-        // 다시 뽑기: 기존 팀 전체 삭제 후 재생성(팀원 FK cascade)
-        var oldTeams = await db.Teams.Where(t => t.ActivityId == activity.Id).ToListAsync();
-        db.Teams.RemoveRange(oldTeams);
+        // 다시 뽑기: 기존 회차를 지우지 않고 다음 회차로 생성한다(회차 이력 보존)
+        var drawNumber = await LatestDrawNumberAsync(db, activity.Id) ?? 0;
+        drawNumber++;
 
         var now = KstClock.NowUtc(timeProvider);
         var members = new List<(string? UserId, int? GuestId, string Name)>();
@@ -152,6 +170,7 @@ public class TeamService(
                 ActivityId = activity.Id,
                 Name = $"{TeamNamePrefix[i % 26]} TEAM",
                 Order = i,
+                DrawNumber = drawNumber,
                 CreatedAt = now,
             };
             db.Teams.Add(team);
@@ -173,9 +192,9 @@ public class TeamService(
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.TeamCreate, "Activity", activity.Id.ToString(),
-            $"{sizes.Count}팀 편성 (참가 {participantCount}명)");
+            $"{drawNumber}회차 {sizes.Count}팀 편성 (참가 {participantCount}명)");
 
-        return await LoadTeamsAsync(db, activity.Id);
+        return await LoadTeamsAsync(db, activity.Id, drawNumber);
     }
 
     public async Task<TeamResultDto> MoveMemberAsync(int teamMemberId, int targetTeamId)
@@ -204,6 +223,12 @@ public class TeamService(
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }
 
+        var latestDraw = await LatestDrawNumberAsync(db, activity.Id);
+        if (member.Team!.DrawNumber != latestDraw || targetTeam.DrawNumber != latestDraw)
+        {
+            throw new RuleViolationException("이전 회차 팀은 수정할 수 없습니다. 최신 회차에서 이동해 주세요.");
+        }
+
         var memberName = await ResolveMemberNameAsync(db, member);
         var fromTeamName = member.Team!.Name;
         member.TeamId = targetTeam.Id;
@@ -222,9 +247,12 @@ public class TeamService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
 
-        if (activity.Status == ActivityStatus.TeamCreated)
+        var latestDraw = await LatestDrawNumberAsync(db, activity.Id)
+            ?? throw new RuleViolationException("먼저 팀을 편성해 주세요.");
+
+        if (activity.ConfirmedDrawNumber == latestDraw)
         {
-            return; // 이미 확정 — 멱등
+            return; // 이미 최신 회차가 확정됨 — 멱등
         }
 
         if (!activity.CanConfirmTeams)
@@ -232,15 +260,11 @@ public class TeamService(
             throw new ConflictException("출석을 마감한 후 팀을 확정할 수 있습니다.");
         }
 
-        if (!await db.Teams.AnyAsync(t => t.ActivityId == activity.Id))
-        {
-            throw new RuleViolationException("먼저 팀을 편성해 주세요.");
-        }
-
         activity.Status = ActivityStatus.TeamCreated;
+        activity.ConfirmedDrawNumber = latestDraw;
         activity.UpdatedAt = KstClock.NowUtc(timeProvider);
         await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.TeamConfirm, "Activity", activity.Id.ToString(), "팀 편성 확정");
+        await auditLog.LogAsync(AdminAction.TeamConfirm, "Activity", activity.Id.ToString(), $"{latestDraw}회차 팀 편성 확정");
     }
 
     public async Task AddGuestAsync(string name)
@@ -291,12 +315,12 @@ public class TeamService(
                 ? await db.Guests.AsNoTracking().Where(g => g.Id == guestId).Select(g => g.Name).FirstOrDefaultAsync() ?? "게스트"
                 : "알 수 없음";
 
-    private static async Task<List<TeamResultDto>> LoadTeamsAsync(ApplicationDbContext db, int activityId)
+    private static async Task<List<TeamResultDto>> LoadTeamsAsync(ApplicationDbContext db, int activityId, int? drawNumber = null)
     {
         var teams = await db.Teams.AsNoTracking()
-            .Where(t => t.ActivityId == activityId)
+            .Where(t => t.ActivityId == activityId && (drawNumber == null || t.DrawNumber == drawNumber))
             .OrderBy(t => t.Order)
-            .Select(t => new { t.Id, t.Name, t.Order })
+            .Select(t => new { t.Id, t.Name, t.Order, t.DrawNumber })
             .ToListAsync();
 
         var teamMembers = await db.TeamMembers.AsNoTracking()
@@ -313,6 +337,7 @@ public class TeamService(
                 t.Id,
                 t.Name,
                 t.Order,
+                t.DrawNumber,
                 teamMembers
                     .Where(m => m.TeamId == t.Id)
                     .Select(m => new TeamMemberDto(
