@@ -611,65 +611,89 @@ body {
 	color: var(--vb-muted);
 }
 
-.team-row {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	background: var(--vb-card);
-	border: 2px solid var(--vb-border);
-	border-radius: 18px;
-	padding: 12px 14px;
-	text-decoration: none;
-	color: inherit;
-}
-
-.team-row .tr-emoji {
-	width: 38px;
-	height: 38px;
-	border-radius: 999px;
+/* 코트 카드 — 팀 목록(L1 시안 team.html). 홈=토글 다중 확장(open일 때 확장 애니메이션), 관리자=항상 open */
+.court {
+	position: relative;
 	background: var(--vb-sun-soft);
-	border: 2px solid #fde68a;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 1.1rem;
-	flex: none;
+	border: 2.5px dashed #f0c648;
+	border-radius: 22px;
+	padding: 16px;
+	overflow: hidden;
 }
-
-.team-row .tr-name {
-	font-weight: 900;
-	font-size: 0.9rem;
+.court.open::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	border-top: 2.5px dashed #f0c648;
 }
-.team-row .tr-meta {
-	font-size: 0.71rem;
-	color: var(--vb-muted);
-	font-weight: 700;
+.court.open::after {
+	content: "";
+	position: absolute;
+	top: -30%;
+	bottom: -30%;
+	left: 50%;
+	border-left: 2px solid rgba(180, 83, 9, 0.18);
 }
-.team-row .badge {
-	margin-left: auto;
-}
-.team-row.my {
-	background: linear-gradient(120deg, #ffe4e6, #fff 70%);
+.court.mine {
+	background: linear-gradient(140deg, #ffe4e6, var(--vb-sun-soft) 70%);
 	border-color: var(--vb-primary);
 }
-
-/* 팀 히어로(홈 통합 카드) */
-.team-hero {
-	background: linear-gradient(140deg, #fff7ed, #ffffff 65%);
-	border: 2px solid #fed7aa;
+.court-head {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 10px; /* 닫힘 상태 간격. 열림은 헤더 10px + 칩 padding 14px = 24px */
 }
-
-.team-hero .hero-label {
-	font-size: 0.84rem;
-	font-weight: 800;
-	color: #b45309;
+/* 열림/닫힘 모두 애니메이션 — 0fr↔1fr 그리드 트랜지션 */
+.court .chips-wrap {
+	display: grid;
+	grid-template-rows: 0fr;
+	transition: grid-template-rows 0.22s ease-out;
 }
-.team-hero .hero-team {
-	font-size: 1.9rem;
+.court.open .chips-wrap {
+	grid-template-rows: 1fr;
+}
+.court .chips-wrap > .chips {
+	position: relative;
+	z-index: 1;
+	min-height: 0;
+	overflow: hidden;
+	padding-top: 14px; /* 헤더 margin 10px와 합쳐 열림 간격 24px */
+	visibility: hidden;
+	opacity: 0;
+	transition:
+		opacity 0.22s ease-out,
+		visibility 0s linear 0.22s;
+}
+.court.open .chips-wrap > .chips {
+	visibility: visible;
+	opacity: 1;
+	transition: opacity 0.22s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+	.court .chips-wrap,
+	.court .chips-wrap > .chips {
+		transition: none;
+	}
+}
+button.court-head {
+	width: 100%;
+	background: none;
+	border: none;
+	padding: 0;
+	margin: 0;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.court-name {
 	font-weight: 900;
-	color: #b45309;
-	letter-spacing: -0.03em;
-	margin: 3px 0 10px;
+	font-size: 1.02rem;
 }
 
 /* ============================================================

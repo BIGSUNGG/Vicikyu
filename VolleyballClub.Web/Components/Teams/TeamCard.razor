@@ -1,9 +1,11 @@
-<div class="card team-card">
-    <div class="team-card-header">
-        <span class="team-name">🏐 @Team.Name</span>
-        <span class="badge badge-orange">@(Team.Members.Count)명</span>
+@* 코트 카드(L1 시안 team.html) — 관리자 팀 뽑기용. 멤버 칩은 항상 펼침(클릭 → 이동/제거). *@
+<div class="court open">
+    <div class="court-head">
+        <span class="court-name">🏐 @Team.Name</span>
+        <span class="badge @(IsMineTeam ? "badge-orange" : "badge-gray")">@(Team.Members.Count)명</span>
     </div>
-    <div>
+    <div class="chips-wrap">
+        <div class="chips">
         @foreach (var member in Team.Members)
         {
             var isMine = !member.IsGuest && member.UserId == MyUserId;
@@ -13,6 +15,7 @@
                 @member.Name@(member.IsGuest ? " (게스트)" : "")@(isMine ? " ★" : "")
             </button>
         }
+        </div>
     </div>
 </div>
 
@@ -28,6 +31,9 @@
 
     [Parameter]
     public EventCallback<TeamMemberDto> OnMemberSelected { get; set; }
+
+    private bool IsMineTeam => MyUserId is not null
+        && Team.Members.Any(m => !m.IsGuest && m.UserId == MyUserId);
 
     private async Task SelectMember(TeamMemberDto member)
     {

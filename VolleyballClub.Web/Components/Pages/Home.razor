@@ -96,13 +96,21 @@
     @foreach (var team in teams)
     {
         var isMine = team.Members.Any(m => !m.IsGuest && m.UserId == myUserId);
-        <div class="team-row @(isMine ? "my" : "")">
-            <div class="tr-emoji">🏐</div>
-            <div>
-                <div class="tr-name">@team.Name@(isMine ? " · 나의 팀" : "")</div>
-                <div class="tr-meta">@team.Members.First().Name 외 @(team.Members.Count - 1)명</div>
+        var isOpen = expandedTeamIds.Contains(team.TeamId);
+        <div class="court @(isMine ? "mine" : "") @(isOpen ? "open" : "")">
+            <button type="button" class="court-head" @onclick="() => ToggleTeam(team.TeamId)">
+                <span class="court-name">🏐 @team.Name@(isMine ? " · 나의 팀" : "")</span>
+                <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명 @(isOpen ? "▾" : "▸")</span>
+            </button>
+            <div class="chips-wrap">
+                <div class="chips">
+                    @foreach (var member in team.Members)
+                    {
+                        var isMyChip = !member.IsGuest && member.UserId == myUserId;
+                        <span class="team-member-chip @(isMyChip ? "mine" : "")">@member.Name@(member.IsGuest ? " (게스트)" : "")@(isMyChip ? " ★" : "")</span>
+                    }
+                </div>
             </div>
-            <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명</span>
         </div>
     }
 }
@@ -113,6 +121,15 @@
     private MySemesterStatsDto? semesterStats;
     private FeeStatusDto? feeStatus;
     private string myUserId = "";
+    private HashSet<int> expandedTeamIds = [];
+
+    private void ToggleTeam(int teamId)
+    {
+        if (expandedTeamIds.Contains(teamId))
+            expandedTeamIds.Remove(teamId);
+        else
+            expandedTeamIds.Add(teamId);
+    }
 
     private string DateString => DateTime.Now.ToString("yyyy년 M월 d일 dddd");
 
