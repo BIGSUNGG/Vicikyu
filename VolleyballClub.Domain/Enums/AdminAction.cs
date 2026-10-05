@@ -22,4 +22,6 @@ public enum AdminAction
     FeePeriodCreate,
     FeeStatusChange,
     SettingChange,
+    // 주의: 기존 값은 DB에 정수로 저장되므로 중간에 새 값을 삽입하지 않는다 — 새 값은 끝에만 추가
+    TeamDelete,
 }

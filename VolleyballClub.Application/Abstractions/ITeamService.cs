@@ -19,6 +19,15 @@ public interface ITeamService
 
     Task<TeamResultDto> MoveMemberAsync(int teamMemberId, int targetTeamId);
 
+    /// <summary>최신 회차에서 팀원을 제거한다(이전 회차는 불가).</summary>
+    Task RemoveMemberAsync(int teamMemberId);
+
+    /// <summary>편성 후 누락된 부원/게스트를 최신 회차의 특정 팀에 배정한다.</summary>
+    Task<TeamResultDto> AddMemberAsync(string participantKey, int teamId);
+
+    /// <summary>최신 회차를 취소한다. 취소된 회차가 확정 상태였으면 공개를 이전 회차로 되돌린다.</summary>
+    Task CancelLatestDrawAsync();
+
     Task ConfirmAsync();
 
     Task AddGuestAsync(string name);

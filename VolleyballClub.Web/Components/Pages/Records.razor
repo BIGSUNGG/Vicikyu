@@ -34,16 +34,12 @@
         <div class="tl" style="margin-top:8px">
             @foreach (var record in records.Records)
             {
+                @* 출석 한 줄 *@
                 <div class="tl-item">
-                    <div class="tl-dot @TeamDotClass(record.Teams.FirstOrDefault()?.TeamName)">@TeamInitial(record.Teams.FirstOrDefault()?.TeamName)</div>
+                    <div class="tl-dot neutral">🏐</div>
                     <div class="tl-time">@record.Date.ToString("M월 d일 dddd")</div>
                     <div class="tl-title">
                         @(record.IsAttended ? "출석 완료" : "미출석")
-                        @foreach (var t in record.Teams)
-                        {
-                            <span class="badge @TeamBadgeClass(t.TeamName)">@t.TeamName</span>
-                            <span class="badge badge-gray">@(t.DrawNumber)회차</span>
-                        }
                         <span class="badge @StatusBadgeClass(record.Status)">@StatusText(record.Status)</span>
                     </div>
                     <div class="tl-desc">
@@ -55,16 +51,26 @@
                         {
                             <text>출석 기록 없음</text>
                         }
-                        @if (record.Teams.Count > 0)
-                        {
-                            <text> · 🏐 @string.Join(" · ", record.Teams.Select(t => $"{t.DrawNumber}회차 {t.TeamName} 배정"))</text>
-                        }
                         @if (record.Status == ActivityStatus.ActivityClosed)
                         {
                             <text> · 🔚 활동 종료</text>
                         }
                     </div>
                 </div>
+                @* 회차별 팀 배정 한 줄씩 *@
+                @foreach (var t in record.Teams)
+                {
+                    <div class="tl-item">
+                        <div class="tl-dot @TeamDotClass(t.TeamName)">@TeamInitial(t.TeamName)</div>
+                        <div class="tl-time"></div>
+                        <div class="tl-title">
+                            @(t.DrawNumber)회차 팀 배정
+                            <span class="badge @TeamBadgeClass(t.TeamName)">@t.TeamName</span>
+                            <span class="badge badge-gray">@(t.DrawNumber)회차</span>
+                        </div>
+                        <div class="tl-desc">🏐 @(t.DrawNumber)회차 @t.TeamName 배정</div>
+                    </div>
+                }
             }
         </div>
     }

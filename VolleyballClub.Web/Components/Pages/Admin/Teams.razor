@@ -23,6 +23,35 @@
         <TeamCard Team="team" Selectable="true" OnMemberSelected="SelectMemberAsync" />
     }
 
+    <div class="card">
+        <div class="card-row">
+            <h2 class="card-title" style="margin:0">➕ 누락 인원 추가</h2>
+            <span class="badge badge-gray">@(UnassignedParticipants.Count)명</span>
+        </div>
+        @if (UnassignedParticipants.Count > 0)
+        {
+            <div class="card-list">
+                @foreach (var p in UnassignedParticipants)
+                {
+                    <button type="button" class="member-row" @onclick="() => StartAddMember(p)">
+                        <div>
+                            <div class="member-name">@p.Name@(p.IsGuest ? " (게스트)" : "")</div>
+                            <div class="member-meta">@p.Department</div>
+                        </div>
+                        <span class="member-time">＋</span>
+                    </button>
+                }
+            </div>
+        }
+        @* 편성 후에도 게스트를 바로 등록해 누락 목록에서 팀에 배정할 수 있다 *@
+        <div style="margin-top:10px">
+            <input class="form-control" type="text" placeholder="게스트 이름" value="@newGuestName"
+                   @oninput='e => newGuestName = e.Value?.ToString() ?? ""' />
+            <div style="height:8px"></div>
+            <button type="button" class="btn-secondary btn-sm" @onclick="AddGuestAsync">+ 게스트 추가</button>
+        </div>
+    </div>
+
     @if (movingMember is not null)
     {
         <div class="confirm-overlay" @onclick="() => movingMember = null">
@@ -40,6 +69,7 @@
                 </div>
                 <div class="btn-row">
                     <button type="button" class="btn-ghost" @onclick="() => movingMember = null">취소</button>
+                    <button type="button" class="btn-secondary" @onclick="RemoveMemberAsync">팀에서 제거</button>
                     <button type="button" class="btn-primary" @onclick="MoveMemberAsync">이동</button>
                 </div>
             </div>
@@ -53,6 +83,7 @@
             <button type="button" class="btn-primary" @onclick="ConfirmAsync">팀 편성 확정</button>
         }
     </div>
+    <button type="button" class="btn-ghost btn-block" @onclick="() => showCancelDraw = true">🗑 @(drawnTeams[0].DrawNumber)회차 취소</button>
     <div style="height:8px"></div>
 }
 else
@@ -137,6 +168,55 @@ else
     </div>
 }
 
+@if (showCancelDraw)
+{
+    <div class="confirm-overlay" @onclick="() => showCancelDraw = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>@(drawnTeams.Count > 0 ? $"{drawnTeams[0].DrawNumber}회차 취소" : "회차 취소")</h3>
+            <p>이 회차의 팀 편성과 배정 기록이 삭제됩니다.
+                @if (confirmedDraw == (drawnTeams.Count > 0 ? drawnTeams[0].DrawNumber : 0))
+                {
+                    if (confirmedDraw is null || confirmedDraw <= 1)
+                    {
+                        <text>부원에게는 더 이상 팀이 표시되지 않습니다.</text>
+                    }
+                    else
+                    {
+                        <text>부원에게는 이전 확정 회차가 다시 표시됩니다.</text>
+                    }
+                }
+                계속하시겠습니까?</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showCancelDraw = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="CancelDrawAsync">회차 취소</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (addingParticipant is not null)
+{
+    <div class="confirm-overlay" @onclick="() => addingParticipant = null">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>@addingParticipant.Name 배정할 팀</h3>
+            <div class="card-list" style="margin-bottom:16px">
+                @foreach (var team in drawnTeams)
+                {
+                    <label class="member-row">
+                        <input type="radio" name="addTarget" checked="@(addTargetTeamId == team.TeamId)"
+                               @onchange="() => addTargetTeamId = team.TeamId" />
+                        <span class="member-name">@team.Name (@(team.Members.Count)명)</span>
+                    </label>
+                }
+            </div>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => addingParticipant = null">취소</button>
+                <button type="button" class="btn-primary" @onclick="AddMemberAsync">추가</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (showConfirmDialog)
 {
     <div class="confirm-overlay" @onclick="() => showConfirmDialog = false">
@@ -161,7 +241,10 @@ else
     private TeamMemberDto? movingMember;
     private int moveTargetTeamId;
     private int? confirmedDraw;
+    private ParticipantDto? addingParticipant;
+    private int addTargetTeamId;
     private bool showRedrawConfirm;
+    private bool showCancelDraw;
     private bool showConfirmDialog;
     private string newGuestName = "";
     private string? sizeError;
@@ -305,6 +388,87 @@ else
         movingMember = member;
         moveTargetTeamId = drawnTeams.FirstOrDefault(t => t.TeamId == drawnTeams.FirstOrDefault(x => x.Members.Any(m => m.TeamMemberId == member.TeamMemberId))?.TeamId)?.TeamId
             ?? drawnTeams.FirstOrDefault()?.TeamId ?? 0;
+    }
+
+    /// <summary>최신 회차에 배정되지 않은 참가자(누락 인원·게스트).</summary>
+    private List<ParticipantDto> UnassignedParticipants
+    {
+        get
+        {
+            var assigned = drawnTeams.SelectMany(t => t.Members)
+                .Select(m => m.IsGuest ? $"g:{m.GuestId}" : $"u:{m.UserId}")
+                .ToHashSet();
+            return participants.Participants.Where(p => !assigned.Contains(p.Key)).ToList();
+        }
+    }
+
+    private void StartAddMember(ParticipantDto p)
+    {
+        addingParticipant = p;
+        addTargetTeamId = drawnTeams.FirstOrDefault()?.TeamId ?? 0;
+    }
+
+    private async Task AddMemberAsync()
+    {
+        var p = addingParticipant;
+        addingParticipant = null;
+        if (p is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await TeamSvc.AddMemberAsync(p.Key, addTargetTeamId);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+            Snackbar.Add($"{p.Name} 배정 완료", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+    }
+
+    private async Task RemoveMemberAsync()
+    {
+        var member = movingMember;
+        movingMember = null;
+        if (member is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await TeamSvc.RemoveMemberAsync(member.TeamMemberId);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+            await LoadParticipantsAsync();
+            Snackbar.Add($"{member.Name} 팀에서 제거", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+    }
+
+    private async Task CancelDrawAsync()
+    {
+        showCancelDraw = false;
+        var drawNumber = drawnTeams.Count > 0 ? drawnTeams[0].DrawNumber : 0;
+        try
+        {
+            await TeamSvc.CancelLatestDrawAsync();
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+            confirmedDraw = await TeamSvc.GetConfirmedDrawNumberAsync();
+            await LoadParticipantsAsync();
+            Snackbar.Add($"{drawNumber}회차 편성을 취소했습니다.", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private async Task MoveMemberAsync()

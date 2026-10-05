@@ -170,4 +170,67 @@ public class TeamGenerationTests : IAsyncLifetime
         await Assert.ThrowsAsync<RuleViolationException>(
             () => host.Team.MoveMemberAsync(oldMember.Id, latestTeam.Id));
     }
+
+    [Fact]
+    public async Task RemoveMember_RemovesFromLatestDraw()
+    {
+        var teams = await GenerateAsync(2, 2, 2);
+        var victim = teams[0].Members[0];
+
+        await host.Team.RemoveMemberAsync(victim.TeamMemberId);
+
+        var updated = await host.Team.GetTodayTeamsForAdminAsync();
+        Assert.Equal(5, updated.Sum(t => t.Members.Count));
+        Assert.DoesNotContain(updated.SelectMany(t => t.Members), m => m.TeamMemberId == victim.TeamMemberId);
+
+        await using var db = host.Db.CreateContext();
+        Assert.Equal(5, await db.TeamMembers.CountAsync());
+    }
+
+    [Fact]
+    public async Task AddMember_AssignsMissingParticipant_AndRejectsDuplicate()
+    {
+        var teams = await GenerateAsync(3, 3);
+        await host.Team.AddGuestAsync("늦게온친구");
+        var guests = await host.Team.GetParticipantsAsync();
+        var guest = guests.Participants.Single(p => p.IsGuest);
+
+        await host.Team.AddMemberAsync(guest.Key, teams[0].TeamId);
+
+        var updated = await host.Team.GetTodayTeamsForAdminAsync();
+        Assert.Equal(4, updated[0].Members.Count);
+        Assert.Contains(updated[0].Members, m => m.IsGuest);
+
+        // 이미 최신 회차에 배정된 게스트 재추가 거부
+        await Assert.ThrowsAsync<RuleViolationException>(
+            () => host.Team.AddMemberAsync(guest.Key, teams[1].TeamId));
+    }
+
+    [Fact]
+    public async Task CancelLatestDraw_RemovesDraw_AndRollsBackConfirmation()
+    {
+        await GenerateAsync(2, 2, 2);
+        await host.Team.ConfirmAsync();
+        await GenerateAsync(3, 3);
+        await host.Team.ConfirmAsync();
+        Assert.Equal(2, await host.Team.GetConfirmedDrawNumberAsync());
+
+        await host.Team.CancelLatestDrawAsync();
+
+        // 1회차는 유지되고 공개도 1회차로 되돌아간다
+        await using var db = host.Db.CreateContext();
+        Assert.Equal(3, await db.Teams.CountAsync());
+        Assert.Equal(6, await db.TeamMembers.CountAsync());
+        Assert.Equal(1, await host.Team.GetConfirmedDrawNumberAsync());
+
+        host.AsMember(memberIds[0]);
+        var published = await host.Team.GetTodayTeamsAsync();
+        Assert.All(published, t => Assert.Equal(1, t.DrawNumber));
+
+        // 남은 회차도 취소하면 공개가 없어진다
+        host.AsAdmin();
+        await host.Team.CancelLatestDrawAsync();
+        Assert.Null(await host.Team.GetConfirmedDrawNumberAsync());
+        Assert.Empty(await host.Team.GetTodayTeamsForAdminAsync());
+    }
 }

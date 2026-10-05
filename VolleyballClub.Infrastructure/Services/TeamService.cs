@@ -237,8 +237,145 @@ public class TeamService(
         await auditLog.LogAsync(AdminAction.TeamChange, "TeamMember", member.Id.ToString(),
             $"{memberName}: {fromTeamName} → {targetTeam.Name}");
 
-        var teams = await LoadTeamsAsync(db, activity.Id);
+        var teams = await LoadTeamsAsync(db, activity.Id, latestDraw);
         return teams.First(t => t.TeamId == targetTeam.Id);
+    }
+
+    public async Task RemoveMemberAsync(int teamMemberId)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var member = await db.TeamMembers
+            .Include(m => m.Team)
+            .FirstOrDefaultAsync(m => m.Id == teamMemberId)
+            ?? throw new NotFoundException("팀원을 찾을 수 없습니다.");
+
+        var today = KstClock.Today(timeProvider);
+        var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == member.Team!.ActivityId);
+        if (activity.ActivityDate != today || activity.Status == ActivityStatus.ActivityClosed)
+        {
+            throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
+        }
+
+        var latestDraw = await LatestDrawNumberAsync(db, activity.Id);
+        if (member.Team!.DrawNumber != latestDraw)
+        {
+            throw new RuleViolationException("이전 회차 팀원은 제거할 수 없습니다.");
+        }
+
+        var memberName = await ResolveMemberNameAsync(db, member);
+        var fromTeamName = member.Team!.Name;
+        db.TeamMembers.Remove(member);
+        await db.SaveChangesAsync();
+        await auditLog.LogAsync(AdminAction.TeamChange, "TeamMember", teamMemberId.ToString(),
+            $"{memberName}: {fromTeamName}에서 제거");
+    }
+
+    public async Task<TeamResultDto> AddMemberAsync(string participantKey, int teamId)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var today = KstClock.Today(timeProvider);
+        var activity = await ActivityService.FindTodayAsync(db, today);
+        if (activity.Status == ActivityStatus.ActivityClosed)
+        {
+            throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
+        }
+
+        var team = await db.Teams.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == teamId && t.ActivityId == activity.Id)
+            ?? throw new NotFoundException("팀을 찾을 수 없습니다.");
+
+        var latestDraw = await LatestDrawNumberAsync(db, activity.Id)
+            ?? throw new RuleViolationException("먼저 팀을 편성해 주세요.");
+        if (team.DrawNumber != latestDraw)
+        {
+            throw new RuleViolationException("이전 회차 팀에는 추가할 수 없습니다.");
+        }
+
+        var (userId, guestId, name) = await ResolveParticipantAsync(db, activity.Id, participantKey);
+        var alreadyInDraw = await db.TeamMembers.AnyAsync(m =>
+            m.Team!.ActivityId == activity.Id
+            && m.Team!.DrawNumber == latestDraw
+            && ((userId != null && m.UserId == userId) || (guestId != null && m.GuestId == guestId)));
+        if (alreadyInDraw)
+        {
+            throw new RuleViolationException($"{name}님은 이미 이번 회차에 배정되어 있습니다.");
+        }
+
+        db.TeamMembers.Add(new TeamMember
+        {
+            TeamId = team.Id,
+            UserId = userId,
+            GuestId = guestId,
+            CreatedAt = KstClock.NowUtc(timeProvider),
+        });
+        await db.SaveChangesAsync();
+        await auditLog.LogAsync(AdminAction.TeamChange, "TeamMember", teamId.ToString(),
+            $"{name}: {team.Name}에 추가 (누락 인원)");
+
+        var teams = await LoadTeamsAsync(db, activity.Id, latestDraw);
+        return teams.First(t => t.TeamId == team.Id);
+    }
+
+    public async Task CancelLatestDrawAsync()
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        if (activity.Status == ActivityStatus.ActivityClosed)
+        {
+            throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
+        }
+
+        var latestDraw = await LatestDrawNumberAsync(db, activity.Id)
+            ?? throw new RuleViolationException("취소할 팀 편성이 없습니다.");
+
+        var cancelledTeams = await db.Teams
+            .Where(t => t.ActivityId == activity.Id && t.DrawNumber == latestDraw)
+            .ToListAsync();
+        var memberCount = await db.TeamMembers.CountAsync(m => cancelledTeams.Select(t => t.Id).Contains(m.TeamId));
+        db.Teams.RemoveRange(cancelledTeams); // 팀원은 FK cascade
+
+        if (activity.ConfirmedDrawNumber == latestDraw)
+        {
+            // 취소된 회차가 공개 중이었다면 이전 회차로 되돌린다
+            activity.ConfirmedDrawNumber = await db.Teams
+                .Where(t => t.ActivityId == activity.Id && t.DrawNumber < latestDraw)
+                .OrderByDescending(t => t.DrawNumber)
+                .Select(t => (int?)t.DrawNumber)
+                .FirstOrDefaultAsync();
+        }
+
+        activity.UpdatedAt = KstClock.NowUtc(timeProvider);
+        await db.SaveChangesAsync();
+        await auditLog.LogAsync(AdminAction.TeamDelete, "Activity", activity.Id.ToString(),
+            $"{latestDraw}회차 편성 취소 ({cancelledTeams.Count}팀 {memberCount}명)");
+    }
+
+    /// <summary>"u:{부원Id}" / "g:{게스트Id}" 참가자 키를 검증해 분해한다.</summary>
+    private static async Task<(string? UserId, int? GuestId, string Name)> ResolveParticipantAsync(
+        ApplicationDbContext db, int activityId, string participantKey)
+    {
+        if (participantKey.StartsWith("u:"))
+        {
+            var userId = participantKey[2..];
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive)
+                ?? throw new RuleViolationException("유효하지 않은 부원입니다.");
+            return (userId, null, user.Name);
+        }
+
+        if (participantKey.StartsWith("g:") && int.TryParse(participantKey[2..], out var guestId))
+        {
+            var guest = await db.Guests.AsNoTracking()
+                .FirstOrDefaultAsync(g => g.Id == guestId && g.ActivityId == activityId)
+                ?? throw new RuleViolationException("존재하지 않는 게스트입니다.");
+            return (null, guestId, guest.Name);
+        }
+
+        throw new RuleViolationException("참가자를 식별할 수 없습니다.");
     }
 
     public async Task ConfirmAsync()
