@@ -1,6 +1,12 @@
 @inherits LayoutComponentBase
 @inject AuthenticationStateProvider AuthState
 
+@* MudBlazor 프로바이더는 정적 SSR(App.razor)에 두면 이벤트를 못 받아 스낵바·팝오버가
+   전부 무반응이 된다(MudBlazor 권장: 레이아웃 = 인터랙티브 트리 안에 배치). *@
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudSnackbarProvider />
+
 <div class="app-shell">
     <main class="app-content">
         @Body

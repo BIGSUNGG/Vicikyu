@@ -261,9 +261,11 @@ else
     private void ValidateSizes()
     {
         var total = selectedUserIds.Count + selectedGuestIds.Count;
-        sizeError = teamSizes.Sum() != total
-            ? $"팀별 인원수 합계가 참가 인원 {total}명과 일치하지 않습니다."
-            : null;
+        sizeError = teamSizes.Any(s => s < 1)
+            ? "팀별 인원수는 1 이상이어야 합니다."
+            : teamSizes.Sum() != total
+                ? $"팀별 인원수 합계가 참가 인원 {total}명과 일치하지 않습니다."
+                : null;
     }
 
     private async Task DrawAsync()
