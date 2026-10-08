@@ -23,7 +23,7 @@
         <div class="hb-title">일정 없음</div>
     }
     <div class="hf-chips">
-        <span class="hf-chip">📅 @DateString</span>
+        <span class="hf-chip"><img class="icon" src="/icons/calendar.svg" alt=""> @DateString</span>
         @if (today is not null)
         {
             <span class="hf-chip">@today.StatusText</span>
@@ -32,8 +32,8 @@
 </header>
 
 <div class="tile-grid">
-    <div class="tile sun">
-        <div class="t-icon">📅</div>
+    <div class="tile sky">
+        <div class="t-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
         <div class="t-label">오늘 운동</div>
         @if (today is not null)
         {
@@ -47,7 +47,7 @@
         }
     </div>
     <div class="tile mint">
-        <div class="t-icon">✅</div>
+        <div class="t-icon"><img class="icon" src="/icons/check.svg" alt=""></div>
         <div class="t-label">오늘 출석</div>
         @if (today?.IsAttended == true)
         {
@@ -67,8 +67,8 @@
     </div>
     @if (semesterStats is not null)
     {
-        <div class="tile sky">
-            <div class="t-icon">🏆</div>
+        <div class="tile sun">
+            <div class="t-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
             <div class="t-label">이번 학기</div>
             <div class="t-value">@(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</div>
             <div class="t-meta">출석률 @(semesterStats.AttendanceRatePercent)% (@(semesterStats.SemesterActivities)회 중)</div>
@@ -77,7 +77,7 @@
     @if (feeStatus is not null)
     {
         <div class="tile lilac">
-            <div class="t-icon">💳</div>
+            <div class="t-icon"><img class="icon" src="/icons/fee.svg" alt=""></div>
             <div class="t-label">회비</div>
             <div class="t-value">@(feeStatus.IsPaid ? "납부 완료" : "미납")</div>
             <div class="t-meta">@feeStatus.PeriodName</div>
@@ -99,7 +99,7 @@
         var isOpen = expandedTeamIds.Contains(team.TeamId);
         <div class="court @(isMine ? "mine" : "") @(isOpen ? "open" : "")">
             <button type="button" class="court-head" @onclick="() => ToggleTeam(team.TeamId)">
-                <span class="court-name">🏐 @team.Name@(isMine ? " · 나의 팀" : "")</span>
+                <span class="court-name"><img class="icon" src="/icons/volleyball.svg" alt=""> @team.Name@(isMine ? " · 나의 팀" : "")</span>
                 <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명 @(isOpen ? "▾" : "▸")</span>
             </button>
             <div class="chips-wrap">

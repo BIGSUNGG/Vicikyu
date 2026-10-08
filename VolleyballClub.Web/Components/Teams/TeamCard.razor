@@ -1,7 +1,7 @@
 @* 코트 카드(L1 시안 team.html) — 관리자 팀 뽑기용. 멤버 칩은 항상 펼침(클릭 → 이동/제거). *@
 <div class="court open">
     <div class="court-head">
-        <span class="court-name">🏐 @Team.Name</span>
+        <span class="court-name"><img class="icon" src="/icons/volleyball.svg" alt=""> @Team.Name</span>
         <span class="badge @(IsMineTeam ? "badge-orange" : "badge-gray")">@(Team.Members.Count)명</span>
     </div>
     <div class="chips-wrap">

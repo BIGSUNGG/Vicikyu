@@ -696,6 +696,38 @@ button.court-head {
 	font-size: 1.02rem;
 }
 
+/* 이모지 대체 아이콘(img) 기본 규격 */
+.icon {
+	width: 1.1em;
+	height: 1.1em;
+	vertical-align: -0.18em;
+}
+.nav-icon .icon {
+	width: 1em;
+	height: 1em;
+}
+.hb-title .icon,
+.page-title .icon {
+	width: 1.2em;
+	height: 1.2em;
+	vertical-align: -0.2em;
+	margin-right: 3px;
+}
+.court-name .icon {
+	width: 1.15em;
+	height: 1.15em;
+	vertical-align: -0.2em;
+	margin-right: 2px;
+}
+.login-logo .icon {
+	width: 2.2em;
+	height: 2.2em;
+}
+.tl-dot .icon {
+	width: 1.55em;
+	height: 1.55em;
+}
+
 /* ============================================================
    L4 출석(홈 통합) — OTP 입력
    ============================================================ */
@@ -923,6 +955,11 @@ button.court-head {
 .day-cell .mark {
 	font-size: 0.55rem;
 	color: var(--vb-success-dark);
+}
+.day-cell .mark .icon {
+	width: 1.4em;
+	height: 1.4em;
+	vertical-align: -0.3em;
 }
 .day-cell.attended {
 	background: var(--vb-success-soft);

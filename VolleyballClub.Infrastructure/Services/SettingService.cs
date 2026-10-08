@@ -53,7 +53,7 @@ public class SettingService(
     {
         var club = await GetAsync("ClubName") ?? "배구부";
         var school = await GetAsync("SchoolName") ?? "";
-        return string.IsNullOrWhiteSpace(school) ? club : $"🏐 {school} {club}";
+        return string.IsNullOrWhiteSpace(school) ? club : $"{school} {club}";
     }
 
     public async Task<string?> GetFeeSheetUrlAsync() => await GetAsync("FeeSheetUrl");

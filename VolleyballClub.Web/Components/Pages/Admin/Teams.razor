@@ -7,7 +7,7 @@
 
 <PageTitle>팀 뽑기 · 배구부</PageTitle>
 
-<AdminNav Title="🎲 팀 뽑기" Sub="출석 인원 기준 랜덤 편성" Active="teams" />
+<AdminNav Icon="/icons/dice.svg" Title="팀 뽑기" Sub="출석 인원 기준 랜덤 편성" Active="teams" />
 
 @if (drawnTeams is { Count: > 0 })
 {
@@ -25,7 +25,7 @@
 
     <div class="card">
         <div class="card-row">
-            <h2 class="card-title" style="margin:0">➕ 누락 인원 추가</h2>
+            <h2 class="card-title" style="margin:0"><img class="icon" src="/icons/plus.svg" alt=""> 누락 인원 추가</h2>
             <span class="badge badge-gray">@(UnassignedParticipants.Count)명</span>
         </div>
         @if (UnassignedParticipants.Count > 0)
@@ -77,13 +77,13 @@
     }
 
     <div class="btn-row">
-        <button type="button" class="btn-secondary" @onclick="RedrawAsync">🔄 다시 뽑기</button>
+        <button type="button" class="btn-secondary" @onclick="RedrawAsync"><img class="icon" src="/icons/refresh.svg" alt=""> 다시 뽑기</button>
         @if (canConfirm)
         {
             <button type="button" class="btn-primary" @onclick="ConfirmAsync">팀 편성 확정</button>
         }
     </div>
-    <button type="button" class="btn-ghost btn-block" @onclick="() => showCancelDraw = true">🗑 @(drawnTeams[0].DrawNumber)회차 취소</button>
+    <button type="button" class="btn-ghost btn-block" @onclick="() => showCancelDraw = true"><img class="icon" src="/icons/trash.svg" alt=""> @(drawnTeams[0].DrawNumber)회차 취소</button>
     <div style="height:8px"></div>
 }
 else
@@ -103,7 +103,7 @@ else
                     </div>
                     @if (p.IsAttended && !p.IsGuest)
                     {
-                        <span class="member-time">✅ 출석</span>
+                        <span class="member-time"><img class="icon" src="/icons/check.svg" alt=""> 출석</span>
                     }
                 </label>
             }
@@ -150,7 +150,7 @@ else
             <p class="text-danger">@sizeError</p>
         }
 
-        <button type="button" class="btn-primary btn-block" style="margin-top:10px" @onclick="DrawAsync">🎲 랜덤 팀 뽑기</button>
+        <button type="button" class="btn-primary btn-block" style="margin-top:10px" @onclick="DrawAsync"><img class="icon" src="/icons/dice.svg" alt=""> 랜덤 팀 뽑기</button>
     </div>
 }
 

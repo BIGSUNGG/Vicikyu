@@ -1,0 +1,19 @@
+# 아이콘 크레딧 (iconify API 경유 다운로드)
+- volleyball.svg: Solar Icons — CC-BY 4.0
+- check.svg: Lucide — ISC
+- calendar.svg: Lucide — ISC
+- trophy.svg: Lucide — ISC
+- fee.svg: Tabler — MIT
+- gear.svg: Solar Icons — CC-BY 4.0
+- nav-home/nav-records/nav-my/nav-admin.svg: Phosphor — MIT
+- dice.svg: Lucide(dices) — ISC
+- scroll.svg: Tabler(history) — MIT
+- clipboard.svg: Tabler(clipboard-list) — MIT
+- money.svg: Phosphor(currency-krw) — MIT
+- users.svg: Tabler(users) — MIT
+- denied.svg: Phosphor(prohibit) — MIT
+- trash.svg: Tabler(trash) — MIT
+- finish.svg: Lucide(flag) — ISC
+- refresh.svg: Tabler(refresh) — MIT
+- plus.svg: Fluent Emoji Flat(heavy-plus-sign) — MIT
+- mark.svg: Tabler(check) — MIT

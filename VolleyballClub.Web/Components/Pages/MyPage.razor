@@ -28,14 +28,14 @@
             </div>
             <div class="ring-side">
                 <div class="ring-stat">
-                    <div class="rs-icon">🏆</div>
+                    <div class="rs-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
                     <div>
                         <div class="rs-label">현재 순위</div>
                         <div class="rs-value">@(semesterStats.Rank)위 / @(semesterStats.TotalActiveMembers)명</div>
                     </div>
                 </div>
                 <div class="ring-stat">
-                    <div class="rs-icon">📅</div>
+                    <div class="rs-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
                     <div>
                         <div class="rs-label">이번 학기 출석</div>
                         <div class="rs-value">@(semesterStats.MyAttendances)회 (@(semesterStats.SemesterActivities)회 중)</div>
@@ -73,7 +73,7 @@
                                 @cell.Date.Day
                                 @if (cell.IsAttended)
                                 {
-                                    <span class="mark">✔</span>
+                                    <span class="mark"><img class="icon" src="/icons/mark.svg" alt=""></span>
                                 }
                             </button>
                         }
@@ -90,7 +90,7 @@
             @if (sel.IsAttended)
             {
                 <div class="dd-info">
-                    ✅ 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
+                    <img class="icon" src="/icons/check.svg" alt=""> 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
                     @(sel.Teams.Count > 0 ? $" · {string.Join(", ", sel.Teams.Select(t => $"{t.DrawNumber}회차 {t.TeamName}"))}" : "")
                 </div>
             }
@@ -119,7 +119,7 @@
 <div class="btn-row">
     <a href="/Account/Logout" class="btn-ghost">로그아웃</a>
     <AuthorizeView Roles="ADMIN">
-        <a href="/admin" class="btn-secondary">⚙ 관리자</a>
+        <a href="/admin" class="btn-secondary"><img class="icon" src="/icons/gear.svg" alt=""> 관리자</a>
     </AuthorizeView>
 </div>
 

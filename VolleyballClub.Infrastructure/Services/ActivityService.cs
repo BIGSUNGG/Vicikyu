@@ -225,10 +225,10 @@ public class ActivityService(
     internal static string StatusText(ActivityStatus status) => status switch
     {
         ActivityStatus.Ready => "준비중",
-        ActivityStatus.AttendanceOpen => "🟢 출석 진행중",
+        ActivityStatus.AttendanceOpen => "출석 진행중",
         ActivityStatus.AttendanceClosed => "출석 마감",
-        ActivityStatus.TeamCreated => "🏐 팀 편성 완료",
-        ActivityStatus.ActivityClosed => "🔴 오늘 활동 종료",
+        ActivityStatus.TeamCreated => "팀 편성 완료",
+        ActivityStatus.ActivityClosed => "오늘 활동 종료",
         _ => status.ToString(),
     };
 }

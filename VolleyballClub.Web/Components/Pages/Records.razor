@@ -36,7 +36,7 @@
             {
                 @* 출석 한 줄 *@
                 <div class="tl-item">
-                    <div class="tl-dot neutral">🏐</div>
+                    <div class="tl-dot neutral"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
                     <div class="tl-time">@record.Date.ToString("M월 d일 dddd")</div>
                     <div class="tl-title">
                         @(record.IsAttended ? "출석 완료" : "미출석")
@@ -45,7 +45,7 @@
                     <div class="tl-desc">
                         @if (record.IsAttended)
                         {
-                            <text>✅ 출석 @Domain.KstClock.ToKstTimeString(record.CheckedAt!.Value)</text>
+                            <text><img class="icon" src="/icons/check.svg" alt=""> 출석 @Domain.KstClock.ToKstTimeString(record.CheckedAt!.Value)</text>
                         }
                         else
                         {
@@ -53,7 +53,7 @@
                         }
                         @if (record.Status == ActivityStatus.ActivityClosed)
                         {
-                            <text> · 🔚 활동 종료</text>
+                            <text> · <img class="icon" src="/icons/finish.svg" alt=""> 활동 종료</text>
                         }
                     </div>
                 </div>
@@ -68,7 +68,7 @@
                             <span class="badge @TeamBadgeClass(t.TeamName)">@t.TeamName</span>
                             <span class="badge badge-gray">@(t.DrawNumber)회차</span>
                         </div>
-                        <div class="tl-desc">🏐 @(t.DrawNumber)회차 @t.TeamName 배정</div>
+                        <div class="tl-desc"><img class="icon" src="/icons/volleyball.svg" alt=""> @(t.DrawNumber)회차 @t.TeamName 배정</div>
                     </div>
                 }
             }
@@ -106,7 +106,7 @@
         await LoadAsync();
     }
 
-    private static string TeamInitial(string? teamName) => teamName is null or "" ? "🏐" : teamName[..1];
+    private static string TeamInitial(string? teamName) => teamName is null or "" ? "–" : teamName[..1];
 
     private static string TeamDotClass(string? teamName) => teamName switch
     {

@@ -1,5 +1,11 @@
 <header class="hero-band">
-    <div class="hb-title">@Title</div>
+    <div class="hb-title">
+        @if (Icon is not null)
+        {
+            <img class="icon" src="@Icon" alt="">
+        }
+        @Title
+    </div>
     <div class="hf-chips">
         <span class="hf-chip">@Sub</span>
         @if (Badge is not null)
@@ -18,6 +24,9 @@
 @code {
     [Parameter]
     public string Title { get; set; } = "";
+
+    [Parameter]
+    public string? Icon { get; set; }
 
     [Parameter]
     public string Sub { get; set; } = "";
