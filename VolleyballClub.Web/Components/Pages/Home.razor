@@ -127,7 +127,7 @@
                     <span class="sec-title">팀 편성표 <span class="badge badge-orange">@(teams[0].DrawNumber)회차</span></span>
                     <button type="button" class="team-fs-close" @onclick="CloseTeamBoard" aria-label="닫기">✕</button>
                 </div>
-                <div class="team-fs-grid">
+                <div class="team-fs-grid @(teams.Count >= 4 ? "quad" : "")">
                 @foreach (var team in teams) // ponytail: 홈 그리드와 칩 마크업 중복 — 같은 파일이라 변경 누락 위험 낮음, 컴포넌트 추출은 팀 카드 변경이 잦아질 때
                 {
                     <div class="court open">
