@@ -81,7 +81,7 @@ public class MemberColorTests
             () => host.Member.ChangeMyPasswordAsync(new PasswordChangeRequest("WrongPass1!", "NewPass1234!")));
 
         await Assert.ThrowsAsync<RuleViolationException>(
-            () => host.Member.ChangeMyPasswordAsync(new PasswordChangeRequest("Password123!", "short")));
+            () => host.Member.ChangeMyPasswordAsync(new PasswordChangeRequest("Password123!", "abc")));
 
         await host.Member.ChangeMyPasswordAsync(new PasswordChangeRequest("Password123!", "NewPass1234!"));
 

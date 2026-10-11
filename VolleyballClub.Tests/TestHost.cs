@@ -150,7 +150,18 @@ public sealed class ServiceHost : IAsyncDisposable
         var db = Db.CreateContext();
         return new UserManager<ApplicationUser>(
             new UserStore<ApplicationUser>(db),
-            Options.Create(new IdentityOptions()),
+            Options.Create(new IdentityOptions
+            {
+                // 앱 구성(DependencyInjection)과 동일한 완화 정책 미러링
+                Password = new PasswordOptions
+                {
+                    RequiredLength = 4,
+                    RequireNonAlphanumeric = false,
+                    RequireDigit = false,
+                    RequireUppercase = false,
+                    RequireLowercase = false,
+                },
+            }),
             new PasswordHasher<ApplicationUser>(),
             [], [],
             new UpperInvariantLookupNormalizer(),

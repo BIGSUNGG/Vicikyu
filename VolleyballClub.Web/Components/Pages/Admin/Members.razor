@@ -35,7 +35,7 @@
                 <InputText @bind-Value="createForm.Department" class="form-control" placeholder="컴퓨터공학과" />
             </div>
             <div class="field">
-                <label class="form-label">초기 비밀번호(8자 이상)</label>
+                <label class="form-label">초기 비밀번호(4자 이상)</label>
                 <InputText type="password" @bind-Value="createForm.Password" class="form-control" />
             </div>
             <div class="field">
@@ -280,7 +280,7 @@
         public string Department { get; set; } = "";
 
         [Required(ErrorMessage = "초기 비밀번호를 입력하세요.")]
-        [MinLength(8, ErrorMessage = "비밀번호는 8자 이상이어야 합니다.")]
+        [MinLength(4, ErrorMessage = "비밀번호는 4자 이상이어야 합니다.")]
         public string Password { get; set; } = "";
 
         public string Role { get; set; } = "MEMBER";

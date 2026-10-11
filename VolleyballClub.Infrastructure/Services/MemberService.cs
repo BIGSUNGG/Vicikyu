@@ -83,9 +83,9 @@ public class MemberService(
             throw new RuleViolationException("학번과 이름은 필수입니다.");
         }
 
-        if (request.Password.Length < 8)
+        if (request.Password.Length < 4)
         {
-            throw new RuleViolationException("비밀번호는 8자 이상이어야 합니다.");
+            throw new RuleViolationException("비밀번호는 4자 이상이어야 합니다.");
         }
 
         if (await userManager.FindByNameAsync(studentNumber) is not null)
@@ -223,9 +223,9 @@ public class MemberService(
 
     public async Task ChangeMyPasswordAsync(PasswordChangeRequest request)
     {
-        if (request.NewPassword.Length < 8)
+        if (request.NewPassword.Length < 4)
         {
-            throw new RuleViolationException("새 비밀번호는 8자 이상이어야 합니다.");
+            throw new RuleViolationException("새 비밀번호는 4자 이상이어야 합니다.");
         }
 
         var userId = await currentUser.RequireUserIdAsync();

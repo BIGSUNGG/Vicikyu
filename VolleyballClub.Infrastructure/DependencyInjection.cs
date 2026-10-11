@@ -27,8 +27,12 @@ public static class DependencyInjection
             {
                 options.SignIn.RequireConfirmedAccount = false;
                 options.User.RequireUniqueEmail = false;
-                options.Password.RequiredLength = 8;
+                // 비밀번호 규칙: 4자 이상이면 충분(복잡도 요구 없음)
+                options.Password.RequiredLength = 4;
                 options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireDigit = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireLowercase = false;
                 options.Lockout.MaxFailedAccessAttempts = 5;
             })
             .AddRoles<IdentityRole>()
