@@ -46,7 +46,7 @@ docker compose down -v         # 중지 + DB 데이터 초기화 (시드부터 �
 ### 관리자 계정
 
 - ID: `admin`
-- 비밀번호: compose의 `Seed__AdminPassword` 값 (현재 `Vbc!Docker#2026-admin`)
+- 비밀번호: compose의 `Seed__AdminPassword` 값 (현재 `Admin1234!` — 로컬 개발과 동일)
 - 변경: `docker-compose.yml`의 `Seed__AdminPassword` 수정 후 `docker compose down -v && docker compose up -d --build`
   (시드는 첫 기동에만 적용되므로 볼륨 초기화 필요)
 

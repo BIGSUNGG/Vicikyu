@@ -23,7 +23,7 @@ services:
       ConnectionStrings__DefaultConnection: >-
         Host=db;Port=5432;Database=volleyballclub;
         Username=postgres;Password=vbc_docker_pg_2026
-      Seed__AdminPassword: "Vbc!Docker#2026-admin"
+      Seed__AdminPassword: "Admin1234!"
     ports:
       - "5121:8080"
 
