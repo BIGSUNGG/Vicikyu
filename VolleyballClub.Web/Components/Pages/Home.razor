@@ -91,7 +91,10 @@
 {
     <div class="sec">
         <span class="sec-title">지금 팀 <span class="badge badge-orange">@(teams[0].DrawNumber)회차</span></span>
-        <span class="sec-more">@(teams.Sum(t => t.Members.Count))명 · @(teams.Count)팀</span>
+        <span class="sec-right">
+            <span class="sec-more">@(teams.Sum(t => t.Members.Count))명 · @(teams.Count)팀</span>
+            <button type="button" class="sec-expand" @onclick="OpenTeamBoard" aria-label="팀 편성표 전체화면">⤢</button>
+        </span>
     </div>
     <div class="court-grid">
         @foreach (var team in teams)
@@ -115,6 +118,39 @@
             </div>
         }
     </div>
+
+    @if (showTeamBoard)
+    {
+        <div class="team-fs" @onclick="CloseTeamBoard">
+            <div class="team-fs-panel" @onclick:stopPropagation="true">
+                <div class="team-fs-head">
+                    <span class="sec-title">팀 편성표 <span class="badge badge-orange">@(teams[0].DrawNumber)회차</span></span>
+                    <button type="button" class="team-fs-close" @onclick="CloseTeamBoard" aria-label="닫기">✕</button>
+                </div>
+                <div class="team-fs-grid">
+                @foreach (var team in teams) // ponytail: 홈 그리드와 칩 마크업 중복 — 같은 파일이라 변경 누락 위험 낮음, 컴포넌트 추출은 팀 카드 변경이 잦아질 때
+                {
+                    var isMine = team.Members.Any(m => !m.IsGuest && m.UserId == myUserId);
+                    <div class="court open @(isMine ? "mine" : "")">
+                        <div class="court-head">
+                            <span class="court-name"><img class="icon" src="/icons/volleyball.svg" alt=""> @team.Name@(isMine ? " · 나의 팀" : "")</span>
+                            <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명</span>
+                        </div>
+                        <div class="chips-wrap">
+                            <div class="chips">
+                                @foreach (var member in team.Members)
+                                {
+                                    var isMyChip = !member.IsGuest && member.UserId == myUserId;
+                                    <span class="team-member-chip @(isMyChip ? "mine" : "")">@member.Name@(member.IsGuest ? " (게스트)" : "")@(isMyChip ? " ★" : "")</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -124,6 +160,11 @@
     private FeeStatusDto? feeStatus;
     private string myUserId = "";
     private HashSet<int> expandedTeamIds = [];
+    private bool showTeamBoard;
+
+    private void OpenTeamBoard() => showTeamBoard = true;
+
+    private void CloseTeamBoard() => showTeamBoard = false;
 
     private void ToggleTeam(int teamId)
     {
