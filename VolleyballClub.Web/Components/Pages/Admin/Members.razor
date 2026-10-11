@@ -89,7 +89,7 @@
 
 <div class="card">
     <h2 class="card-title">부원 목록</h2>
-    <div class="card-list">
+    <div class="card-list split-2">
         @foreach (var member in visibleMembers)
         {
             <div class="member-row" style="cursor:pointer" @onclick="() => BeginEdit(member)">

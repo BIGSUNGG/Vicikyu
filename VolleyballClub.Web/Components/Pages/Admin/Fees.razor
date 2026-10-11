@@ -57,19 +57,20 @@
             <span class="badge badge-blue">납부 @paidCount / @(statuses.Count)명</span>
         </div>
 
-        <div class="filter-group" style="margin-top:12px">
-            @foreach (var (value, label) in new[] { (FeeFilter.All, "전체"), (FeeFilter.Paid, "납부"), (FeeFilter.Unpaid, "미납") })
-            {
-                <button type="button" class="filter-btn @(filter == value ? "active" : "")" @onclick="() => ChangeFilterAsync(value)">@label</button>
-            }
+        <div class="toolbar-row">
+            <div class="filter-group">
+                @foreach (var (value, label) in new[] { (FeeFilter.All, "전체"), (FeeFilter.Paid, "납부"), (FeeFilter.Unpaid, "미납") })
+                {
+                    <button type="button" class="filter-btn @(filter == value ? "active" : "")" @onclick="() => ChangeFilterAsync(value)">@label</button>
+                }
+            </div>
+            <div class="field">
+                <input class="form-control" type="search" placeholder="이름 / 학번 검색" value="@search"
+                       @oninput='e => { search = e.Value?.ToString() ?? ""; }' />
+            </div>
         </div>
 
-        <div class="field">
-            <input class="form-control" type="search" placeholder="이름 / 학번 검색" value="@search"
-                   @oninput='e => { search = e.Value?.ToString() ?? ""; }' />
-        </div>
-
-        <div class="card-list">
+        <div class="card-list split-2">
             @foreach (var status in visibleStatuses)
             {
                 <label class="member-row">

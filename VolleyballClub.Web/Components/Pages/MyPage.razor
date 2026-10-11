@@ -16,10 +16,11 @@
     </div>
 </header>
 
-@if (semesterStats is not null)
-{
-    <div class="card">
-        <div class="ring-wrap">
+<div class="my-grid">
+    @if (semesterStats is not null)
+    {
+        <div class="card">
+            <div class="ring-wrap">
             <div class="ring" style="background:conic-gradient(var(--vb-success) 0 @semesterStats.AttendanceRatePercent%, #f0e6d8 @semesterStats.AttendanceRatePercent% 100%)">
                 <div class="ring-in">
                     <div class="ring-num">@semesterStats.AttendanceRatePercent%</div>
@@ -46,10 +47,10 @@
     </div>
 }
 
-<div class="card">
-    <div class="cal-nav">
-        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
-        <span class="cal-title">@(calendar.Year)년 @(calendar.Month)월</span>
+    <div class="card">
+        <div class="cal-nav">
+            <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
+            <span class="cal-title">@(calendar.Year)년 @(calendar.Month)월</span>
         <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(1)">▶</button>
     </div>
 
@@ -114,6 +115,7 @@
     <div style="text-align:center;margin-top:10px">
         <span class="member-meta">전체 @(calendar.TotalCount)회</span>
     </div>
+</div>
 </div>
 
 <div class="btn-row">
