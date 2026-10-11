@@ -1,10 +1,11 @@
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Domain.Enums;
 using Xunit;
 
 namespace VolleyballClub.Tests;
 
-/// <summary>출석 마감/활동 종료 이후의 출석 거부와 Activity 부재 처리.</summary>
-public class AttendanceClosedTests : IAsyncLifetime
+/// <summary>활동 상태별 OTP 출석 허용/거부 정책 — 활동 중·팀 확정 상태에서는 상시 출석.</summary>
+public class AttendancePolicyTests : IAsyncLifetime
 {
     private readonly ServiceHost host = new();
 
@@ -16,18 +17,40 @@ public class AttendanceClosedTests : IAsyncLifetime
     public Task DisposeAsync() => host.DisposeAsync().AsTask();
 
     [Fact]
-    public async Task ClosedAttendance_RejectsOtpCheckIn()
+    public async Task ActiveActivity_AllowsOtpCheckIn()
     {
         host.AsAdmin();
         await host.Activity.GetOrCreateTodayAsync();
         await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartAttendanceAsync();
-        await host.Activity.CloseAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
 
         host.AsMember("user-202512002");
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Attendance.CheckInWithOtpAsync(otp));
-        Assert.Contains("출석이 이미 마감", ex.Message);
+        await host.Attendance.CheckInWithOtpAsync(otp);
+        Assert.Equal(1, await host.CountAttendancesAsync());
+    }
+
+    [Fact]
+    public async Task TeamCreatedActivity_AllowsOtpCheckIn()
+    {
+        host.AsAdmin();
+        await host.SeedActivityAsync(Domain.KstClock.Today(host.Time), ActivityStatus.TeamCreated, otp: "1234");
+
+        host.AsMember("user-202512002");
+        await host.Attendance.CheckInWithOtpAsync("1234");
+        Assert.Equal(1, await host.CountAttendancesAsync());
+    }
+
+    [Fact]
+    public async Task ReadyActivity_RejectsOtpCheckIn()
+    {
+        host.AsAdmin();
+        await host.Activity.GetOrCreateTodayAsync();
+        await host.Activity.GenerateOtpAsync();
+
+        host.AsMember("user-202512002");
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Attendance.CheckInWithOtpAsync("1234"));
+        Assert.Contains("아직 시작", ex.Message);
         Assert.Equal(0, await host.CountAttendancesAsync());
     }
 
@@ -37,8 +60,7 @@ public class AttendanceClosedTests : IAsyncLifetime
         host.AsAdmin();
         await host.Activity.GetOrCreateTodayAsync();
         await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartAttendanceAsync();
-        await host.Activity.CloseAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         await host.Activity.CloseActivityAsync();
         var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
 
@@ -59,7 +81,7 @@ public class AttendanceClosedTests : IAsyncLifetime
     {
         host.AsAdmin();
         await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         await host.Activity.CloseActivityAsync();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(

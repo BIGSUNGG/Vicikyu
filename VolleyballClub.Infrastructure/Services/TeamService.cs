@@ -126,7 +126,7 @@ public class TeamService(
         {
             throw new ConflictException(activity.Status == ActivityStatus.ActivityClosed
                 ? "현재 활동이 종료되어 팀을 편성할 수 없습니다."
-                : "출석을 마감한 후 팀을 편성할 수 있습니다.");
+                : "활동을 시작한 후 팀을 편성할 수 있습니다.");
         }
 
         var validUsers = await db.Users.AsNoTracking()
@@ -394,7 +394,7 @@ public class TeamService(
 
         if (!activity.CanConfirmTeams)
         {
-            throw new ConflictException("출석을 마감한 후 팀을 확정할 수 있습니다.");
+            throw new ConflictException("활동을 시작한 후 팀을 확정할 수 있습니다.");
         }
 
         activity.Status = ActivityStatus.TeamCreated;

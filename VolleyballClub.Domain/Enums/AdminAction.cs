@@ -24,4 +24,6 @@ public enum AdminAction
     SettingChange,
     // 주의: 기존 값은 DB에 정수로 저장되므로 중간에 새 값을 삽입하지 않는다 — 새 값은 끝에만 추가
     TeamDelete,
+    // 값 5는 폐기된 '출석 재개'(미커밋 빌드에서만 사용) — 재사용 금지
+    ActivityCancel = 6,
 }

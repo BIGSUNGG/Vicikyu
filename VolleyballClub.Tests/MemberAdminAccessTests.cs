@@ -22,8 +22,8 @@ public class MemberAdminAccessTests
         host.AsMember(member);
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.GetOrCreateTodayAsync());
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.GenerateOtpAsync());
-        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.StartAttendanceAsync());
-        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.CloseAttendanceAsync());
+        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.StartActivityAsync());
+        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.CancelActivityAsync());
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.CloseActivityAsync());
 
         // 관리자 직접 출석 거부

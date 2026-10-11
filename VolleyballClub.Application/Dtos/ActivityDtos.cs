@@ -12,6 +12,7 @@ public record AdminTodayDto(
     int AttendanceCount,
     int TotalActiveMembers,
     int TeamCount,
+    int GuestCount,
     DateTime? AttendanceOpenedAt,
     DateTime? AttendanceClosedAt,
     DateTime? ActivityClosedAt);

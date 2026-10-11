@@ -12,9 +12,9 @@ public interface IActivityService
 
     Task<string> GenerateOtpAsync();
 
-    Task<AdminTodayDto> StartAttendanceAsync();
+    Task<AdminTodayDto> StartActivityAsync();
 
-    Task<AdminTodayDto> CloseAttendanceAsync();
+    Task CancelActivityAsync();
 
     Task<AdminTodayDto> CloseActivityAsync();
 

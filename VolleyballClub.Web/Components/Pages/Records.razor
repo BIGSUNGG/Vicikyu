@@ -126,8 +126,8 @@
     private static string StatusText(ActivityStatus status) => status switch
     {
         ActivityStatus.Ready => "준비 중",
-        ActivityStatus.AttendanceOpen => "출석 중",
-        ActivityStatus.AttendanceClosed => "출석 마감",
+        ActivityStatus.AttendanceOpen => "활동 중",
+        ActivityStatus.AttendanceClosed => "출석 마감", // 레거시 상태 — 과거 기록 표시용
         ActivityStatus.TeamCreated => "팀 확정",
         ActivityStatus.ActivityClosed => "종료",
         _ => status.ToString(),

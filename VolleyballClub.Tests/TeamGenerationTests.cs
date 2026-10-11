@@ -22,7 +22,7 @@ public class TeamGenerationTests : IAsyncLifetime
         host.AsAdmin();
         await host.Activity.GetOrCreateTodayAsync();
         await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
 
         foreach (var memberId in memberIds)
@@ -32,7 +32,6 @@ public class TeamGenerationTests : IAsyncLifetime
         }
 
         host.AsAdmin();
-        await host.Activity.CloseAttendanceAsync();
     }
 
     public Task DisposeAsync() => host.DisposeAsync().AsTask();
@@ -118,15 +117,17 @@ public class TeamGenerationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DrawBeforeClosingAttendance_Throws()
+    public async Task DrawWhileActive_Succeeds()
     {
+        // 출석 상시 오픈 정책 — 활동 중(팀 확정 전)에도 팀 편성이 가능하다
         var today = Domain.KstClock.Today(host.Time);
         await using var db = host.Db.CreateContext();
         var activity = await db.Activities.FirstAsync(a => a.ActivityDate == today);
         activity.Status = ActivityStatus.AttendanceOpen;
         await db.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<ConflictException>(() => GenerateAsync(2, 2, 2));
+        var teams = await GenerateAsync(2, 2, 2);
+        Assert.Equal(3, teams.Count);
     }
 
     [Fact]

@@ -14,9 +14,9 @@
     {
         <div class="hb-title">@MyTeam.Name</div>
     }
-    else if (today is not null && today.Status == ActivityStatus.AttendanceOpen)
+    else if (today is not null && today.Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated)
     {
-        <div class="hb-title">출석 중</div>
+        <div class="hb-title">활동 중</div>
     }
     else
     {
@@ -54,9 +54,9 @@
             <div class="t-value">완료</div>
             <div class="t-meta">@Domain.KstClock.ToKstTimeString(today.CheckedAt!.Value) 출석</div>
         }
-        else if (today?.Status == ActivityStatus.AttendanceOpen)
+        else if (today?.Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated)
         {
-            <div class="t-value">출석 중</div>
+            <div class="t-value">활동 중</div>
             <div class="t-meta">OTP로 출석해 주세요</div>
         }
         else

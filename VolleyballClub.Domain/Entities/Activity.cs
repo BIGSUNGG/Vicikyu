@@ -35,17 +35,20 @@ public class Activity
 
     public List<Team> Teams { get; set; } = [];
 
-    // ---- 상태 전이 규칙(도메인 규칙) ----
+    // ---- 상태 전이 규칙(도메인 규칙): Ready → AttendanceOpen(활동 중, 출석 상시) → TeamCreated(팀 확정, 출석 계속) → ActivityClosed ----
 
+    /// <summary>활동 시작 가능(준비중 → 활동 중).</summary>
     public bool CanStartAttendance => Status == ActivityStatus.Ready;
 
-    public bool CanCloseAttendance => Status == ActivityStatus.AttendanceOpen;
+    /// <summary>팀 편성·확정은 활동 중 언제든 가능.</summary>
+    public bool CanDrawTeams => Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated;
 
-    public bool CanDrawTeams => Status is ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
+    public bool CanConfirmTeams => Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated;
 
-    public bool CanConfirmTeams => Status is ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
+    public bool CanClose => Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated;
 
-    public bool CanClose => Status is ActivityStatus.AttendanceOpen or ActivityStatus.AttendanceClosed or ActivityStatus.TeamCreated;
+    /// <summary>활동 취소(하드 삭제) 가능 여부. 종료된 활동은 다시 열기로 되돌린 뒤 취소한다.</summary>
+    public bool CanCancel => Status != ActivityStatus.ActivityClosed;
 
     public bool CanReopen => Status == ActivityStatus.ActivityClosed;
 }

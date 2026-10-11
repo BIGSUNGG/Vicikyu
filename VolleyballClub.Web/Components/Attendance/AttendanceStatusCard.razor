@@ -10,7 +10,7 @@
             <div class="otp-desc">@CheckedAtText 출석</div>
         </div>
     }
-    else if (Today.Status == Domain.Enums.ActivityStatus.AttendanceOpen)
+    else if (Today.Status is Domain.Enums.ActivityStatus.AttendanceOpen or Domain.Enums.ActivityStatus.TeamCreated)
     {
         @if (showOtpInput)
         {
@@ -38,7 +38,7 @@
     }
     else
     {
-        <p class="empty">출석이 마감되었습니다. 회장에게 문의하세요.</p>
+        <p class="empty">아직 활동이 시작되지 않았습니다.</p>
     }
 </div>
 

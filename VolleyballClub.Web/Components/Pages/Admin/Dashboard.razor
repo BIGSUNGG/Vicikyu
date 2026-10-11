@@ -36,16 +36,16 @@
         <div class="btn-row">
             @if (today.Status == ActivityStatus.Ready)
             {
-                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartAttendanceAsync)">출석 시작</button>
+                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartActivityAsync)">활동 시작</button>
             }
             <button type="button" class="btn-secondary" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
-            @if (today.Status == ActivityStatus.AttendanceOpen)
-            {
-                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.CloseAttendanceAsync)">출석 마감</button>
-            }
             @if (today.Status != ActivityStatus.ActivityClosed && today.Status != ActivityStatus.Ready)
             {
                 <button type="button" class="btn-danger" @onclick="ConfirmCloseActivityAsync">활동 마감</button>
+            }
+            @if (today.Status != ActivityStatus.ActivityClosed)
+            {
+                <button type="button" class="btn-danger" @onclick="ConfirmCancelActivityAsync">활동 취소</button>
             }
             @if (today.Status == ActivityStatus.ActivityClosed)
             {
@@ -87,6 +87,21 @@
     </div>
 </div>
 
+@if (showCancelConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showCancelConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>활동 취소</h3>
+            <p>오늘 활동과 아래 기록이 모두 삭제되며 되돌릴 수 없습니다.</p>
+            <p style="font-weight:700">출석 @(today?.AttendanceCount)명 · 게스트 @(today?.GuestCount)명 · 팀 @(today?.TeamCount)개</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showCancelConfirm = false">취소</button>
+                <button type="button" class="btn-danger" @onclick="CancelActivityAsync">삭제</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (showCloseConfirm)
 {
     <div class="confirm-overlay" @onclick="() => showCloseConfirm = false">
@@ -120,6 +135,7 @@
     private List<TeamResultDto> teams = [];
     private bool showCloseConfirm;
     private bool showReopenConfirm;
+    private bool showCancelConfirm;
 
     private string StatusBadgeClass => today?.Status switch
     {
@@ -186,5 +202,22 @@
     {
         showReopenConfirm = false;
         await RunAsync(Activities.ReopenActivityAsync);
+    }
+
+    private void ConfirmCancelActivityAsync() => showCancelConfirm = true;
+
+    private async Task CancelActivityAsync()
+    {
+        showCancelConfirm = false;
+        try
+        {
+            await Activities.CancelActivityAsync();
+            Snackbar.Add("활동이 취소되었습니다.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 }

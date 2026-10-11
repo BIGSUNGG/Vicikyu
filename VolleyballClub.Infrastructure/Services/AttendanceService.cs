@@ -25,11 +25,11 @@ public class AttendanceService(
         var today = KstClock.Today(timeProvider);
         var activity = await ActivityService.FindTodayAsync(db, today);
 
-        if (activity.Status != ActivityStatus.AttendanceOpen)
+        if (activity.Status is not (ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated))
         {
             throw new ConflictException(activity.Status == ActivityStatus.ActivityClosed
                 ? "오늘 활동이 종료되었습니다."
-                : "출석이 이미 마감되었습니다.");
+                : "오늘 활동이 아직 시작되지 않았습니다.");
         }
 
         if (string.IsNullOrEmpty(activity.OtpCode) || !FixedTimeEquals(code, activity.OtpCode))

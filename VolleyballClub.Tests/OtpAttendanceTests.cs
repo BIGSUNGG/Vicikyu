@@ -16,7 +16,7 @@ public class OtpAttendanceTests : IAsyncLifetime
         host.AsAdmin();
         await host.Activity.GetOrCreateTodayAsync();
         await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         host.AsMember("user-202512001");
     }
 

@@ -7,7 +7,7 @@ namespace VolleyballClub.Tests;
 
 /// <summary>
 /// 시드 명세 §50의 전체 동작 시나리오를 서비스 레이어에서 수행한다:
-/// 활동 생성 → OTP 출석 → 중복 거부 → 관리자 직접 추가 → 출석 마감 → 게스트 →
+/// 활동 생성 → OTP 출석 → 중복 거부 → 관리자 직접 추가 → 게스트 →
 /// 랜덤 팀 편성 → 팀원 이동 → 확정 → 부원 팀 확인 → 활동 종료 → 캘린더/랭킹 반영 → 감사 로그.
 /// </summary>
 public class EndToEndScenarioTests
@@ -27,7 +27,7 @@ public class EndToEndScenarioTests
         var today = await host.Activity.GetOrCreateTodayAsync();
         Assert.Equal(ActivityStatus.Ready, today.Status);
         await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartAttendanceAsync();
+        await host.Activity.StartActivityAsync();
         var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode;
         Assert.Matches("^\\d{4}$", otp);
 
@@ -49,10 +49,6 @@ public class EndToEndScenarioTests
         Assert.Equal(3, members.Count(x => x.IsAttended));
         Assert.All(members.Take(3), x => Assert.True(x.IsAttended)); // 출석자 우선 정렬
         await host.Attendance.AdminAddAsync(m4);
-
-        // 11. 출석 마감
-        await host.Activity.CloseAttendanceAsync();
-        Assert.Equal(ActivityStatus.AttendanceClosed, (await host.Activity.GetTodayForAdminAsync()).Status);
 
         // 13. 게스트 추가
         await host.Team.AddGuestAsync("홍친구");

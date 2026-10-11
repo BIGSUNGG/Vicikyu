@@ -96,14 +96,14 @@ public class ActivityService(
         return code;
     }
 
-    public async Task<AdminTodayDto> StartAttendanceAsync()
+    public async Task<AdminTodayDto> StartActivityAsync()
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanStartAttendance)
         {
-            throw new ConflictException("현재 상태에서는 출석을 시작할 수 없습니다.");
+            throw new ConflictException("이미 활동이 시작되었습니다.");
         }
 
         if (string.IsNullOrEmpty(activity.OtpCode))
@@ -118,29 +118,28 @@ public class ActivityService(
         activity.AttendanceOpenedAt = now;
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "출석 시작");
+        await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "활동 시작");
 
         return await LoadAdminDtoAsync(db, activity.Id);
     }
 
-    public async Task<AdminTodayDto> CloseAttendanceAsync()
+    public async Task CancelActivityAsync()
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
-        if (!activity.CanCloseAttendance)
+        if (!activity.CanCancel)
         {
-            throw new ConflictException("현재 상태에서는 출석을 마감할 수 없습니다.");
+            throw new ConflictException("종료된 활동은 취소할 수 없습니다. '활동 다시 열기' 후 취소해 주세요.");
         }
 
-        var now = KstClock.NowUtc(timeProvider);
-        activity.Status = ActivityStatus.AttendanceClosed;
-        activity.AttendanceClosedAt = now;
-        activity.UpdatedAt = now;
+        var attendanceCount = await db.Attendances.CountAsync(a => a.ActivityId == activity.Id);
+        var guestCount = await db.Guests.CountAsync(g => g.ActivityId == activity.Id);
+        var teamCount = await db.Teams.CountAsync(t => t.ActivityId == activity.Id);
+        db.Activities.Remove(activity);
         await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.AttendanceClose, "Activity", activity.Id.ToString(), "출석 마감");
-
-        return await LoadAdminDtoAsync(db, activity.Id);
+        await auditLog.LogAsync(AdminAction.ActivityCancel, "Activity", activity.Id.ToString(),
+            $"{activity.ActivityDate:yyyy-MM-dd} 활동 취소 (출석 {attendanceCount}·게스트 {guestCount}·팀 {teamCount} 삭제)");
     }
 
     public async Task<AdminTodayDto> CloseActivityAsync()
@@ -184,9 +183,9 @@ public class ActivityService(
         }
 
         var now = KstClock.NowUtc(timeProvider);
-        // 팀 편성 데이터가 있으면 TeamCreated, 없으면 AttendanceClosed 상태로 되돌린다
+        // 팀 편성 데이터가 있으면 TeamCreated, 없으면 AttendanceOpen 상태로 되돌린다
         var hasTeams = await db.Teams.AnyAsync(t => t.ActivityId == activity.Id);
-        activity.Status = hasTeams ? ActivityStatus.TeamCreated : ActivityStatus.AttendanceClosed;
+        activity.Status = hasTeams ? ActivityStatus.TeamCreated : ActivityStatus.AttendanceOpen;
         activity.ActivityClosedAt = null;
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
@@ -208,6 +207,7 @@ public class ActivityService(
         var attendanceCount = await CountAttendanceAsync(db, activityId);
         var totalMembers = await db.Users.CountAsync(u => u.IsActive);
         var teamCount = await db.Teams.CountAsync(t => t.ActivityId == activityId);
+        var guestCount = await db.Guests.CountAsync(g => g.ActivityId == activityId);
         return new AdminTodayDto(
             activity.Id,
             activity.ActivityDate,
@@ -217,6 +217,7 @@ public class ActivityService(
             attendanceCount,
             totalMembers,
             teamCount,
+            guestCount,
             activity.AttendanceOpenedAt,
             activity.AttendanceClosedAt,
             activity.ActivityClosedAt);
@@ -225,7 +226,7 @@ public class ActivityService(
     internal static string StatusText(ActivityStatus status) => status switch
     {
         ActivityStatus.Ready => "준비중",
-        ActivityStatus.AttendanceOpen => "출석 진행중",
+        ActivityStatus.AttendanceOpen => "활동 중",
         ActivityStatus.AttendanceClosed => "출석 마감",
         ActivityStatus.TeamCreated => "팀 편성 완료",
         ActivityStatus.ActivityClosed => "오늘 활동 종료",
