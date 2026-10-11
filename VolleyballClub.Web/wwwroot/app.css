@@ -1488,6 +1488,7 @@ button.court-head {
 
 	/* ── 관리자 공통 — 검색필드 폭 제한, 목록 2단, 툴바 가로 ── */
 	.segment {
+		width: 100%;
 		margin-inline: auto;
 	}
 
