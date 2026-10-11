@@ -7,7 +7,7 @@ else
     <div class="card-list split-2">
         @foreach (var member in Members)
         {
-            <label class="member-row @(member.IsAttended ? "" : "unattended")">
+            <label class="member-row @(member.IsAttended ? "" : "unattended")" @key="member.UserId">
                 <input type="checkbox" checked="@member.IsAttended" @onchange="e => ToggleAsync(member, (bool)e.Value!)" />
                 <div>
                     <div class="member-name">@member.Name</div>

@@ -72,7 +72,7 @@
         <div class="card-list split-2">
             @foreach (var status in visibleStatuses)
             {
-                <label class="member-row">
+                <label class="member-row" @key="status.UserId">
                     <input type="checkbox" checked="@status.IsPaid" @onchange="e => SetPaidAsync(status, (bool)e.Value!)" />
                     <div>
                         <div class="member-name">@status.Name</div>

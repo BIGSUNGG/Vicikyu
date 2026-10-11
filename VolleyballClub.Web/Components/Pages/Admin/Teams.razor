@@ -61,7 +61,7 @@
                 <div class="card-list" style="margin-bottom:16px">
                     @foreach (var team in drawnTeams)
                     {
-                        <label class="member-row">
+                        <label class="member-row" @key="team.TeamId">
                             <input type="radio" name="moveTarget" checked="@(moveTargetTeamId == team.TeamId)"
                                    @onchange="() => moveTargetTeamId = team.TeamId" />
                             <span class="member-name">@team.Name (@(team.Members.Count)명)</span>
@@ -95,7 +95,7 @@ else
         <div class="card-list">
             @foreach (var p in participants.Participants)
             {
-                <label class="member-row">
+                <label class="member-row" @key="p.Key">
                     <input type="checkbox"
                            checked="@(p.IsGuest ? selectedGuestIds.Contains(p.GuestId!.Value) : selectedUserIds.Contains(p.UserId!))"
                            @onchange="e => ToggleParticipant(p, (bool)e.Value!)" />
@@ -206,7 +206,7 @@ else
             <div class="card-list" style="margin-bottom:16px">
                 @foreach (var team in drawnTeams)
                 {
-                    <label class="member-row">
+                    <label class="member-row" @key="team.TeamId">
                         <input type="radio" name="addTarget" checked="@(addTargetTeamId == team.TeamId)"
                                @onchange="() => addTargetTeamId = team.TeamId" />
                         <span class="member-name">@team.Name (@(team.Members.Count)명)</span>
