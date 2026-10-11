@@ -11,7 +11,7 @@ if ($LASTEXITCODE) {
 docker compose up -d --build
 
 # Tailscale 인터넷 공개 터널
-& 'C:\Program Files\Tailscale\tailscale.exe' funnel --bg 5121
+& 'C:\Program Files\Tailscale\tailscale.exe' funnel --bg 5122
 
 # 브라우저로 로그인 페이지 열기 (admin / Vbc!Docker#2026-admin)
-Start-Process -FilePath 'http://localhost:5121/Account/Login'
+Start-Process -FilePath 'http://localhost:5122/Account/Login'

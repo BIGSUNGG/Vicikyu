@@ -307,15 +307,6 @@ body {
 	opacity: 0.55;
 }
 
-.btn-blue {
-	background: var(--vb-blue);
-	border-color: var(--vb-blue-dark);
-	box-shadow: 0 5px 0 var(--vb-blue-dark);
-}
-.btn-blue:active {
-	box-shadow: 0 1px 0 var(--vb-blue-dark);
-}
-
 .btn-wide {
 	grid-column: 1 / -1;
 }

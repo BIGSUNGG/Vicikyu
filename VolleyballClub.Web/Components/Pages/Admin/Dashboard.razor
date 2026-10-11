@@ -39,7 +39,7 @@
             {
                 <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartActivityAsync)">활동 시작</button>
             }
-            <button type="button" class="btn-primary btn-blue @(IsActive ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
+            <button type="button" class="btn-primary @(IsActive ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
             @if (IsActive)
             {
                 <button type="button" class="btn-danger" @onclick="ConfirmCancelActivityAsync">활동 취소</button>
