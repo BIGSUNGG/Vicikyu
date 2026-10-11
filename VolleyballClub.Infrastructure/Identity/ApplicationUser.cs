@@ -16,6 +16,9 @@ public class ApplicationUser : IdentityUser
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>부원 색(MemberColors 팔레트 값). 미지정(레거시)은 null — 중립색으로 렌더링.</summary>
+    public string? Color { get; set; }
+
     public DateTime JoinedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }

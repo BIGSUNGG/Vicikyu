@@ -4,6 +4,7 @@
 @inject IMemberService Members
 @inject IAttendanceService Attendance
 @inject ICurrentUserService Me
+@inject ISnackbar Snackbar
 
 <PageTitle>MY · 배구부</PageTitle>
 
@@ -120,10 +121,43 @@
 
 <div class="btn-row">
     <a href="/Account/Logout" class="btn-ghost">로그아웃</a>
-    <AuthorizeView Roles="ADMIN">
-        <a href="/admin" class="btn-secondary"><img class="icon" src="/icons/gear.svg" alt=""> 관리자</a>
-    </AuthorizeView>
+    <button type="button" class="btn-secondary" @onclick="OpenSettings"><img class="icon" src="/icons/gear.svg" alt=""> 설정</button>
 </div>
+
+@if (showSettings)
+{
+    <div class="confirm-overlay" @onclick="() => showSettings = false">
+        <div class="confirm-box" style="max-height:85vh;overflow-y:auto" @onclick:stopPropagation>
+            <h3>설정</h3>
+
+            <label class="form-label">내 색</label>
+            <div class="color-swatches">
+                @foreach (var color in Domain.MemberColors.Palette)
+                {
+                    <button type="button" class="color-swatch @(selectedColor == color ? "selected" : "")"
+                            style="--mc:@color" aria-label="색상 @color" @onclick="() => selectedColor = color"></button>
+                }
+            </div>
+            <button type="button" class="btn-primary btn-block" style="margin-top:12px" @onclick="SaveColorAsync">색 저장</button>
+
+            <div style="height:18px"></div>
+            <label class="form-label">비밀번호 변경</label>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="현재 비밀번호" @bind="pw.Current" />
+            </div>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="새 비밀번호(8자 이상)" @bind="pw.New" />
+            </div>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="새 비밀번호 확인" @bind="pw.Confirm" />
+            </div>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showSettings = false">닫기</button>
+                <button type="button" class="btn-primary" @onclick="ChangePasswordAsync">비밀번호 변경</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private ProfileDto? profile;
@@ -134,6 +168,59 @@
     private string myUserId = "";
     private int year = DateTime.Now.Year;
     private int month = DateTime.Now.Month;
+    private bool showSettings;
+    private string selectedColor = "";
+    private PasswordForm pw = new();
+
+    private sealed class PasswordForm
+    {
+        public string Current { get; set; } = "";
+
+        public string New { get; set; } = "";
+
+        public string Confirm { get; set; } = "";
+    }
+
+    private void OpenSettings()
+    {
+        selectedColor = profile?.Color ?? Domain.MemberColors.Palette[0];
+        pw = new PasswordForm();
+        showSettings = true;
+    }
+
+    private async Task SaveColorAsync()
+    {
+        try
+        {
+            await Members.UpdateMyColorAsync(selectedColor);
+            profile = await Members.GetProfileAsync(myUserId);
+            Snackbar.Add("색이 저장되었습니다", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        if (pw.New != pw.Confirm)
+        {
+            Snackbar.Add("새 비밀번호가 일치하지 않습니다", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            await Members.ChangeMyPasswordAsync(new PasswordChangeRequest(pw.Current, pw.New));
+            pw = new PasswordForm();
+            Snackbar.Add("비밀번호가 변경되었습니다", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

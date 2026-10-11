@@ -32,6 +32,18 @@ public static class DbInitializer
             }
         }
 
+        // 레거시 부원(색 미지정) 랜덤 백필 — 멱등: 색 있는 부원은 건드리지 않는다
+        var noColorUsers = await db.Users.Where(u => u.Color == null).ToListAsync();
+        foreach (var user in noColorUsers)
+        {
+            user.Color = MemberColors.PickRandom();
+        }
+        if (noColorUsers.Count > 0)
+        {
+            await db.SaveChangesAsync();
+        }
+
+
         if (await db.Users.AnyAsync())
         {
             return; // 이미 시드됨
@@ -61,6 +73,7 @@ public static class DbInitializer
             Name = "김회장",
             Department = "컴퓨터공학과",
             IsActive = true,
+            Color = MemberColors.PickRandom(),
             JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
             CreatedAt = now,
             UpdatedAt = now,
@@ -100,6 +113,7 @@ public static class DbInitializer
                 Name = name,
                 Department = department,
                 IsActive = true,
+                Color = MemberColors.PickRandom(),
                 JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
                 CreatedAt = now,
                 UpdatedAt = now,

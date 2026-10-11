@@ -18,7 +18,8 @@ public record TeamMemberDto(
     string? UserId,
     int? GuestId,
     string Name,
-    bool IsGuest);
+    bool IsGuest,
+    string? Color = null);
 
 public record TeamResultDto(
     int TeamId,

@@ -10,7 +10,8 @@
         {
             var isMine = !member.IsGuest && member.UserId == MyUserId;
             <button type="button"
-                    class="team-member-chip @(isMine ? "mine" : "") @(Selectable ? "clickable" : "")"
+                    class="team-member-chip @(isMine ? "mine" : "") @(member.Color is null ? "" : "mc") @(Selectable ? "clickable" : "")"
+                    style="@(member.Color is { } mc ? $"--mc:{mc}" : null)"
                     @onclick="() => SelectMember(member)">
                 @member.Name@(member.IsGuest ? " (게스트)" : "")@(isMine ? " ★" : "")
             </button>

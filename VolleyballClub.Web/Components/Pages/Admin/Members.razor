@@ -69,6 +69,16 @@
                 <InputText @bind-Value="editForm.Department" class="form-control" />
             </div>
             <div class="field">
+                <label class="form-label">색상</label>
+                <div class="color-swatches">
+                    @foreach (var color in Domain.MemberColors.Palette)
+                    {
+                        <button type="button" class="color-swatch @(editForm.Color == color ? "selected" : "")"
+                                style="--mc:@color" aria-label="색상 @color" @onclick="() => editForm.Color = color"></button>
+                    }
+                </div>
+            </div>
+            <div class="field">
                 <label class="form-label">역할</label>
                 <select class="form-control" value="@editForm.Role" @onchange='e => editForm.Role = e.Value?.ToString() ?? "MEMBER"'>
                     <option value="MEMBER">부원</option>
@@ -95,6 +105,10 @@
             <div class="member-row" style="cursor:pointer" @onclick="() => BeginEdit(member)">
                 <div>
                     <div class="member-name">
+                        @if (member.Color is { } c)
+                        {
+                            <span class="member-dot" style="background:@c"></span>
+                        }
                         @member.Name
                         @if (!member.IsActive)
                         {
@@ -191,6 +205,7 @@
             Name = member.Name,
             Department = member.Department,
             Role = member.Role,
+            Color = member.Color ?? Domain.MemberColors.Palette[0],
         };
     }
 
@@ -207,7 +222,8 @@
                 editForm.Name.Trim(),
                 editForm.Department.Trim(),
                 editForm.StudentNumber.Trim(),
-                editForm.Role));
+                editForm.Role,
+                Color: editForm.Color));
             Snackbar.Add("수정 완료", Severity.Success);
             editing = null;
             await LoadAsync();
@@ -281,5 +297,7 @@
         public string Department { get; set; } = "";
 
         public string Role { get; set; } = "MEMBER";
+
+        public string Color { get; set; } = "";
     }
 }

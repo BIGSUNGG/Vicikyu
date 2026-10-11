@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -155,7 +156,7 @@ public sealed class ServiceHost : IAsyncDisposable
             new UpperInvariantLookupNormalizer(),
             new IdentityErrorDescriber(),
             null,
-            null);
+            NullLogger<UserManager<ApplicationUser>>.Instance);
     }
 
     public ServiceHost AsAdmin(string userId = "admin-1")

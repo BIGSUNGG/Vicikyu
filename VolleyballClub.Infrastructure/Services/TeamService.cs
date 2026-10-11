@@ -468,6 +468,7 @@ public class TeamService(
         var users = await db.Users.AsNoTracking().ToListAsync();
         var guests = await db.Guests.AsNoTracking().Where(g => g.ActivityId == activityId).ToListAsync();
         var userNames = users.ToDictionary(u => u.Id, u => u.Name);
+        var userColors = users.ToDictionary(u => u.Id, u => u.Color);
         var guestNames = guests.ToDictionary(g => g.Id, g => g.Name);
 
         return teams.Select(t => new TeamResultDto(
@@ -484,7 +485,8 @@ public class TeamService(
                         m.UserId is { } uid ? userNames.GetValueOrDefault(uid, "알 수 없음")
                             : m.GuestId is { } gid ? guestNames.GetValueOrDefault(gid, "게스트")
                             : "알 수 없음",
-                        m.GuestId is not null))
+                        m.GuestId is not null,
+                        m.UserId is { } uid2 ? userColors.GetValueOrDefault(uid2) : null))
                     .ToList()))
             .ToList();
     }

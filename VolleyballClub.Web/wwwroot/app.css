@@ -276,11 +276,46 @@ body {
 	border-color: #fde68a;
 	color: #b45309;
 }
+/* 부원 색 오버라이드 — MemberColors 팔레트 값이 있으면 위치 로테이션 대신 본인 색 */
+.team-member-chip.mc {
+	background: color-mix(in srgb, var(--mc) 16%, white);
+	border-color: color-mix(in srgb, var(--mc) 50%, white);
+	color: color-mix(in srgb, var(--mc) 75%, black);
+}
 .team-member-chip.mine {
 	background: var(--vb-primary);
 	border-color: var(--vb-primary);
 	color: #fff;
 	transform: rotate(-2deg);
+}
+
+/* 색상 스와치 — MY 설정·부원 관리 */
+.color-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.color-swatch {
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	background: var(--mc);
+	border: 3px solid #fffdf8;
+	box-shadow: 0 0 0 2px var(--vb-text);
+	cursor: pointer;
+}
+.color-swatch.selected {
+	box-shadow: 0 0 0 3px var(--vb-primary);
+	transform: scale(1.15);
+}
+.member-dot {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 2px solid var(--vb-text);
+	vertical-align: middle;
+	margin-right: 4px;
 }
 
 /* 버튼 — 눌리는 캔디 */

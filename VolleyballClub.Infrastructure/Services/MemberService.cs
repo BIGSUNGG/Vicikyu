@@ -68,7 +68,8 @@ public class MemberService(
                 roleByUser.GetValueOrDefault(u.Id, "MEMBER"),
                 u.IsActive,
                 attendanceByUser.GetValueOrDefault(u.Id, 0),
-                paidSet.Contains(u.Id)))
+                paidSet.Contains(u.Id),
+                u.Color))
             .ToList();
     }
 
@@ -100,6 +101,7 @@ public class MemberService(
             Name = request.Name.Trim(),
             Department = request.Department.Trim(),
             IsActive = true,
+            Color = MemberColors.PickRandom(),
             JoinedAt = now,
             CreatedAt = now,
             UpdatedAt = now,
@@ -115,7 +117,7 @@ public class MemberService(
         await userManager.AddToRoleAsync(user, role);
         await auditLog.LogAsync(AdminAction.MemberCreate, "User", user.Id, $"{user.Name}({studentNumber}) {role} 추가");
 
-        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, true, 0, false);
+        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, true, 0, false, user.Color);
     }
 
     public async Task<MemberListDto> UpdateAsync(string userId, MemberUpdateRequest request)
@@ -146,6 +148,16 @@ public class MemberService(
         user.Department = request.Department.Trim();
         user.UpdatedAt = KstClock.NowUtc(timeProvider);
 
+        if (request.Color is { } requestedColor)
+        {
+            if (!MemberColors.Contains(requestedColor))
+            {
+                throw new RuleViolationException("지원하지 않는 색상입니다.");
+            }
+
+            user.Color = requestedColor;
+        }
+
         if (request.IsActive is { } active && active != user.IsActive)
         {
             user.IsActive = active;
@@ -172,7 +184,7 @@ public class MemberService(
         }
 
         await auditLog.LogAsync(AdminAction.MemberUpdate, "User", user.Id, $"{user.Name} 정보 수정");
-        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.IsActive, 0, false);
+        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.IsActive, 0, false, user.Color);
     }
 
     public async Task<ProfileDto> GetProfileAsync(string userId)
@@ -187,6 +199,42 @@ public class MemberService(
         var totalAttendance = await db.Attendances.AsNoTracking()
             .CountAsync(a => a.UserId == userId);
 
-        return new ProfileDto(user.Name, user.StudentNumber, user.Department, isAdmin ? "ADMIN" : "MEMBER", user.JoinedAt, totalAttendance);
+        return new ProfileDto(user.Name, user.StudentNumber, user.Department, isAdmin ? "ADMIN" : "MEMBER", user.JoinedAt, totalAttendance, user.Color);
+    }
+
+    public async Task UpdateMyColorAsync(string color)
+    {
+        if (!MemberColors.Contains(color))
+        {
+            throw new RuleViolationException("지원하지 않는 색상입니다.");
+        }
+
+        var userId = await currentUser.RequireUserIdAsync();
+        var user = await userManager.FindByIdAsync(userId)
+            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+        user.Color = color;
+        user.UpdatedAt = KstClock.NowUtc(timeProvider);
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            throw new RuleViolationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+        }
+    }
+
+    public async Task ChangeMyPasswordAsync(PasswordChangeRequest request)
+    {
+        if (request.NewPassword.Length < 8)
+        {
+            throw new RuleViolationException("새 비밀번호는 8자 이상이어야 합니다.");
+        }
+
+        var userId = await currentUser.RequireUserIdAsync();
+        var user = await userManager.FindByIdAsync(userId)
+            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+        var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            throw new RuleViolationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+        }
     }
 }

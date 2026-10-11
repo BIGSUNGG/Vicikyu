@@ -111,7 +111,8 @@
                         @foreach (var member in team.Members)
                         {
                             var isMyChip = !member.IsGuest && member.UserId == myUserId;
-                            <span class="team-member-chip @(isMyChip ? "mine" : "")">@member.Name@(member.IsGuest ? " (게스트)" : "")@(isMyChip ? " ★" : "")</span>
+                            <span class="team-member-chip @(isMyChip ? "mine" : "") @(member.Color is null ? "" : "mc")"
+                                  style="@(member.Color is { } mc ? $"--mc:{mc}" : null)">@member.Name@(member.IsGuest ? " (게스트)" : "")@(isMyChip ? " ★" : "")</span>
                         }
                     </div>
                 </div>
@@ -139,7 +140,8 @@
                             <div class="chips">
                                 @foreach (var member in team.Members)
                                 {
-                                    <span class="team-member-chip">@member.Name@(member.IsGuest ? " (게스트)" : "")</span>
+                                    <span class="team-member-chip @(member.Color is null ? "" : "mc")"
+                                          style="@(member.Color is { } mc ? $"--mc:{mc}" : null)">@member.Name@(member.IsGuest ? " (게스트)" : "")</span>
                                 }
                             </div>
                         </div>

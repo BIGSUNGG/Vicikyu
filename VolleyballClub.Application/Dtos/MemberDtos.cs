@@ -8,7 +8,8 @@ public record MemberListDto(
     string Role,
     bool IsActive,
     int TotalAttendance,
-    bool FeePaidCurrent);
+    bool FeePaidCurrent,
+    string? Color);
 
 public record MemberCreateRequest(
     string StudentNumber,
@@ -22,7 +23,12 @@ public record MemberUpdateRequest(
     string Department,
     string? StudentNumber = null,
     string? Role = null,
-    bool? IsActive = null);
+    bool? IsActive = null,
+    string? Color = null);
+
+public record PasswordChangeRequest(
+    string CurrentPassword,
+    string NewPassword);
 
 public record ProfileDto(
     string Name,
@@ -30,4 +36,5 @@ public record ProfileDto(
     string Department,
     string Role,
     DateTime JoinedAt,
-    int TotalAttendance);
+    int TotalAttendance,
+    string? Color);
