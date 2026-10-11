@@ -10,8 +10,7 @@
 
 <div class="card">
     <div class="field">
-        <input class="form-control" type="search" placeholder="이름 / 학번 검색"
-               value="@search" @oninput='e => { search = e.Value?.ToString() ?? ""; }' />
+        <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" />
     </div>
 
     <button type="button" class="btn-secondary btn-block" @onclick="() => showAddForm = !showAddForm">

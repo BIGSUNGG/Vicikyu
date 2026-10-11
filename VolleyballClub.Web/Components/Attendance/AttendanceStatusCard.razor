@@ -19,7 +19,7 @@
                 <div class="otp-desc">체육관에 게시된 4자리 OTP를 입력하세요</div>
             </div>
             <input class="otp-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8"
-                   placeholder="- - - -" value="@otp" @oninput="OnOtpChanged" />
+                   placeholder="- - - -" @bind="otp" @bind:after="NormalizeOtp" />
             <div style="height:12px"></div>
             <button type="button" class="btn-primary btn-block" disabled="@submitting" @onclick="SubmitOtpAsync">
                 @(submitting ? "확인 중…" : "출석 확인")
@@ -62,10 +62,7 @@
 
     private string CheckedAtText => checkedAtText ?? (Today?.CheckedAt is { } t ? Domain.KstClock.ToKstTimeString(t) : "");
 
-    private void OnOtpChanged(ChangeEventArgs e)
-    {
-        otp = new string((e.Value?.ToString() ?? "").Where(char.IsDigit).ToArray());
-    }
+    private void NormalizeOtp() => otp = new string(otp.Where(char.IsDigit).ToArray());
 
     private async Task SubmitOtpAsync()
     {

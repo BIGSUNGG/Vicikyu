@@ -13,16 +13,15 @@
     <h2 class="card-title">기본 정보</h2>
     <div class="field">
         <label class="form-label">학교명</label>
-        <input class="form-control" value="@schoolName" @oninput='e => schoolName = e.Value?.ToString() ?? ""' />
+        <input class="form-control" @bind="schoolName" />
     </div>
     <div class="field">
         <label class="form-label">동아리명</label>
-        <input class="form-control" value="@clubName" @oninput='e => clubName = e.Value?.ToString() ?? ""' />
+        <input class="form-control" @bind="clubName" />
     </div>
     <div class="field">
         <label class="form-label">회비 사용 내역 URL (Google Sheets)</label>
-        <input class="form-control" type="url" placeholder="https://docs.google.com/…" value="@feeSheetUrl"
-               @oninput='e => feeSheetUrl = e.Value?.ToString() ?? ""' />
+        <input class="form-control" type="url" placeholder="https://docs.google.com/…" @bind="feeSheetUrl" />
     </div>
     <div class="btn-row">
         <div class="field">

@@ -47,8 +47,7 @@
         }
         @* 편성 후에도 게스트를 바로 등록해 누락 목록에서 팀에 배정할 수 있다 *@
         <div style="margin-top:10px">
-            <input class="form-control" type="text" placeholder="게스트 이름" value="@newGuestName"
-                   @oninput='e => newGuestName = e.Value?.ToString() ?? ""' />
+            <input class="form-control" type="text" placeholder="게스트 이름" @bind="newGuestName" />
             <div style="height:8px"></div>
             <button type="button" class="btn-secondary btn-sm" @onclick="AddGuestAsync">+ 게스트 추가</button>
         </div>
@@ -113,8 +112,7 @@ else
         </div>
 
         <div style="margin-top:10px">
-            <input class="form-control" type="text" placeholder="게스트 이름" value="@newGuestName"
-                   @oninput='e => newGuestName = e.Value?.ToString() ?? ""' />
+            <input class="form-control" type="text" placeholder="게스트 이름" @bind="newGuestName" />
             <div style="height:8px"></div>
             <button type="button" class="btn-secondary btn-sm" @onclick="AddGuestAsync">+ 게스트 추가</button>
         </div>
