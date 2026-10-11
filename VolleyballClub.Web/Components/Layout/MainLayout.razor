@@ -14,6 +14,24 @@
 
     <AuthorizeView>
         <Authorized>
+            @* 태블릿 가로(≥1024px) 전용 좌측 내비 — 노출/숨김은 app.css 미디어쿼리가 제어(C# 분기 없음). *@
+            <nav class="side-nav">
+                <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
+                    <span class="nav-icon"><img class="icon" src="/icons/nav-home.svg" alt=""></span><span class="nav-label">홈</span>
+                </NavLink>
+                <NavLink href="/records" class="nav-item">
+                    <span class="nav-icon"><img class="icon" src="/icons/nav-records.svg" alt=""></span><span class="nav-label">기록</span>
+                </NavLink>
+                <NavLink href="/my" class="nav-item">
+                    <span class="nav-icon"><img class="icon" src="/icons/nav-my.svg" alt=""></span><span class="nav-label">MY</span>
+                </NavLink>
+                @if (isAdmin)
+                {
+                    <NavLink href="/admin" Match="NavLinkMatch.Prefix" class="nav-item">
+                        <span class="nav-icon"><img class="icon" src="/icons/nav-admin.svg" alt=""></span><span class="nav-label">관리자</span>
+                    </NavLink>
+                }
+            </nav>
             <nav class="bottom-nav">
                 <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
                     <span class="nav-icon"><img class="icon" src="/icons/nav-home.svg" alt=""></span><span class="nav-label">홈</span>

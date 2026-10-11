@@ -11,6 +11,7 @@
           Active="dashboard" Badge="@(today?.StatusText)"
           BadgeClass="@(StatusBadgeClass)" />
 
+<div class="admin-grid">
 @if (today is not null)
 {
     <div class="card">
@@ -82,6 +83,7 @@
         <a href="/admin/settings" class="btn-ghost">설정</a>
         <a href="/admin/audit" class="btn-ghost">감사 로그</a>
     </div>
+</div>
 </div>
 
 @if (showCancelConfirm)
