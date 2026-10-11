@@ -1428,6 +1428,13 @@ button.court-head {
 	gap: 14px;
 }
 
+/* 팀 뽑기 — 모바일 기본 1단(데스크톱 2단은 하단 미디어 쿼리) */
+.teams-grid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 14px;
+}
+
 @media (min-width: 1024px) {
 	/* 셸: 단일 컬럼 → 좌(사이드 내비) + 우(콘텐츠) 2단 그리드.
 	   DOM 순서는 main이 먼저 오므로 명시적 배치로 좌우를 지정한다. */
