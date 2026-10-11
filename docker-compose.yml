@@ -25,7 +25,7 @@ services:
         Username=postgres;Password=vbc_docker_pg_2026
       Seed__AdminPassword: "Admin1234!"
     ports:
-      - "5121:8080"
+      - "5122:8080"
 
 volumes:
   pgdata:

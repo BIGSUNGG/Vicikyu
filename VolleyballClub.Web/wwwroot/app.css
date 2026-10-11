@@ -16,6 +16,8 @@
 	--vb-success-soft: #e9fbf3;
 	--vb-sky: #38bdf8;
 	--vb-sky-soft: #e8f6fe;
+	--vb-blue: #0284c7;
+	--vb-blue-dark: #075985;
 	--vb-sun: #fbbf24;
 	--vb-sun-soft: #fef5dd;
 	--vb-lilac: #a78bfa;
@@ -303,6 +305,19 @@ body {
 }
 .btn-primary:disabled {
 	opacity: 0.55;
+}
+
+.btn-blue {
+	background: var(--vb-blue);
+	border-color: var(--vb-blue-dark);
+	box-shadow: 0 5px 0 var(--vb-blue-dark);
+}
+.btn-blue:active {
+	box-shadow: 0 1px 0 var(--vb-blue-dark);
+}
+
+.btn-wide {
+	grid-column: 1 / -1;
 }
 
 .btn-secondary {
