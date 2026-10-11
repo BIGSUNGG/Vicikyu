@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using VolleyballClub.Domain;
 using VolleyballClub.Domain.Entities;
@@ -37,6 +38,8 @@ public static class DbInitializer
         }
 
         var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+        var adminPassword = sp.GetRequiredService<IConfiguration>()["Seed:AdminPassword"]
+            ?? throw new InvalidOperationException("Seed password 'Seed:AdminPassword' not found.");
         var timeProvider = sp.GetRequiredService<TimeProvider>();
         var now = KstClock.NowUtc(timeProvider);
         var today = KstClock.Today(timeProvider);
@@ -62,7 +65,7 @@ public static class DbInitializer
             CreatedAt = now,
             UpdatedAt = now,
         };
-        await userManager.CreateAsync(admin, "Admin1234!");
+        await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "ADMIN");
 
         // 일반 부원 15명

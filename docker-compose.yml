@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: vbc_docker_pg_2026
+      POSTGRES_DB: volleyballclub
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d volleyballclub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: >-
+        Host=db;Port=5432;Database=volleyballclub;
+        Username=postgres;Password=vbc_docker_pg_2026
+      Seed__AdminPassword: "Vbc!Docker#2026-admin"
+    ports:
+      - "5121:8080"
+
+volumes:
+  pgdata:
