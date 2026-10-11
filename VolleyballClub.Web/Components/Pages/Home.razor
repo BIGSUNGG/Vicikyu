@@ -130,18 +130,16 @@
                 <div class="team-fs-grid">
                 @foreach (var team in teams) // ponytail: 홈 그리드와 칩 마크업 중복 — 같은 파일이라 변경 누락 위험 낮음, 컴포넌트 추출은 팀 카드 변경이 잦아질 때
                 {
-                    var isMine = team.Members.Any(m => !m.IsGuest && m.UserId == myUserId);
-                    <div class="court open @(isMine ? "mine" : "")">
+                    <div class="court open">
                         <div class="court-head">
-                            <span class="court-name"><img class="icon" src="/icons/volleyball.svg" alt=""> @team.Name@(isMine ? " · 나의 팀" : "")</span>
-                            <span class="badge @(isMine ? "badge-orange" : "badge-gray")">@(team.Members.Count)명</span>
+                            <span class="court-name"><img class="icon" src="/icons/volleyball.svg" alt=""> @team.Name</span>
+                            <span class="badge badge-gray">@(team.Members.Count)명</span>
                         </div>
                         <div class="chips-wrap">
                             <div class="chips">
                                 @foreach (var member in team.Members)
                                 {
-                                    var isMyChip = !member.IsGuest && member.UserId == myUserId;
-                                    <span class="team-member-chip @(isMyChip ? "mine" : "")">@member.Name@(member.IsGuest ? " (게스트)" : "")@(isMyChip ? " ★" : "")</span>
+                                    <span class="team-member-chip">@member.Name@(member.IsGuest ? " (게스트)" : "")</span>
                                 }
                             </div>
                         </div>
