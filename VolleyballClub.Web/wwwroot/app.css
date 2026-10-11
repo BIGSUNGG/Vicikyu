@@ -795,6 +795,11 @@ button.court-head {
 		grid-auto-rows: minmax(0, 1fr); /* 10명+는 같은 비율로 축소 */
 		gap: 8px;
 	}
+	/* 4팀 이상: 칩을 가로 2개씩 세로 정렬(9명=5행 → 섹션 5등분으로 꽉 참) */
+	.team-fs-grid.quad .chips-wrap > .chips {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-rows: repeat(5, minmax(0, 1fr));
+	}
 	.team-fs-grid .team-member-chip {
 		min-height: 0;
 		justify-content: center;
