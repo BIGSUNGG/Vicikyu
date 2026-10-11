@@ -73,7 +73,9 @@
             @foreach (var status in visibleStatuses)
             {
                 <label class="member-row" @key="status.UserId">
-                    <input type="checkbox" checked="@status.IsPaid" @onchange="e => SetPaidAsync(status, (bool)e.Value!)" />
+                    @* 네이티브 토글을 막고 상태로만 제어 — 갱신 실패 시 뒤집힌 채 남는 것을 방지 *@
+                    <input type="checkbox" checked="@status.IsPaid"
+                           @onclick="() => SetPaidAsync(status, !status.IsPaid)" @onclick:preventDefault />
                     <div>
                         <div class="member-name">@status.Name</div>
                         <div class="member-meta">@status.StudentNumber · @status.Department</div>
@@ -172,7 +174,8 @@
         {
             await FeeSvc.SetPaidAsync(status.PeriodId, status.UserId, isPaid);
             Snackbar.Add($"{status.Name} {(isPaid ? "납부 완료" : "미납 처리")}", Severity.Success);
-            await LoadAsync();
+            // 진입 시 정렬 순서를 유지 — 토글한 항목만 제자리 갱신한다.
+            statuses = [.. statuses.Select(s => s.UserId == status.UserId ? s with { IsPaid = isPaid } : s)];
         }
         catch (AppException ex)
         {
