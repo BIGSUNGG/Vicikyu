@@ -1,0 +1,239 @@
+@page "/admin/semesters"
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject ISemesterService SemesterSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>학기 관리 · 배구부</PageTitle>
+
+<AdminNav Icon="/icons/clipboard.svg" Title="학기 관리" Sub="@($"현재 {currentName}")" Active="" />
+
+<div class="card">
+    <h2 class="card-title">학기 목록</h2>
+    <p style="font-size:0.85rem;color:var(--text-sub)">출석 통계·학기 랭킹은 '현재' 학기 기간을 기준으로 집계됩니다.</p>
+
+    <div class="card-list">
+        @foreach (var semester in semesters)
+        {
+            <div class="card-row" style="padding:8px 0">
+                <div>
+                    <div style="font-weight:700">@semester.Name</div>
+                    <div class="member-meta">@semester.StartDate.ToString("yyyy.MM.dd") ~ @semester.EndDate.ToString("yyyy.MM.dd")</div>
+                </div>
+                <div class="btn-row" style="gap:6px">
+                    @if (semester.IsCurrent)
+                    {
+                        <span class="badge badge-green">현재</span>
+                    }
+                    <button type="button" class="filter-btn @(selectedId == semester.Id ? "active" : "")"
+                            @onclick="() => SelectAsync(semester.Id)">수정</button>
+                </div>
+            </div>
+        }
+        @if (semesters.Count == 0)
+        {
+            <p class="member-meta">등록된 학기가 없습니다 — 학기를 추가하면 통계가 그 기간을 따릅니다.</p>
+        }
+    </div>
+
+    <div style="height:10px"></div>
+    <button type="button" class="btn-secondary btn-block" @onclick="ToggleCreate">
+        @(showCreate ? "취소" : "+ 학기 추가")
+    </button>
+
+    @if (showCreate)
+    {
+        <EditForm Model="form" OnValidSubmit="CreateAsync" class="reveal" style="margin-top:14px">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label class="form-label">학기 이름 (예: 2026년 1학기)</label>
+                <InputText @bind-Value="form.Name" class="form-control" />
+            </div>
+            <div class="btn-row">
+                <div class="field">
+                    <label class="form-label">시작일</label>
+                    <InputDate @bind-Value="form.StartDate" class="form-control" />
+                </div>
+                <div class="field">
+                    <label class="form-label">종료일</label>
+                    <InputDate @bind-Value="form.EndDate" class="form-control" />
+                </div>
+            </div>
+            <button type="submit" class="btn-primary btn-block">추가</button>
+        </EditForm>
+    }
+</div>
+
+@if (selected is not null)
+{
+    <div class="card">
+        <h2 class="card-title">학기 수정 — @selected.Name</h2>
+        <EditForm Model="editForm" OnValidSubmit="UpdateAsync" class="reveal">
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label class="form-label">학기 이름</label>
+                <InputText @bind-Value="editForm.Name" class="form-control" />
+            </div>
+            <div class="btn-row">
+                <div class="field">
+                    <label class="form-label">시작일</label>
+                    <InputDate @bind-Value="editForm.StartDate" class="form-control" />
+                </div>
+                <div class="field">
+                    <label class="form-label">종료일</label>
+                    <InputDate @bind-Value="editForm.EndDate" class="form-control" />
+                </div>
+            </div>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => SelectAsync(null)">취소</button>
+                <button type="submit" class="btn-primary btn-block">저장</button>
+            </div>
+        </EditForm>
+
+        <div style="height:8px"></div>
+        <button type="button" class="btn-danger btn-block" @onclick="() => showDeleteConfirm = true">학기 삭제</button>
+    </div>
+}
+
+@if (showDeleteConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showDeleteConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>학기 삭제</h3>
+            <p><b>@selected?.Name</b> 학기를 삭제합니다. 되돌릴 수 없습니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showDeleteConfirm = false">취소</button>
+                <button type="button" class="btn-danger" @onclick="DeleteAsync">삭제</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SemesterDto> semesters = [];
+    private int? selectedId;
+    private SemesterDto? selected;
+    private bool showCreate;
+    private bool showDeleteConfirm;
+    private SemesterForm form = new();
+    private SemesterForm editForm = new();
+
+    private string currentName => semesters.FirstOrDefault(s => s.IsCurrent)?.Name ?? "없음(기본 규칙)";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            semesters = await SemesterSvc.GetSemestersAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void ToggleCreate()
+    {
+        showCreate = !showCreate;
+        selectedId = null;
+        selected = null;
+    }
+
+    private Task SelectAsync(int? id)
+    {
+        selectedId = id;
+        selected = semesters.FirstOrDefault(s => s.Id == id);
+        if (selected is not null)
+        {
+            editForm = new SemesterForm
+            {
+                Name = selected.Name,
+                StartDate = selected.StartDate,
+                EndDate = selected.EndDate,
+            };
+        }
+
+        showCreate = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var created = await SemesterSvc.CreateAsync(new SemesterSaveRequest(form.Name.Trim(), form.StartDate, form.EndDate));
+            Snackbar.Add($"{created.Name} 추가", Severity.Success);
+            showCreate = false;
+            form = new SemesterForm();
+            await ReloadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task UpdateAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var updated = await SemesterSvc.UpdateAsync(selected.Id, new SemesterSaveRequest(editForm.Name.Trim(), editForm.StartDate, editForm.EndDate));
+            Snackbar.Add($"{updated.Name} 수정 완료", Severity.Success);
+            await SelectAsync(null);
+            await ReloadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (selected is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var name = selected.Name;
+            await SemesterSvc.DeleteAsync(selected.Id);
+            Snackbar.Add($"{name} 삭제", Severity.Success);
+            showDeleteConfirm = false;
+            await SelectAsync(null);
+            await ReloadAsync();
+        }
+        catch (AppException ex)
+        {
+            showDeleteConfirm = false;
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        semesters = await SemesterSvc.GetSemestersAsync();
+        if (selectedId is { } id)
+        {
+            selected = semesters.FirstOrDefault(s => s.Id == id);
+        }
+    }
+
+    private class SemesterForm
+    {
+        [Required(ErrorMessage = "학기 이름을 입력하세요.")]
+        public string Name { get; set; } = "";
+
+        [Required]
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+
+        [Required]
+        public DateOnly EndDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddMonths(4));
+    }
+}

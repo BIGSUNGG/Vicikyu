@@ -39,7 +39,7 @@
                 <div class="ring-stat">
                     <div class="rs-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
                     <div>
-                        <div class="rs-label">이번 학기 출석</div>
+                        <div class="rs-label">@SemesterLabel 출석</div>
                         <div class="rs-value">@(semesterStats.MyAttendances)회 (@(semesterStats.SemesterActivities)회 중)</div>
                     </div>
                 </div>
@@ -109,7 +109,7 @@
             <div class="card-value" style="font-size:1.2rem">@(calendar.MonthCount)회</div>
         </div>
         <div class="card" style="margin:0;text-align:center;padding:12px 8px">
-            <div class="card-title" style="margin-bottom:4px">이번 학기</div>
+            <div class="card-title" style="margin-bottom:4px">@SemesterLabel</div>
             <div class="card-value" style="font-size:1.2rem">@(calendar.SemesterCount)회</div>
         </div>
     </div>
@@ -180,6 +180,8 @@
 
         public string Confirm { get; set; } = "";
     }
+
+    private string SemesterLabel => calendar.Semester?.Name ?? "이번 학기";
 
     private void OpenSettings()
     {

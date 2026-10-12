@@ -212,14 +212,28 @@ public class AttendanceService(
             return new CalendarDayDto(x.ActivityDate, true, x.CheckedAt, teams);
         }).ToList();
 
-        var (semStart, semEnd) = Semester.Of(KstClock.Today(timeProvider));
+        var scope = await GetCurrentSemesterScopeAsync(db);
         var monthCount = myAttendances.Count;
         var semesterCount = await db.Attendances.AsNoTracking()
-            .CountAsync(x => x.UserId == userId && x.Activity!.ActivityDate >= semStart && x.Activity!.ActivityDate <= semEnd);
+            .CountAsync(x => x.UserId == userId && x.Activity!.ActivityDate >= scope.Start && x.Activity!.ActivityDate <= scope.End);
         var totalCount = await db.Attendances.AsNoTracking()
             .CountAsync(x => x.UserId == userId);
 
-        return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount);
+        return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount, scope);
+    }
+
+    /// <summary>현재 학기 범위 DTO — 학기 행이 없으면 기본 규칙 범위에 Name=null.</summary>
+    private async Task<SemesterScopeDto> GetCurrentSemesterScopeAsync(ApplicationDbContext db)
+    {
+        var today = KstClock.Today(timeProvider);
+        var period = await SemesterPeriodResolver.GetCurrentAsync(db, today);
+        if (period is not null)
+        {
+            return new SemesterScopeDto(period.Name, period.StartDate, period.EndDate);
+        }
+
+        var (start, end) = SemesterPeriodResolver.DefaultRange(today);
+        return new SemesterScopeDto(null, start, end);
     }
 
     public async Task<MyRecordsDto> GetMyRecordsAsync(string userId, int year, int month)
@@ -268,8 +282,9 @@ public class AttendanceService(
 
     public async Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId)
     {
-        var (semStart, semEnd) = Semester.Of(KstClock.Today(timeProvider));
         await using var db = await dbFactory.CreateDbContextAsync();
+        var scope = await GetCurrentSemesterScopeAsync(db);
+        var (semStart, semEnd) = (scope.Start, scope.End);
 
         // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모
         var semesterActivities = await db.Activities.AsNoTracking()
@@ -292,20 +307,20 @@ public class AttendanceService(
         var rank = counts.Count(c => c.Count > myCount) + 1;
 
         var rate = semesterActivities.Count == 0 ? 0 : (int)Math.Round(myAttendances * 100.0 / semesterActivities.Count);
-        return new MySemesterStatsDto(semesterActivities.Count, myAttendances, rate, rank, totalActiveMembers);
+        return new MySemesterStatsDto(semesterActivities.Count, myAttendances, rate, rank, totalActiveMembers, scope);
     }
 
     public async Task<List<AttendanceRankingDto>> GetRankingAsync(RankingPeriod period, string? viewerUserId = null)
     {
         var today = KstClock.Today(timeProvider);
+        await using var db = await dbFactory.CreateDbContextAsync();
         var (start, end) = period switch
         {
-            RankingPeriod.Semester => Semester.Of(today),
+            RankingPeriod.Semester => await SemesterPeriodResolver.GetCurrentRangeAsync(db, today),
             RankingPeriod.Month => (new DateOnly(today.Year, today.Month, 1), new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month))),
             _ => (DateOnly.MinValue, DateOnly.MaxValue),
         };
 
-        await using var db = await dbFactory.CreateDbContextAsync();
         var counts = await (
             from a in db.Attendances.AsNoTracking()
             where a.Activity!.ActivityDate >= start && a.Activity!.ActivityDate <= end

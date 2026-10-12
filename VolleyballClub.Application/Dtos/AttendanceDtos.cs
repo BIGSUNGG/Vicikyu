@@ -21,13 +21,20 @@ public record CalendarDayDto(
     DateTime? CheckedAt,
     List<TeamAssignmentDto> Teams);
 
+/// <summary>현재 집계 중인 학기 범위 — Name이 null이면 관리자 설정 없이 기본 규칙(3/1~8/31, 9/1~12/31)으로 집계 중.</summary>
+public record SemesterScopeDto(
+    string? Name,
+    DateOnly Start,
+    DateOnly End);
+
 public record MyCalendarDto(
     int Year,
     int Month,
     List<CalendarDayDto> Days,
     int MonthCount,
     int SemesterCount,
-    int TotalCount);
+    int TotalCount,
+    SemesterScopeDto? Semester = null);
 
 /// <summary>기록 페이지용 활동 1건 — 날짜별 이벤트(출석·팀 배정·활동 종료)의 원천.</summary>
 public record ActivityRecordDto(
@@ -50,7 +57,8 @@ public record MySemesterStatsDto(
     int MyAttendances,
     int AttendanceRatePercent,
     int Rank,
-    int TotalActiveMembers);
+    int TotalActiveMembers,
+    SemesterScopeDto? Semester = null);
 
 public record AttendanceRankingDto(
     int Rank,

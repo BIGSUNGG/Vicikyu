@@ -370,6 +370,34 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Guests", (string)null);
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterPeriod", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartDate");
+
+                    b.ToTable("SemesterPeriods", (string)null);
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Setting", b =>
                 {
                     b.Property<int>("Id")

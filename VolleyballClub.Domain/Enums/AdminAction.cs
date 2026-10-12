@@ -29,4 +29,7 @@ public enum AdminAction
     FeePeriodUpdate = 21,
     MemberPasswordReset = 22,
     FeePeriodDelete = 23,
+    SemesterCreate = 24,
+    SemesterUpdate = 25,
+    SemesterDelete = 26,
 }

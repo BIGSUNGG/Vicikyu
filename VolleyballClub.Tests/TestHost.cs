@@ -125,6 +125,8 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public IFeeService Fee { get; }
 
+    public ISemesterService Semester { get; }
+
     public IMemberService Member { get; }
 
     /// <summary>테스트 검증용(비밀번호 확인 등) — 서비스와 별개 컨텍스트로 DB를 읽는다.</summary>
@@ -145,6 +147,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Attendance = new AttendanceService(Db.Factory, Current, Audit, Time);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
+        Semester = new SemesterService(Db.Factory, Current, Audit, Time);
         Member = new MemberService(Db.Factory, CreateUserManager(), Current, Audit, Time);
         Users = CreateUserManager();
     }

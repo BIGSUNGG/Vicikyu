@@ -162,9 +162,16 @@ public static class DbInitializer
             });
         }
 
-        // 회비 기간 + 납부 샘플
-        var (semStart, semEnd) = Semester.Of(today);
-        var semesterLabel = Semester.Label(today);
+        // 학기 + 회비 기간 샘플 — 학기 관리에서 바로 보이는 기본 행
+        var (semStart, semEnd) = SemesterPeriodResolver.DefaultRange(today);
+        var semesterLabel = SemesterPeriodResolver.DefaultLabel(today);
+        db.SemesterPeriods.Add(new SemesterPeriod
+        {
+            Name = semesterLabel,
+            StartDate = semStart,
+            EndDate = semEnd,
+            CreatedAt = now,
+        });
         var feePeriod = new FeePeriod
         {
             Name = semesterLabel,

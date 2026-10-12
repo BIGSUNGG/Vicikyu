@@ -20,6 +20,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<FeePeriod> FeePeriods => Set<FeePeriod>();
 
+    public DbSet<SemesterPeriod> SemesterPeriods => Set<SemesterPeriod>();
+
     public DbSet<FeePayment> FeePayments => Set<FeePayment>();
 
     public DbSet<Setting> Settings => Set<Setting>();

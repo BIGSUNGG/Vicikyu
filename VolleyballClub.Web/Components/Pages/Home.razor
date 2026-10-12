@@ -69,7 +69,7 @@
     {
         <div class="tile sun">
             <div class="t-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
-            <div class="t-label">이번 학기</div>
+            <div class="t-label">@(semesterStats.Semester?.Name ?? "이번 학기")</div>
             <div class="t-value">@(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</div>
             <div class="t-meta">출석률 @(semesterStats.AttendanceRatePercent)% (@(semesterStats.SemesterActivities)회 중)</div>
         </div>
