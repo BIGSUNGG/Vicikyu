@@ -197,7 +197,8 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ActivityDate")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"Status\" <> 4");
 
                     b.ToTable("Activities", (string)null);
                 });

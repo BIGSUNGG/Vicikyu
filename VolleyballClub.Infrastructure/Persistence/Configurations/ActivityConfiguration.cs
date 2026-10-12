@@ -10,8 +10,10 @@ public class ActivityConfiguration : IEntityTypeConfiguration<Activity>
     {
         builder.ToTable("Activities");
 
-        // 하루에 기본 활동 1개
-        builder.HasIndex(a => a.ActivityDate).IsUnique();
+        // 마감된 세션과 같은 날짜 공존 허용 — 단, 진행 중(미마감) 활동은 하루 1개로 제한(동시 생성 DB 방어)
+        builder.HasIndex(a => a.ActivityDate)
+            .IsUnique()
+            .HasFilter("\"Status\" <> 4"); // ActivityStatus.ActivityClosed 제외
 
         builder.Property(a => a.OtpCode).HasMaxLength(10);
 

@@ -86,15 +86,19 @@ public class ActivityService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await FindCurrentAsync(db, today);
 
-        var length = Math.Clamp(await settings.GetIntAsync("OtpLength", 4), 4, 8);
-        var max = (int)Math.Pow(10, length);
-        var code = RandomNumberGenerator.GetInt32(0, max).ToString().PadLeft(length, '0');
-
-        activity.OtpCode = code;
+        activity.OtpCode = await GenerateOtpCodeAsync();
         activity.UpdatedAt = KstClock.NowUtc(timeProvider);
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.OtpChange, "Activity", activity.Id.ToString(), "당일 OTP 생성/변경");
-        return code;
+        return activity.OtpCode;
+    }
+
+    /// <summary>OTP 숫자 코드 생성 — 설정의 OtpLength(4~8)를 따른다.</summary>
+    private async Task<string> GenerateOtpCodeAsync()
+    {
+        var length = Math.Clamp(await settings.GetIntAsync("OtpLength", 4), 4, 8);
+        var max = (int)Math.Pow(10, length);
+        return RandomNumberGenerator.GetInt32(0, max).ToString().PadLeft(length, '0');
     }
 
     public async Task<AdminTodayDto> StartActivityAsync()
@@ -109,9 +113,7 @@ public class ActivityService(
 
         if (string.IsNullOrEmpty(activity.OtpCode))
         {
-            var length = Math.Clamp(await settings.GetIntAsync("OtpLength", 4), 4, 8);
-            var max = (int)Math.Pow(10, length);
-            activity.OtpCode = RandomNumberGenerator.GetInt32(0, max).ToString().PadLeft(length, '0');
+            activity.OtpCode = await GenerateOtpCodeAsync();
         }
 
         var now = KstClock.NowUtc(timeProvider);
@@ -120,6 +122,44 @@ public class ActivityService(
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "활동 시작");
+
+        return await LoadAdminDtoAsync(db, activity.Id);
+    }
+
+    public async Task<AdminTodayDto> StartNewActivityAsync()
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var today = KstClock.Today(timeProvider);
+        var current = await FindCurrentOrDefaultAsync(db, today);
+        if (current is not null && current.Status != ActivityStatus.ActivityClosed)
+        {
+            throw new ConflictException("진행 중인 활동이 있습니다. 먼저 마감해 주세요.");
+        }
+
+        var adminId = await currentUser.RequireUserIdAsync();
+        var now = KstClock.NowUtc(timeProvider);
+        var activity = new Activity
+        {
+            ActivityDate = today,
+            Status = ActivityStatus.AttendanceOpen,
+            OtpCode = await GenerateOtpCodeAsync(),
+            AttendanceOpenedAt = now,
+            CreatedByUserId = adminId,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        db.Activities.Add(activity);
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // 진행 중 활동 하루 1개 부분 유니크 인덱스 최종 방어(동시 클릭)
+            throw new ConflictException("동시에 새 활동이 시작되었습니다. 새로고침 후 확인해 주세요.");
+        }
+        await auditLog.LogAsync(AdminAction.ActivityCreate, "Activity", activity.Id.ToString(), $"{today:yyyy-MM-dd} 새 세션 활동 시작");
 
         return await LoadAdminDtoAsync(db, activity.Id);
     }
@@ -202,7 +242,10 @@ public class ActivityService(
             .Where(a => a.Status != ActivityStatus.ActivityClosed)
             .OrderByDescending(a => a.Id)
             .FirstOrDefaultAsync()
-        ?? await db.Activities.FirstOrDefaultAsync(a => a.ActivityDate == today);
+        ?? await db.Activities
+            .Where(a => a.ActivityDate == today)
+            .OrderByDescending(a => a.Id) // 같은 날 마감 세션 여러 개면 최신 것
+            .FirstOrDefaultAsync();
 
     internal static async Task<Activity> FindCurrentAsync(ApplicationDbContext db, DateOnly today) =>
         await FindCurrentOrDefaultAsync(db, today)

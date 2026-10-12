@@ -40,7 +40,7 @@
             {
                 <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartActivityAsync)">활동 시작</button>
             }
-            <button type="button" class="btn-primary @(IsActive ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
+            <button type="button" class="btn-primary @(IsActive || today.Status == ActivityStatus.ActivityClosed ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
             @if (IsActive)
             {
                 <button type="button" class="btn-danger" @onclick="ConfirmCancelActivityAsync">활동 취소</button>
@@ -49,6 +49,7 @@
             @if (today.Status == ActivityStatus.ActivityClosed)
             {
                 <button type="button" class="btn-secondary" @onclick="ConfirmReopenAsync">활동 다시 열기</button>
+                <button type="button" class="btn-danger" @onclick="ConfirmStartNewAsync">활동 새로 시작</button>
             }
         </div>
         <div style="height:10px"></div>
@@ -126,11 +127,26 @@
     </div>
 }
 
+@if (showStartNewConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showStartNewConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>활동 새로 시작</h3>
+            <p>마감된 활동 기록은 그대로 남고, 별도 출석을 받는 새 활동이 시작됩니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showStartNewConfirm = false">취소</button>
+                <button type="button" class="btn-primary" @onclick="StartNewAsync">새로 시작</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private AdminTodayDto? today;
     private List<TeamResultDto> teams = [];
     private bool showCloseConfirm;
     private bool showReopenConfirm;
+    private bool showStartNewConfirm;
     private bool showCancelConfirm;
     private int deleteCountdown;
     private int countdownRun;
@@ -204,6 +220,14 @@
     {
         showReopenConfirm = false;
         await RunAsync(Activities.ReopenActivityAsync);
+    }
+
+    private void ConfirmStartNewAsync() => showStartNewConfirm = true;
+
+    private async Task StartNewAsync()
+    {
+        showStartNewConfirm = false;
+        await RunAsync(Activities.StartNewActivityAsync);
     }
 
     private void ConfirmCancelActivityAsync() => _ = RunDeleteCountdownAsync();

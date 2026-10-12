@@ -39,6 +39,7 @@ public record MyCalendarDto(
 
 /// <summary>기록 페이지용 활동 1건 — 날짜별 이벤트(출석·팀 배정·활동 종료)의 원천.</summary>
 public record ActivityRecordDto(
+    int ActivityId,
     DateOnly Date,
     ActivityStatus Status,
     bool IsAttended,

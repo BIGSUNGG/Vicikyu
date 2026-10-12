@@ -33,9 +33,9 @@
         <div class="tl" style="margin-top:8px">
             @foreach (var record in records.Records)
             {
-                var expanded = expandedDates.Contains(record.Date);
+                var expanded = expandedDates.Contains(record.ActivityId);
                 @* 출석 한 줄 — 팀 배정이 있으면 하위 기록 토글(기본 접힘) *@
-                <div class="tl-item @(record.Teams.Count > 0 ? "tl-toggle" : "")" @key="@($"row-{record.Date}")" @onclick="() => ToggleDate(record.Date)">
+                <div class="tl-item @(record.Teams.Count > 0 ? "tl-toggle" : "")" @key="@($"row-{record.ActivityId}")" @onclick="() => ToggleDate(record.ActivityId)">
                     <div class="tl-dot neutral"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
                     <div class="tl-time">@record.Date.ToString("M월 d일 dddd")</div>
                     <div class="tl-title">
@@ -60,7 +60,7 @@
                 @* 회차별 팀 배정 — 활동 행 클릭으로 펼침/접힘 *@
                 @if (record.Teams.Count > 0)
                 {
-                    <div class="tl-sub @(expanded ? "open" : "")" @key="@($"sub-{record.Date}")">
+                    <div class="tl-sub @(expanded ? "open" : "")" @key="@($"sub-{record.ActivityId}")">
                         <div class="tl-sub-inner">
                             @foreach (var t in record.Teams)
                             {
@@ -91,13 +91,13 @@
     private string myUserId = "";
     private int year;
     private int month;
-    private HashSet<DateOnly> expandedDates = [];
+    private HashSet<int> expandedDates = [];
 
-    private void ToggleDate(DateOnly date)
+    private void ToggleDate(int activityId)
     {
-        if (!expandedDates.Remove(date))
+        if (!expandedDates.Remove(activityId))
         {
-            expandedDates.Add(date);
+            expandedDates.Add(activityId);
         }
     }
 
