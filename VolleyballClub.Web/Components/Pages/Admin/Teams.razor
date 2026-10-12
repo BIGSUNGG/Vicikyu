@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "ADMIN")]
 
 @inject ITeamService TeamSvc
+@inject IAttendanceService AttendanceSvc
 @inject ISettingService Settings
 @inject ISnackbar Snackbar
 
@@ -70,6 +71,14 @@
                 </div>
                 <div class="btn-row">
                     <button type="button" class="btn-ghost" @onclick="() => movingMember = null">취소</button>
+                    @if (movingMember.IsGuest)
+                    {
+                        <button type="button" class="btn-danger" @onclick="() => DeleteGuestAsync(movingMember!.Name, movingMember!.GuestId!.Value)">게스트 삭제</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-danger" @onclick="() => CancelAttendanceAsync(movingMember!.Name, movingMember!.UserId!)">출석 취소</button>
+                    }
                     <button type="button" class="btn-secondary" @onclick="RemoveMemberAsync">팀에서 제거</button>
                     <button type="button" class="btn-primary" @onclick="MoveMemberAsync">이동</button>
                 </div>
@@ -215,6 +224,14 @@ else
             </div>
             <div class="btn-row">
                 <button type="button" class="btn-ghost" @onclick="() => addingParticipant = null">취소</button>
+                @if (addingParticipant.IsGuest)
+                {
+                    <button type="button" class="btn-danger" @onclick="() => DeleteGuestAsync(addingParticipant!.Name, addingParticipant!.GuestId!.Value)">게스트 삭제</button>
+                }
+                else
+                {
+                    <button type="button" class="btn-danger" @onclick="() => CancelAttendanceAsync(addingParticipant!.Name, addingParticipant!.UserId!)">출석 취소</button>
+                }
                 <button type="button" class="btn-primary" @onclick="AddMemberAsync">추가</button>
             </div>
         </div>
@@ -507,6 +524,42 @@ else
             await TeamSvc.ConfirmAsync();
             confirmedDraw = drawnTeams[0].DrawNumber;
             Snackbar.Add($"{confirmedDraw}회차 팀 편성이 확정되었습니다. 부원에게 공개됩니다.", Severity.Success);
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    /// <summary>부원 출석 취소(팀 배정이 있으면 함께 제거된다). 호출하는 모달 자체가 확인 단계다.</summary>
+    private async Task CancelAttendanceAsync(string name, string userId)
+    {
+        movingMember = null;
+        addingParticipant = null;
+        try
+        {
+            await AttendanceSvc.AdminCancelAsync(userId, confirmTeamImpact: true);
+            Snackbar.Add($"{name} 출석 취소", Severity.Success);
+            await LoadParticipantsAsync();
+            drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    /// <summary>게스트 삭제(게스트와 모든 회차 배정 기록이 삭제된다).</summary>
+    private async Task DeleteGuestAsync(string name, int guestId)
+    {
+        movingMember = null;
+        addingParticipant = null;
+        try
+        {
+            await TeamSvc.RemoveGuestAsync(guestId);
+            Snackbar.Add($"게스트 '{name}' 삭제", Severity.Success);
+            await LoadParticipantsAsync();
             drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
         }
         catch (AppException ex)
