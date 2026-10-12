@@ -778,7 +778,10 @@ body {
 	.confirm-box,
 	.team-fs,
 	.team-fs-panel,
-	.ring {
+	.ring,
+	.nav-item,
+	.nav-item.active .nav-icon,
+	.otp-big span {
 		transition: none;
 		animation: none;
 	}
@@ -999,6 +1002,26 @@ button.court-head {
 	align-items: center;
 	justify-content: center;
 	padding: 0 8px;
+	animation: otp-digit-pop 0.3s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+.otp-big span:nth-child(2) {
+	animation-delay: 50ms;
+}
+.otp-big span:nth-child(3) {
+	animation-delay: 100ms;
+}
+.otp-big span:nth-child(4) {
+	animation-delay: 150ms;
+}
+
+/* OTP 숫자 팝 — Dashboard가 자릿수별 @key(순번-숫자)를 주므로 값이 바뀐 자리만
+   새로 삽입되고, 오버슈트 곡선으로 좌측부터 50ms 간격 순차 등장(총 450ms) */
+@keyframes otp-digit-pop {
+	from {
+		opacity: 0;
+		transform: scale(0.3);
+	}
 }
 
 /* ============================================================
@@ -1452,11 +1475,25 @@ button.court-head {
 	font-weight: 800;
 	margin: 5px;
 	border-radius: 999px;
+	transition:
+		background-color 0.15s ease-out,
+		color 0.15s ease-out;
 }
 
 .nav-icon {
 	font-size: 1.3rem;
 	line-height: 1;
+}
+
+/* 활성 탭 아이콘 도약 — .active 클래스 부착마다 1회 재생(탭 전환 시).
+   최다 빈도 영역이라 4px/0.32s 최소 강도 */
+@keyframes nav-icon-bounce {
+	40% {
+		transform: translateY(-4px);
+	}
+}
+.nav-item.active .nav-icon {
+	animation: nav-icon-bounce 0.32s ease-out;
 }
 .nav-label {
 	font-size: 0.65rem;

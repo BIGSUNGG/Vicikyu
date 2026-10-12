@@ -26,9 +26,10 @@
             <div style="margin-bottom:12px">
                 <div class="card-title">오늘 OTP · 부원에게 보여주세요</div>
                 <div class="otp-big">
+                    @{ var i = 0; }
                     @foreach (var ch in today.OtpCode)
                     {
-                        <span>@ch</span>
+                        <span @key="@(i++ + "-" + ch)">@ch</span>
                     }
                 </div>
             </div>
