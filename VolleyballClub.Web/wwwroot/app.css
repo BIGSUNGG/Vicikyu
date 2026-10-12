@@ -1223,6 +1223,21 @@ button.court-head {
 	outline: 2.5px solid var(--vb-sun);
 	outline-offset: 1px;
 }
+.day-cell .mark.miss {
+	color: var(--vb-danger);
+}
+.day-cell.missed {
+	background: var(--vb-danger-soft);
+	color: var(--vb-danger);
+	border: 2px solid #fecaca;
+}
+.day-cell .mark.sem {
+	color: var(--vb-lilac);
+	font-size: 0.5rem;
+}
+.dd-info.miss {
+	color: var(--vb-danger);
+}
 
 .day-detail {
 	margin-top: 12px;

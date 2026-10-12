@@ -131,6 +131,72 @@ public class SemesterTests
         Assert.Equal(new DateOnly(2026, 9, 1), stats.Semester?.Start); // 고정 시각 10월 → 기본 규칙 2학기
     }
 
+    /// <summary>개최된 활동 중 미출석일만 IsMissed로 노출 — 오늘 출석 중 활동은 결석 아님.</summary>
+    [Fact]
+    public async Task Calendar_MarksMissedHeldActivitiesOnly()
+    {
+        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        var member = await host.SeedUserAsync("김민수", "202512001");
+
+        await SeedHeldActivityAsync(host.Db, "2026-09-25"); // 마감 활동, 미출석 → 표시
+        await SeedHeldActivityAsync(host.Db, "2026-09-26", member); // 마감 활동, 출석 → 초록
+        await SeedOpenActivityAsync(host.Db, "2026-10-01"); // 오늘 출석 중, 미출석 → 표시 안 함
+
+        var september = await host.Attendance.GetMyCalendarAsync(member, 2026, 9);
+        Assert.True(september.Days.Single(d => d.Date == new DateOnly(2026, 9, 25)).IsMissed);
+        var attended = september.Days.Single(d => d.Date == new DateOnly(2026, 9, 26));
+        Assert.True(attended.IsAttended);
+        Assert.False(attended.IsMissed);
+
+        var october = await host.Attendance.GetMyCalendarAsync(member, 2026, 10);
+        Assert.DoesNotContain(october.Days, d => d.IsMissed);
+    }
+
+    /// <summary>마감된 활동 행 심기 — userId가 있으면 출석까지.</summary>
+    private static async Task SeedHeldActivityAsync(TestDb db, string date, string? userId = null)
+    {
+        await using var ctx = db.CreateContext();
+        var activity = new Activity
+        {
+            ActivityDate = DateOnly.Parse(date),
+            Status = ActivityStatus.ActivityClosed,
+            CreatedByUserId = "seed",
+            CreatedAt = DateTime.UnixEpoch,
+            UpdatedAt = DateTime.UnixEpoch,
+        };
+        ctx.Activities.Add(activity);
+        await ctx.SaveChangesAsync();
+        if (userId is not null)
+        {
+            ctx.Attendances.Add(new Attendance
+            {
+                ActivityId = activity.Id,
+                UserId = userId,
+                AttendanceType = AttendanceType.Admin,
+                CheckedAt = DateTime.UnixEpoch,
+                CreatedAt = DateTime.UnixEpoch,
+            });
+            await ctx.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>오늘 출석 중(AttendanceOpen) 활동 행 심기.</summary>
+    private static async Task SeedOpenActivityAsync(TestDb db, string date)
+    {
+        await using var ctx = db.CreateContext();
+        ctx.Activities.Add(new Activity
+        {
+            ActivityDate = DateOnly.Parse(date),
+            Status = ActivityStatus.AttendanceOpen,
+            OtpCode = "1234",
+            AttendanceOpenedAt = DateTime.UnixEpoch,
+            CreatedByUserId = "seed",
+            CreatedAt = DateTime.UnixEpoch,
+            UpdatedAt = DateTime.UnixEpoch,
+        });
+        await ctx.SaveChangesAsync();
+    }
+
     /// <summary>직접 활동+출석 행을 심는다(랭킹은 status != Ready 활동만 집계).</summary>
     private static async Task SeedAttendanceOnAsync(TestDb db, string date)
     {

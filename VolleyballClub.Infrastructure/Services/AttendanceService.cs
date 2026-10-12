@@ -198,7 +198,7 @@ public class AttendanceService(
 
         var activityIdsByDate = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
-            .Select(a => new { a.Id, a.ActivityDate })
+            .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync();
 
         var days = myAttendances.Select(x =>
@@ -211,6 +211,16 @@ public class AttendanceService(
                 .ToList();
             return new CalendarDayDto(x.ActivityDate, true, x.CheckedAt, teams);
         }).ToList();
+
+        // 개최된 활동(Ready 제외) 중 미출석일 — 오늘 출석 중인 활동은 아직 결석이 아니므로 제외,
+        // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
+        var today = KstClock.Today(timeProvider);
+        var attendedDates = myAttendances.Select(x => x.ActivityDate).ToHashSet();
+        days.AddRange(activityIdsByDate
+            .Where(a => a.Status != ActivityStatus.Ready && !attendedDates.Contains(a.ActivityDate)
+                && !(a.ActivityDate == today && a.Status == ActivityStatus.AttendanceOpen))
+            .GroupBy(a => a.ActivityDate)
+            .Select(g => new CalendarDayDto(g.Key, false, null, [], IsMissed: true)));
 
         var scope = await GetCurrentSemesterScopeAsync(db);
         var monthCount = myAttendances.Count;

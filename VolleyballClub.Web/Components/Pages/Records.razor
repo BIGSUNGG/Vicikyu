@@ -12,11 +12,6 @@
         <span class="hf-chip">활동 @(records.MonthActivities)회 중</span>
         @if (semesterStats is not null)
         {
-            <span class="hf-chip">@(semesterStats.Semester?.Name ?? "이번 학기") @(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</span>
-            @if (semesterStats.Semester is { } sem)
-            {
-                <span class="hf-chip">@sem.Start.ToString("yyyy.MM.dd") ~ @sem.End.ToString("yyyy.MM.dd")</span>
-            }
             <span class="hf-chip">출석률 @(semesterStats.AttendanceRatePercent)%</span>
         }
     </div>

@@ -19,7 +19,8 @@ public record CalendarDayDto(
     DateOnly Date,
     bool IsAttended,
     DateTime? CheckedAt,
-    List<TeamAssignmentDto> Teams);
+    List<TeamAssignmentDto> Teams,
+    bool IsMissed = false);
 
 /// <summary>현재 집계 중인 학기 범위 — Name이 null이면 관리자 설정 없이 기본 규칙(3/1~8/31, 9/1~12/31)으로 집계 중.</summary>
 public record SemesterScopeDto(
