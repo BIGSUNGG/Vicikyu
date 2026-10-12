@@ -22,7 +22,7 @@
     <div class="teams-grid">
         @foreach (var team in drawnTeams)
         {
-            <TeamCard Team="team" Selectable="true" OnMemberSelected="SelectMemberAsync" />
+            <TeamCard @key="team.TeamId" Team="team" Selectable="true" OnMemberSelected="SelectMemberAsync" />
         }
     </div>
 

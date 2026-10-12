@@ -19,7 +19,7 @@
 
     @if (showAddForm)
     {
-        <EditForm Model="createForm" OnValidSubmit="AddMemberAsync" style="margin-top:14px">
+        <EditForm Model="createForm" OnValidSubmit="AddMemberAsync" class="reveal" style="margin-top:14px">
             <DataAnnotationsValidator />
             <div class="field">
                 <label class="form-label">학번</label>
@@ -51,7 +51,7 @@
 
 @if (editing is not null)
 {
-    <div class="card">
+    <div class="card reveal">
         <h2 class="card-title">부원 수정 — @editing.Name</h2>
         <EditForm Model="editForm" OnValidSubmit="SaveEditAsync">
             <DataAnnotationsValidator />

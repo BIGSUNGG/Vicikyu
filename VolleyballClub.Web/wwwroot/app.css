@@ -209,6 +209,30 @@ body {
 	font-weight: 700;
 }
 
+/* ---- 공용 모션 — 조건부 렌더 입장(Blazor가 새 DOM을 삽입할 때 keyframes 1회 재생).
+   from-only 키프레임: 요소의 원래 스타일이 곧 종료값이라 중복 정의가 없다 ---- */
+@keyframes overlay-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes panel-in {
+	from {
+		opacity: 0;
+		transform: scale(0.96) translateY(10px);
+	}
+}
+@keyframes reveal-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+}
+
+.reveal {
+	animation: reveal-in 180ms ease-out;
+}
+
 /* 배지 */
 .badge {
 	display: inline-flex;
@@ -332,6 +356,9 @@ body {
 	font-family: inherit;
 	box-shadow: 0 5px 0 var(--vb-primary-dark);
 	cursor: pointer;
+	transition:
+		transform 0.13s ease-out,
+		box-shadow 0.13s ease-out;
 }
 
 .btn-primary:active {
@@ -586,6 +613,26 @@ body {
 	gap: 10px;
 }
 
+/* 타일 입장 — 25ms 스태거×3 + 125ms 재생 = 마지막 타일 200ms에 완료 */
+@keyframes tile-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+}
+.tile-grid .tile {
+	animation: tile-in 125ms ease-out backwards;
+}
+.tile-grid .tile:nth-child(2) {
+	animation-delay: 25ms;
+}
+.tile-grid .tile:nth-child(3) {
+	animation-delay: 50ms;
+}
+.tile-grid .tile:nth-child(4) {
+	animation-delay: 75ms;
+}
+
 .tile {
 	border-radius: 20px;
 	border: 2px solid transparent;
@@ -717,8 +764,23 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
 	.court .chips-wrap,
-	.court .chips-wrap > .chips {
+	.court .chips-wrap > .chips,
+	.member-row input[type="checkbox"],
+	.member-row input[type="checkbox"]::after,
+	.btn-primary,
+	.filter-btn,
+	.tile-grid .tile,
+	.teams-grid .court,
+	.otp-guide,
+	.day-detail,
+	.reveal,
+	.confirm-overlay,
+	.confirm-box,
+	.team-fs,
+	.team-fs-panel,
+	.ring {
 		transition: none;
+		animation: none;
 	}
 }
 button.court-head {
@@ -762,6 +824,7 @@ button.court-head {
 	background: rgba(59, 52, 48, 0.45);
 	display: flex;
 	padding: 20px;
+	animation: overlay-in 150ms ease-out;
 }
 .team-fs-panel {
 	flex: 1;
@@ -773,6 +836,7 @@ button.court-head {
 	padding: 20px;
 	overflow: auto;
 	box-shadow: 8px 10px 0 rgba(59, 52, 48, 0.2);
+	animation: panel-in 220ms ease-out;
 }
 .team-fs-head {
 	display: flex;
@@ -880,6 +944,7 @@ button.court-head {
 .otp-guide {
 	text-align: center;
 	margin: 2px 0 10px;
+	animation: panel-in 220ms ease-out;
 }
 .otp-guide .otp-title {
 	font-size: 1rem;
@@ -946,6 +1011,18 @@ button.court-head {
 	gap: 16px;
 }
 
+/* 링 채움 — @property 등록 브라우저에서만 600ms 보간, 미지원은 정적 폴백.
+   실제 퍼센트는 MyPage가 --ring-p 인라인 변수로 공급한다 */
+@property --ring-p {
+	syntax: "<percentage>";
+	inherits: false;
+	initial-value: 0%;
+}
+@keyframes ring-fill {
+	from {
+		--ring-p: 0%;
+	}
+}
 .ring {
 	width: 112px;
 	height: 112px;
@@ -954,6 +1031,11 @@ button.court-head {
 	align-items: center;
 	justify-content: center;
 	flex: none;
+	background: conic-gradient(
+		var(--vb-success) 0 var(--ring-p),
+		#f0e6d8 var(--ring-p) 100%
+	);
+	animation: ring-fill 600ms ease-out;
 }
 
 .ring .ring-in {
@@ -1123,6 +1205,7 @@ button.court-head {
 	background: var(--vb-lilac-soft);
 	border: 2px solid #ddd6fe;
 	border-radius: 16px;
+	animation: reveal-in 180ms ease-out;
 }
 
 .day-detail .dd-date {
@@ -1231,38 +1314,6 @@ button.court-head {
 /* ============================================================
    관리자 — 토글·필터·확인 상자
    ============================================================ */
-.toggle {
-	width: 46px;
-	height: 26px;
-	border-radius: 999px;
-	background: #eadfd0;
-	border: 2px solid #e0d2bd;
-	position: relative;
-	flex: none;
-	cursor: pointer;
-	padding: 0;
-}
-
-.toggle::after {
-	content: "";
-	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 18px;
-	height: 18px;
-	border-radius: 999px;
-	background: #fff;
-	box-shadow: 0 1px 3px rgba(59, 52, 48, 0.25);
-}
-
-.toggle.on {
-	background: var(--vb-success);
-	border-color: #10b981;
-}
-.toggle.on::after {
-	left: 22px;
-}
-
 /* 출석 관리 체크박스 — 토글 스위치 스타일 */
 .member-row input[type="checkbox"] {
 	appearance: none;
@@ -1276,6 +1327,9 @@ button.court-head {
 	cursor: pointer;
 	flex: none;
 	margin: 0;
+	transition:
+		background-color 0.2s ease-out,
+		border-color 0.2s ease-out;
 }
 
 .member-row input[type="checkbox"]::after {
@@ -1288,6 +1342,7 @@ button.court-head {
 	border-radius: 999px;
 	background: #fff;
 	box-shadow: 0 1px 3px rgba(59, 52, 48, 0.25);
+	transition: left 0.2s ease-out;
 }
 
 .member-row input[type="checkbox"]:checked {
@@ -1315,6 +1370,10 @@ button.court-head {
 	font-weight: 800;
 	padding: 9px 0;
 	cursor: pointer;
+	transition:
+		background-color 0.15s ease-out,
+		border-color 0.15s ease-out,
+		color 0.15s ease-out;
 }
 
 .filter-btn.active {
@@ -1332,6 +1391,7 @@ button.court-head {
 	align-items: center;
 	justify-content: center;
 	padding: 24px;
+	animation: overlay-in 150ms ease-out;
 }
 
 .confirm-box {
@@ -1342,6 +1402,7 @@ button.court-head {
 	width: 100%;
 	max-width: 340px;
 	box-shadow: 8px 10px 0 rgba(59, 52, 48, 0.2);
+	animation: panel-in 220ms ease-out;
 }
 
 .confirm-box h3 {
@@ -1433,6 +1494,28 @@ button.court-head {
 	display: grid;
 	grid-template-columns: 1fr;
 	gap: 14px;
+}
+
+/* 편성 결과 입장 — 오버슈트 곡선으로 '뽑기' 순간의 통통 튘. teams-grid 셀렉터는
+   TeamCard의 @key(team.TeamId)와 짝이라 새로 뽑힌 회차만 삽입·재생되고,
+   이동/추가 등 기존 팀을 유지한 재렌더는 DOM이 보존되어 재생되지 않는다 */
+@keyframes court-pop-in {
+	from {
+		opacity: 0;
+		transform: scale(0.94);
+	}
+}
+.teams-grid .court {
+	animation: court-pop-in 260ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+.teams-grid .court:nth-child(2) {
+	animation-delay: 40ms;
+}
+.teams-grid .court:nth-child(3) {
+	animation-delay: 80ms;
+}
+.teams-grid .court:nth-child(n + 4) {
+	animation-delay: 120ms;
 }
 
 @media (min-width: 1024px) {
