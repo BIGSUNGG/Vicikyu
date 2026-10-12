@@ -22,7 +22,8 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.FirstOrDefaultAsync(a => a.ActivityDate == today);
+        // 진행 중(미종료) 활동이 있으면 날짜와 무관하게 그것을 계속 사용한다(자정 넘김 대응)
+        var activity = await FindCurrentOrDefaultAsync(db, today);
         if (activity is null)
         {
             var adminId = await currentUser.RequireUserIdAsync();
@@ -48,7 +49,7 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, today);
+        var activity = await FindCurrentAsync(db, today);
         return await LoadAdminDtoAsync(db, activity.Id);
     }
 
@@ -56,7 +57,7 @@ public class ActivityService(
     {
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, today);
+        var activity = await FindCurrentAsync(db, today);
 
         var attendance = await db.Attendances.AsNoTracking()
             .Where(a => a.ActivityId == activity.Id && a.UserId == userId)
@@ -83,7 +84,7 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, today);
+        var activity = await FindCurrentAsync(db, today);
 
         var length = Math.Clamp(await settings.GetIntAsync("OtpLength", 4), 4, 8);
         var max = (int)Math.Pow(10, length);
@@ -100,7 +101,7 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanStartAttendance)
         {
             throw new ConflictException("이미 활동이 시작되었습니다.");
@@ -127,7 +128,7 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanCancel)
         {
             throw new ConflictException("종료된 활동은 취소할 수 없습니다. '활동 다시 열기' 후 취소해 주세요.");
@@ -146,7 +147,7 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanClose)
         {
             throw new ConflictException("이미 종료된 활동입니다.");
@@ -176,7 +177,7 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanReopen)
         {
             throw new ConflictException("종료된 활동만 다시 열 수 있습니다.");
@@ -194,9 +195,19 @@ public class ActivityService(
         return await LoadAdminDtoAsync(db, activity.Id);
     }
 
-    internal static async Task<Activity> FindTodayAsync(ApplicationDbContext db, DateOnly today) =>
-        await db.Activities.FirstOrDefaultAsync(a => a.ActivityDate == today)
-        ?? throw new NotFoundException("오늘 활동이 아직 생성되지 않았습니다.");
+    /// <summary>현재 활동: 진행 중(미종료) 활동이 있으면 가장 최근 것, 없으면 오늘 날짜 활동.
+    /// 활동 종료는 관리자 마감으로만 결정되며 날짜 경과로 자동 종료되지 않는다.</summary>
+    internal static async Task<Activity?> FindCurrentOrDefaultAsync(ApplicationDbContext db, DateOnly today) =>
+        await db.Activities
+            .Where(a => a.Status != ActivityStatus.ActivityClosed)
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync()
+        ?? await db.Activities.FirstOrDefaultAsync(a => a.ActivityDate == today);
+
+    internal static async Task<Activity> FindCurrentAsync(ApplicationDbContext db, DateOnly today) =>
+        await FindCurrentOrDefaultAsync(db, today)
+        ?? await db.Activities.OrderByDescending(a => a.Id).FirstOrDefaultAsync() // 마감 직후에도 종료 안내/되돌리기 가능하게
+        ?? throw new NotFoundException("현재 활동이 아직 생성되지 않았습니다.");
 
     private static async Task<int> CountAttendanceAsync(ApplicationDbContext db, int activityId) =>
         await db.Attendances.CountAsync(a => a.ActivityId == activityId);

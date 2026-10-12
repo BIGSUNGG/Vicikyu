@@ -21,7 +21,7 @@ public class TeamService(
     {
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.ActivityDate == today);
+        var activity = await ActivityService.FindCurrentOrDefaultAsync(db, today);
         if (activity is null || activity.Status != ActivityStatus.TeamCreated || activity.ConfirmedDrawNumber is not { } confirmed)
         {
             return [];
@@ -35,7 +35,7 @@ public class TeamService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.ActivityDate == today);
+        var activity = await ActivityService.FindCurrentOrDefaultAsync(db, today);
         if (activity is null)
         {
             return [];
@@ -50,7 +50,7 @@ public class TeamService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.ActivityDate == today);
+        var activity = await ActivityService.FindCurrentOrDefaultAsync(db, today);
         return activity?.ConfirmedDrawNumber;
     }
 
@@ -67,7 +67,7 @@ public class TeamService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, today);
+        var activity = await ActivityService.FindCurrentAsync(db, today);
 
         var attendedUsers = await db.Attendances.AsNoTracking()
             .Where(a => a.ActivityId == activity.Id)
@@ -121,7 +121,7 @@ public class TeamService(
         }
 
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (!activity.CanDrawTeams)
         {
             throw new ConflictException(activity.Status == ActivityStatus.ActivityClosed
@@ -216,9 +216,8 @@ public class TeamService(
             throw new RuleViolationException("이미 해당 팀 소속입니다.");
         }
 
-        var today = KstClock.Today(timeProvider);
         var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == member.Team!.ActivityId);
-        if (activity.ActivityDate != today || activity.Status == ActivityStatus.ActivityClosed)
+        if (activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }
@@ -251,9 +250,8 @@ public class TeamService(
             .FirstOrDefaultAsync(m => m.Id == teamMemberId)
             ?? throw new NotFoundException("팀원을 찾을 수 없습니다.");
 
-        var today = KstClock.Today(timeProvider);
         var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == member.Team!.ActivityId);
-        if (activity.ActivityDate != today || activity.Status == ActivityStatus.ActivityClosed)
+        if (activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }
@@ -278,7 +276,7 @@ public class TeamService(
         await using var db = await dbFactory.CreateDbContextAsync();
 
         var today = KstClock.Today(timeProvider);
-        var activity = await ActivityService.FindTodayAsync(db, today);
+        var activity = await ActivityService.FindCurrentAsync(db, today);
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
@@ -324,7 +322,7 @@ public class TeamService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
@@ -382,7 +380,7 @@ public class TeamService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
 
         var latestDraw = await LatestDrawNumberAsync(db, activity.Id)
             ?? throw new RuleViolationException("먼저 팀을 편성해 주세요.");
@@ -414,7 +412,7 @@ public class TeamService(
         }
 
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
@@ -433,7 +431,7 @@ public class TeamService(
         var guest = await db.Guests.Include(g => g.Activity).FirstOrDefaultAsync(g => g.Id == guestId)
             ?? throw new NotFoundException("게스트를 찾을 수 없습니다.");
 
-        if (guest.Activity.ActivityDate != KstClock.Today(timeProvider) || guest.Activity.Status == ActivityStatus.ActivityClosed)
+        if (guest.Activity.Status == ActivityStatus.ActivityClosed)
         {
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }

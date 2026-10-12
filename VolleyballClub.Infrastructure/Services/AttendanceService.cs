@@ -23,13 +23,13 @@ public class AttendanceService(
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var today = KstClock.Today(timeProvider);
-        var activity = await ActivityService.FindTodayAsync(db, today);
+        var activity = await ActivityService.FindCurrentAsync(db, today);
 
         if (activity.Status is not (ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated))
         {
             throw new ConflictException(activity.Status == ActivityStatus.ActivityClosed
-                ? "오늘 활동이 종료되었습니다."
-                : "오늘 활동이 아직 시작되지 않았습니다.");
+                ? "현재 활동이 종료되었습니다."
+                : "활동이 아직 시작되지 않았습니다.");
         }
 
         if (string.IsNullOrEmpty(activity.OtpCode) || !FixedTimeEquals(code, activity.OtpCode))
@@ -75,7 +75,7 @@ public class AttendanceService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
 
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
@@ -115,7 +115,7 @@ public class AttendanceService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindTodayAsync(db, KstClock.Today(timeProvider));
+        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
 
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
@@ -148,11 +148,12 @@ public class AttendanceService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
+        var currentActivityId = (await ActivityService.FindCurrentOrDefaultAsync(db, today))?.Id ?? 0;
 
         var query =
             from m in db.Users.AsNoTracking()
             join a in db.Attendances.AsNoTracking()
-                .Where(x => x.Activity!.ActivityDate == today)
+                .Where(x => x.ActivityId == currentActivityId)
                 on m.Id equals a.UserId into ga
             from a in ga.DefaultIfEmpty()
             where m.IsActive
@@ -212,13 +213,11 @@ public class AttendanceService(
             return new CalendarDayDto(x.ActivityDate, true, x.CheckedAt, teams);
         }).ToList();
 
-        // 개최된 활동(Ready 제외) 중 미출석일 — 오늘 출석 중인 활동은 아직 결석이 아니므로 제외,
+        // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
         // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
-        var today = KstClock.Today(timeProvider);
         var attendedDates = myAttendances.Select(x => x.ActivityDate).ToHashSet();
         days.AddRange(activityIdsByDate
-            .Where(a => a.Status != ActivityStatus.Ready && !attendedDates.Contains(a.ActivityDate)
-                && !(a.ActivityDate == today && a.Status == ActivityStatus.AttendanceOpen))
+            .Where(a => a.Status == ActivityStatus.ActivityClosed && !attendedDates.Contains(a.ActivityDate))
             .GroupBy(a => a.ActivityDate)
             .Select(g => new CalendarDayDto(g.Key, false, null, [], IsMissed: true)));
 

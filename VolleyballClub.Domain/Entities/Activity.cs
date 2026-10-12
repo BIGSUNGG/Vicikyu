@@ -2,7 +2,8 @@ using VolleyballClub.Domain.Enums;
 
 namespace VolleyballClub.Domain.Entities;
 
-/// <summary>하루의 배구 활동 단위. ActivityDate는 Unique — 하루 기본 활동 1개.</summary>
+/// <summary>하루의 배구 활동 단위. ActivityDate는 Unique — 하루 기본 활동 1개.
+/// 활동 종료는 관리자 마감으로만 결정되며 날짜 경과로 자동 종료되지 않는다.</summary>
 public class Activity
 {
     public int Id { get; set; }
