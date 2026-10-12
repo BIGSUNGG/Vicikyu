@@ -73,20 +73,7 @@ public class FeeService(
     public async Task<FeePeriodDto> CreatePeriodAsync(FeePeriodCreateRequest request)
     {
         await currentUser.RequireAdminAsync();
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new RuleViolationException("기간 이름을 입력해 주세요.");
-        }
-
-        if (request.StartDate > request.EndDate)
-        {
-            throw new RuleViolationException("시작일이 종료일보다 늦을 수 없습니다.");
-        }
-
-        if (request.FeeAmount < 0)
-        {
-            throw new RuleViolationException("회비 금액이 올바르지 않습니다.");
-        }
+        ValidatePeriod(request.Name, request.StartDate, request.EndDate, request.FeeAmount);
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var period = new FeePeriod
@@ -101,6 +88,42 @@ public class FeeService(
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.FeePeriodCreate, "FeePeriod", period.Id.ToString(), $"회비 기간 '{period.Name}' 생성");
         return new FeePeriodDto(period.Id, period.Name, period.StartDate, period.EndDate, period.FeeAmount);
+    }
+
+    public async Task<FeePeriodDto> UpdatePeriodAsync(int periodId, FeePeriodUpdateRequest request)
+    {
+        await currentUser.RequireAdminAsync();
+        ValidatePeriod(request.Name, request.StartDate, request.EndDate, request.FeeAmount);
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var period = await db.FeePeriods.FirstOrDefaultAsync(p => p.Id == periodId)
+            ?? throw new NotFoundException("회비 기간을 찾을 수 없습니다.");
+
+        period.Name = request.Name.Trim();
+        period.StartDate = request.StartDate;
+        period.EndDate = request.EndDate;
+        period.FeeAmount = request.FeeAmount;
+        await db.SaveChangesAsync();
+        await auditLog.LogAsync(AdminAction.FeePeriodUpdate, "FeePeriod", period.Id.ToString(), $"회비 기간 '{period.Name}' 수정");
+        return new FeePeriodDto(period.Id, period.Name, period.StartDate, period.EndDate, period.FeeAmount);
+    }
+
+    private static void ValidatePeriod(string name, DateOnly startDate, DateOnly endDate, int feeAmount)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new RuleViolationException("기간 이름을 입력해 주세요.");
+        }
+
+        if (startDate > endDate)
+        {
+            throw new RuleViolationException("시작일이 종료일보다 늦을 수 없습니다.");
+        }
+
+        if (feeAmount < 0)
+        {
+            throw new RuleViolationException("회비 금액이 올바르지 않습니다.");
+        }
     }
 
     public async Task<List<FeeStatusDto>> GetPeriodStatusesAsync(int periodId, FeeFilter filter = FeeFilter.All, string? search = null)

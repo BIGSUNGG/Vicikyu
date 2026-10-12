@@ -96,7 +96,7 @@
             <p style="font-weight:700">출석 @(today?.AttendanceCount)명 · 게스트 @(today?.GuestCount)명 · 팀 @(today?.TeamCount)개</p>
             <div class="btn-row">
                 <button type="button" class="btn-ghost" @onclick="() => showCancelConfirm = false">취소</button>
-                <button type="button" class="btn-danger" @onclick="CancelActivityAsync">삭제</button>
+                <button type="button" class="btn-danger" disabled="@(deleteCountdown > 0)" @onclick="CancelActivityAsync">@(deleteCountdown > 0 ? $"{deleteCountdown}초 후 삭제 가능" : "삭제")</button>
             </div>
         </div>
     </div>
@@ -136,6 +136,8 @@
     private bool showCloseConfirm;
     private bool showReopenConfirm;
     private bool showCancelConfirm;
+    private int deleteCountdown;
+    private int countdownRun;
 
     private bool IsActive => today is not null
         && today.Status != ActivityStatus.Ready
@@ -208,7 +210,26 @@
         await RunAsync(Activities.ReopenActivityAsync);
     }
 
-    private void ConfirmCancelActivityAsync() => showCancelConfirm = true;
+    private void ConfirmCancelActivityAsync() => _ = RunDeleteCountdownAsync();
+
+    /// <summary>모달이 다시 열릴 때마다 새 카운트다운만 살아남도록 실행 세대로 무효화한다.</summary>
+    private async Task RunDeleteCountdownAsync()
+    {
+        showCancelConfirm = true;
+        var run = ++countdownRun;
+        for (var remain = 5; remain > 0; remain--)
+        {
+            deleteCountdown = remain;
+            StateHasChanged();
+            await Task.Delay(1000);
+            if (!showCancelConfirm || run != countdownRun)
+            {
+                return;
+            }
+        }
+        deleteCountdown = 0;
+        StateHasChanged();
+    }
 
     private async Task CancelActivityAsync()
     {

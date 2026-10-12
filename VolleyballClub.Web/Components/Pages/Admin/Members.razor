@@ -84,6 +84,11 @@
                     <option value="ADMIN">관리자</option>
                 </select>
             </div>
+            <div class="field">
+                <label class="form-label">새 비밀번호 (선택)</label>
+                <InputText type="password" @bind-Value="editForm.NewPassword" class="form-control"
+                           placeholder="비워 두면 변경하지 않음" autocomplete="new-password" />
+            </div>
             <div class="btn-row">
                 <button type="button" class="btn-ghost" @onclick="() => editing = null">취소</button>
                 <button type="submit" class="btn-primary">저장</button>
@@ -222,7 +227,8 @@
                 editForm.Department.Trim(),
                 editForm.StudentNumber.Trim(),
                 editForm.Role,
-                Color: editForm.Color));
+                Color: editForm.Color,
+                NewPassword: string.IsNullOrWhiteSpace(editForm.NewPassword) ? null : editForm.NewPassword));
             Snackbar.Add("수정 완료", Severity.Success);
             editing = null;
             await LoadAsync();
@@ -298,5 +304,8 @@
         public string Role { get; set; } = "MEMBER";
 
         public string Color { get; set; } = "";
+
+        // 선택 필드 — MinLength는 빈 문자열을 거부하므로 길이 검증은 서버(MemberService)에 맡긴다
+        public string NewPassword { get; set; } = "";
     }
 }

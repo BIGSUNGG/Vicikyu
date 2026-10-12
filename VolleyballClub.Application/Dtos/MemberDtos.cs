@@ -24,7 +24,8 @@ public record MemberUpdateRequest(
     string? StudentNumber = null,
     string? Role = null,
     bool? IsActive = null,
-    string? Color = null);
+    string? Color = null,
+    string? NewPassword = null);
 
 public record PasswordChangeRequest(
     string CurrentPassword,

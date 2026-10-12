@@ -6,7 +6,7 @@
 
 <PageTitle>회비 관리 · 배구부</PageTitle>
 
-<h1 class="page-title"><img class="icon" src="/icons/money.svg" alt=""> 회비 관리</h1>
+<AdminNav Icon="/icons/money.svg" Title="회비 관리" Sub="@($"납부 {paidCount} / {statuses.Count}명")" Active="fees" />
 
 <div class="card">
     <h2 class="card-title">회비 기간</h2>
@@ -18,13 +18,13 @@
         }
     </div>
 
-    <button type="button" class="btn-secondary btn-block" @onclick="() => showCreatePeriod = !showCreatePeriod">
+    <button type="button" class="btn-secondary btn-block" @onclick="ToggleCreatePeriod">
         @(showCreatePeriod ? "취소" : "+ 기간 추가")
     </button>
 
     @if (showCreatePeriod)
     {
-        <EditForm Model="periodForm" OnValidSubmit="CreatePeriodAsync" style="margin-top:14px">
+        <EditForm Model="periodForm" OnValidSubmit="CreatePeriodAsync" class="reveal" style="margin-top:14px">
             <DataAnnotationsValidator />
             <div class="field">
                 <label class="form-label">기간 이름 (예: 2026년 2학기)</label>
@@ -56,6 +56,38 @@
             <h2 class="card-title" style="margin:0">@selectedPeriod.Name — @(selectedPeriod.FeeAmount.ToString("N0"))원</h2>
             <span class="badge badge-blue">납부 @paidCount / @(statuses.Count)명</span>
         </div>
+
+        <button type="button" class="btn-secondary btn-block" style="margin-top:10px" @onclick="ToggleEditPeriod">
+            @(showEditPeriod ? "수정 취소" : "기간 정보 수정")
+        </button>
+        @if (showEditPeriod)
+        {
+            <EditForm Model="editPeriodForm" OnValidSubmit="UpdatePeriodAsync" class="reveal" style="margin-top:14px">
+                <DataAnnotationsValidator />
+                <div class="field">
+                    <label class="form-label">기간 이름 (예: 2026년 2학기)</label>
+                    <InputText @bind-Value="editPeriodForm.Name" class="form-control" />
+                </div>
+                <div class="btn-row">
+                    <div class="field">
+                        <label class="form-label">시작일</label>
+                        <InputDate @bind-Value="editPeriodForm.StartDate" class="form-control" />
+                    </div>
+                    <div class="field">
+                        <label class="form-label">종료일</label>
+                        <InputDate @bind-Value="editPeriodForm.EndDate" class="form-control" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="form-label">회비 금액(원)</label>
+                    <InputNumber @bind-Value="editPeriodForm.FeeAmount" class="form-control" />
+                </div>
+                <div class="btn-row">
+                    <button type="button" class="btn-ghost" @onclick="() => showEditPeriod = false">취소</button>
+                    <button type="submit" class="btn-primary btn-block">저장</button>
+                </div>
+            </EditForm>
+        }
 
         <div class="toolbar-row">
             <div class="filter-group">
@@ -102,7 +134,9 @@
     private FeeFilter filter = FeeFilter.All;
     private string search = "";
     private bool showCreatePeriod;
+    private bool showEditPeriod;
     private PeriodForm periodForm = new() { StartDate = DateOnly.FromDateTime(DateTime.Today), EndDate = DateOnly.FromDateTime(DateTime.Today.AddMonths(4)) };
+    private PeriodForm editPeriodForm = new();
 
     private int paidCount => statuses.Count(s => s.IsPaid);
 
@@ -159,7 +193,30 @@
     private async Task SelectPeriodAsync(int periodId)
     {
         selectedPeriodId = periodId;
+        showEditPeriod = false;
         await LoadAsync();
+    }
+
+    private void ToggleCreatePeriod()
+    {
+        showCreatePeriod = !showCreatePeriod;
+        showEditPeriod = false;
+    }
+
+    private void ToggleEditPeriod()
+    {
+        showEditPeriod = !showEditPeriod;
+        showCreatePeriod = false;
+        if (showEditPeriod && selectedPeriod is not null)
+        {
+            editPeriodForm = new PeriodForm
+            {
+                Name = selectedPeriod.Name,
+                StartDate = selectedPeriod.StartDate,
+                EndDate = selectedPeriod.EndDate,
+                FeeAmount = selectedPeriod.FeeAmount,
+            };
+        }
     }
 
     private async Task ChangeFilterAsync(FeeFilter value)
@@ -193,6 +250,27 @@
             Snackbar.Add($"{created.Name} 추가", Severity.Success);
             selectedPeriodId = created.Id;
             showCreatePeriod = false;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task UpdatePeriodAsync()
+    {
+        if (selectedPeriod is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var updated = await FeeSvc.UpdatePeriodAsync(selectedPeriod.Id, new FeePeriodUpdateRequest(
+                editPeriodForm.Name.Trim(), editPeriodForm.StartDate, editPeriodForm.EndDate, editPeriodForm.FeeAmount));
+            Snackbar.Add($"{updated.Name} 수정 완료", Severity.Success);
+            showEditPeriod = false;
             await LoadAsync();
         }
         catch (AppException ex)

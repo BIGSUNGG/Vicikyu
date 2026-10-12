@@ -127,6 +127,9 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public IMemberService Member { get; }
 
+    /// <summary>테스트 검증용(비밀번호 확인 등) — 서비스와 별개 컨텍스트로 DB를 읽는다.</summary>
+    public UserManager<ApplicationUser> Users { get; }
+
     public ServiceHost() : this(new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc)), new FakeCurrentUser())
     {
     }
@@ -143,6 +146,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Member = new MemberService(Db.Factory, CreateUserManager(), Current, Audit, Time);
+        Users = CreateUserManager();
     }
 
     private UserManager<ApplicationUser> CreateUserManager()

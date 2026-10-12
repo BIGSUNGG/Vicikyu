@@ -13,6 +13,12 @@ public record FeePeriodCreateRequest(
     DateOnly EndDate,
     int FeeAmount);
 
+public record FeePeriodUpdateRequest(
+    string Name,
+    DateOnly StartDate,
+    DateOnly EndDate,
+    int FeeAmount);
+
 public record FeeStatusDto(
     int PeriodId,
     string PeriodName,

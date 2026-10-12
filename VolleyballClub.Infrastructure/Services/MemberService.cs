@@ -191,6 +191,39 @@ public class MemberService(
             }
         }
 
+        if (!string.IsNullOrEmpty(request.NewPassword))
+        {
+            if (request.NewPassword.Length < 4)
+            {
+                throw new RuleViolationException("비밀번호는 4자 이상이어야 합니다.");
+            }
+
+            // 관리자 재설정 — 기존 비밀번호 확인 없이 교체한다.
+            // Identity 정책으로 사전 검증 후 제거→등록: 등록 실패로 비밀번호 없는 사용자가 남는 것을 방지한다.
+            foreach (var validator in userManager.PasswordValidators)
+            {
+                var vr = await validator.ValidateAsync(userManager, user, request.NewPassword);
+                if (!vr.Succeeded)
+                {
+                    throw new RuleViolationException(string.Join(" ", vr.Errors.Select(e => e.Description)));
+                }
+            }
+
+            var removeResult = await userManager.RemovePasswordAsync(user);
+            if (!removeResult.Succeeded)
+            {
+                throw new RuleViolationException(string.Join(" ", removeResult.Errors.Select(e => e.Description)));
+            }
+
+            var resetResult = await userManager.AddPasswordAsync(user, request.NewPassword);
+            if (!resetResult.Succeeded)
+            {
+                throw new RuleViolationException(string.Join(" ", resetResult.Errors.Select(e => e.Description)));
+            }
+
+            await auditLog.LogAsync(AdminAction.MemberPasswordReset, "User", user.Id, $"{user.Name} 비밀번호 초기화");
+        }
+
         await auditLog.LogAsync(AdminAction.MemberUpdate, "User", user.Id, $"{user.Name} 정보 수정");
         return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.IsActive, 0, false, user.Color);
     }

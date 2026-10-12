@@ -26,4 +26,6 @@ public enum AdminAction
     TeamDelete,
     // 값 5는 폐기된 '출석 재개'(미커밋 빌드에서만 사용) — 재사용 금지
     ActivityCancel = 6,
+    FeePeriodUpdate = 21,
+    MemberPasswordReset = 22,
 }

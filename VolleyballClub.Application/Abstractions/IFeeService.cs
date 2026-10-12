@@ -12,6 +12,8 @@ public interface IFeeService
 
     Task<FeePeriodDto> CreatePeriodAsync(FeePeriodCreateRequest request);
 
+    Task<FeePeriodDto> UpdatePeriodAsync(int periodId, FeePeriodUpdateRequest request);
+
     Task<List<FeeStatusDto>> GetPeriodStatusesAsync(int periodId, FeeFilter filter = FeeFilter.All, string? search = null);
 
     Task SetPaidAsync(int periodId, string userId, bool isPaid, string? memo = null);
