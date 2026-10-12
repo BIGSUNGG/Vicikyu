@@ -33,7 +33,6 @@ public static class DependencyInjection
                 options.Password.RequireDigit = false;
                 options.Password.RequireUppercase = false;
                 options.Password.RequireLowercase = false;
-                options.Lockout.MaxFailedAccessAttempts = 5;
             })
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>()

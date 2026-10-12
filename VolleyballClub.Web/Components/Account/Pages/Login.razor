@@ -78,16 +78,11 @@
             return;
         }
 
-        var result = await SignInManager.PasswordSignInAsync(user, Input.Password, isPersistent: false, lockoutOnFailure: true);
+        var result = await SignInManager.PasswordSignInAsync(user, Input.Password, isPersistent: false, lockoutOnFailure: false);
         if (result.Succeeded)
         {
             Logger.LogInformation("{Name} logged in.", Input.StudentNumber);
             RedirectManager.RedirectTo(ReturnUrl);
-        }
-        else if (result.IsLockedOut)
-        {
-            Logger.LogWarning("User account locked out.");
-            errorMessage = "Error: 계정이 잠겼습니다. 회장에게 문의하세요.";
         }
         else
         {
