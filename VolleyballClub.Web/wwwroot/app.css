@@ -781,7 +781,9 @@ body {
 	.ring,
 	.nav-item,
 	.nav-item.active .nav-icon,
-	.otp-big span {
+	.otp-big span,
+	.tl-sub,
+	.tl > .tl-item {
 		transition: none;
 		animation: none;
 	}
@@ -1317,6 +1319,62 @@ button.court-head {
 	color: var(--vb-muted);
 	font-weight: 600;
 	margin-top: 3px;
+}
+
+/* 하위 기록(팀 배정) 아코디언 — court chips-wrap와 같은 0fr↔1fr 패턴.
+   tl-sub-inner의 음수 margin+padding 쌍은 tl-dot(-27px 돌출)이
+   overflow: hidden에 잘리지 않게 하는 장치 */
+.tl-toggle {
+	cursor: pointer;
+}
+.tl-sub {
+	display: grid;
+	grid-template-rows: 0fr;
+	margin-bottom: -14px; /* 접힘 시 .tl gap(14px) 상쇄 */
+	transition:
+		grid-template-rows 0.22s ease-out,
+		margin-bottom 0.22s ease-out;
+}
+.tl-sub.open {
+	grid-template-rows: 1fr;
+	margin-bottom: 0;
+}
+.tl-sub-inner {
+	min-height: 0;
+	overflow: hidden;
+	margin-left: -30px;
+	padding-left: 30px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+/* 타임라인 입장 — 각 행이 바로 위 위치에서 내려앉으며 위→아래 순차 전개.
+   행의 @key(날짜) 덕에 진입·월 전환 모두 결정적으로 재생된다.
+   5행 이후는 150ms 상한으로 묶어 긴 달도 370ms 내에 끝난다 */
+@keyframes tl-unfold {
+	from {
+		opacity: 0;
+		transform: translateY(-8px);
+	}
+}
+.tl > .tl-item {
+	animation: tl-unfold 0.22s ease-out backwards;
+}
+.tl > .tl-item:nth-child(2) {
+	animation-delay: 30ms;
+}
+.tl > .tl-item:nth-child(3) {
+	animation-delay: 60ms;
+}
+.tl > .tl-item:nth-child(4) {
+	animation-delay: 90ms;
+}
+.tl > .tl-item:nth-child(5) {
+	animation-delay: 120ms;
+}
+.tl > .tl-item:nth-child(n + 6) {
+	animation-delay: 150ms;
 }
 
 .more-btn {

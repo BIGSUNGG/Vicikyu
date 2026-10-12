@@ -34,8 +34,9 @@
         <div class="tl" style="margin-top:8px">
             @foreach (var record in records.Records)
             {
-                @* 출석 한 줄 *@
-                <div class="tl-item">
+                var expanded = expandedDates.Contains(record.Date);
+                @* 출석 한 줄 — 팀 배정이 있으면 하위 기록 토글(기본 접힘) *@
+                <div class="tl-item @(record.Teams.Count > 0 ? "tl-toggle" : "")" @key="@($"row-{record.Date}")" @onclick="() => ToggleDate(record.Date)">
                     <div class="tl-dot neutral"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
                     <div class="tl-time">@record.Date.ToString("M월 d일 dddd")</div>
                     <div class="tl-title">
@@ -57,18 +58,25 @@
                         }
                     </div>
                 </div>
-                @* 회차별 팀 배정 한 줄씩 *@
-                @foreach (var t in record.Teams)
+                @* 회차별 팀 배정 — 활동 행 클릭으로 펼침/접힘 *@
+                @if (record.Teams.Count > 0)
                 {
-                    <div class="tl-item">
-                        <div class="tl-dot @TeamDotClass(t.TeamName)">@TeamInitial(t.TeamName)</div>
-                        <div class="tl-time"></div>
-                        <div class="tl-title">
-                            @(t.DrawNumber)회차 팀 배정
-                            <span class="badge @TeamBadgeClass(t.TeamName)">@t.TeamName</span>
-                            <span class="badge badge-gray">@(t.DrawNumber)회차</span>
+                    <div class="tl-sub @(expanded ? "open" : "")" @key="@($"sub-{record.Date}")">
+                        <div class="tl-sub-inner">
+                            @foreach (var t in record.Teams)
+                            {
+                                <div class="tl-item">
+                                    <div class="tl-dot @TeamDotClass(t.TeamName)">@TeamInitial(t.TeamName)</div>
+                                    <div class="tl-time"></div>
+                                    <div class="tl-title">
+                                        @(t.DrawNumber)회차 팀 배정
+                                        <span class="badge @TeamBadgeClass(t.TeamName)">@t.TeamName</span>
+                                        <span class="badge badge-gray">@(t.DrawNumber)회차</span>
+                                    </div>
+                                    <div class="tl-desc"><img class="icon" src="/icons/volleyball.svg" alt=""> @(t.DrawNumber)회차 @t.TeamName 배정</div>
+                                </div>
+                            }
                         </div>
-                        <div class="tl-desc"><img class="icon" src="/icons/volleyball.svg" alt=""> @(t.DrawNumber)회차 @t.TeamName 배정</div>
                     </div>
                 }
             }
@@ -84,6 +92,15 @@
     private string myUserId = "";
     private int year;
     private int month;
+    private HashSet<DateOnly> expandedDates = [];
+
+    private void ToggleDate(DateOnly date)
+    {
+        if (!expandedDates.Remove(date))
+        {
+            expandedDates.Add(date);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
