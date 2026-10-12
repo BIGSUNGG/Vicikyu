@@ -32,11 +32,22 @@ public static class DbInitializer
             }
         }
 
-        // 레거시 부원(색 미지정) 랜덤 백필 — 멱등: 색 있는 부원은 건드리지 않는다
+        // 색 사용량 집계 — 백필/시드 모두 이 딕셔너리를 갱신하며 골고루 분산 배정한다
+        var colorUsage = await db.Users.Where(u => u.Color != null)
+            .GroupBy(u => u.Color!)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+        string NextColor()
+        {
+            var color = MemberColors.PickBalanced(colorUsage);
+            colorUsage[color] = colorUsage.GetValueOrDefault(color) + 1;
+            return color;
+        }
+
+        // 레거시 부원(색 미지정) 백필 — 멱등: 색 있는 부원은 건드리지 않는다
         var noColorUsers = await db.Users.Where(u => u.Color == null).ToListAsync();
         foreach (var user in noColorUsers)
         {
-            user.Color = MemberColors.PickRandom();
+            user.Color = NextColor();
         }
         if (noColorUsers.Count > 0)
         {
@@ -73,7 +84,7 @@ public static class DbInitializer
             Name = "김회장",
             Department = "컴퓨터공학과",
             IsActive = true,
-            Color = MemberColors.PickRandom(),
+            Color = NextColor(),
             JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
             CreatedAt = now,
             UpdatedAt = now,
@@ -113,7 +124,7 @@ public static class DbInitializer
                 Name = name,
                 Department = department,
                 IsActive = true,
-                Color = MemberColors.PickRandom(),
+                Color = NextColor(),
                 JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
                 CreatedAt = now,
                 UpdatedAt = now,

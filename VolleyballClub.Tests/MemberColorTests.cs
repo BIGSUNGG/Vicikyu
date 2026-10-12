@@ -38,6 +38,38 @@ public class MemberColorTests
     }
 
     [Fact]
+    public void PickBalanced_Picks_Least_Used_Color()
+    {
+        var usage = MemberColors.Palette.ToDictionary(c => c, _ => 2);
+        usage[MemberColors.Palette[0]] = 0;
+
+        Assert.Equal(MemberColors.Palette[0], MemberColors.PickBalanced(usage));
+        // 사용량 없으면 전체 팔레트에서 랜덤
+        Assert.Contains(MemberColors.PickBalanced(null), MemberColors.Palette);
+    }
+
+    [Fact]
+    public async Task AddAsync_Distributes_Colors_Evenly()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin(await host.SeedUserAsync("김회장", "admin"));
+
+        for (var i = 0; i < 20; i++)
+        {
+            await host.Member.AddAsync(new MemberCreateRequest($"2025121{i + 1:00}", $"부원{i}", "컴퓨터공학과", "Password123!"));
+        }
+
+        await using var db = host.Db.CreateContext();
+        var counts = await db.Users.Where(u => u.Color != null)
+            .GroupBy(u => u.Color)
+            .Select(g => g.Count())
+            .ToListAsync();
+
+        Assert.Equal(MemberColors.Palette.Length, counts.Count); // 20명 → 10색 각 2명
+        Assert.InRange(counts.Max() - counts.Min(), 0, 1);
+    }
+
+    [Fact]
     public async Task UpdateMyColorAsync_Rejects_Outside_Palette_And_Saves_Valid()
     {
         await using var host = new ServiceHost();

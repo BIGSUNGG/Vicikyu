@@ -94,6 +94,14 @@ public class MemberService(
         }
 
         var now = KstClock.NowUtc(timeProvider);
+
+        // 현재 색 사용량 기준으로 가장 적게 쓰인 색 중 랜덤 배정(골고루 분산)
+        var colorUsage = await userManager.Users
+            .Where(u => u.Color != null)
+            .GroupBy(u => u.Color!)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count);
+
         var user = new ApplicationUser
         {
             UserName = studentNumber,
@@ -101,7 +109,7 @@ public class MemberService(
             Name = request.Name.Trim(),
             Department = request.Department.Trim(),
             IsActive = true,
-            Color = MemberColors.PickRandom(),
+            Color = MemberColors.PickBalanced(colorUsage),
             JoinedAt = now,
             CreatedAt = now,
             UpdatedAt = now,
