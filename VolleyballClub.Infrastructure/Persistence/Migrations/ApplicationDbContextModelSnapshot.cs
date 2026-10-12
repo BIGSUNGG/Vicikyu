@@ -174,9 +174,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("AttendanceOpenedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("ConfirmedDrawNumber")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -440,11 +437,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("DrawNumber")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1);
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -455,8 +447,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ActivityId");
-
-                    b.HasIndex("ActivityId", "DrawNumber");
 
                     b.ToTable("Teams", (string)null);
                 });

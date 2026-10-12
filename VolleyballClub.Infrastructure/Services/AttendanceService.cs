@@ -191,12 +191,6 @@ public class AttendanceService(
             .Select(x => new { x.Activity!.ActivityDate, x.CheckedAt })
             .ToListAsync();
 
-        var myTeams = await db.TeamMembers.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last
-                && m.Team!.Activity!.ConfirmedDrawNumber != null && m.Team!.DrawNumber <= m.Team!.Activity!.ConfirmedDrawNumber)
-            .Select(m => new { m.Team!.ActivityId, Draw = m.Team!.DrawNumber, m.Team.Name })
-            .ToListAsync();
-
         var activityIdsByDate = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
@@ -205,17 +199,8 @@ public class AttendanceService(
         // 같은 날 여러 세션이면 하루 치로 병합한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
         var days = myAttendances
             .GroupBy(x => x.ActivityDate)
-            .Select(g =>
-            {
-                var activityIds = activityIdsByDate.Where(a => a.ActivityDate == g.Key).Select(a => a.Id).ToHashSet();
-                var teams = myTeams
-                    .Where(t => activityIds.Contains(t.ActivityId))
-                    .OrderBy(t => t.Draw)
-                    .Select(t => new TeamAssignmentDto(t.Draw, t.Name))
-                    .ToList();
-                var latest = g.OrderByDescending(x => x.CheckedAt).First();
-                return new CalendarDayDto(g.Key, true, latest.CheckedAt, teams);
-            }).ToList();
+            .Select(g => new CalendarDayDto(g.Key, true, g.OrderByDescending(x => x.CheckedAt).First().CheckedAt))
+            .ToList();
 
         // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
         // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
@@ -223,7 +208,7 @@ public class AttendanceService(
         days.AddRange(activityIdsByDate
             .Where(a => a.Status == ActivityStatus.ActivityClosed && !attendedDates.Contains(a.ActivityDate))
             .GroupBy(a => a.ActivityDate)
-            .Select(g => new CalendarDayDto(g.Key, false, null, [], IsMissed: true)));
+            .Select(g => new CalendarDayDto(g.Key, false, null, IsMissed: true)));
 
         var scope = await GetCurrentSemesterScopeAsync(db);
         var monthCount = myAttendances.Count;
@@ -265,30 +250,18 @@ public class AttendanceService(
             .Select(x => new { x.ActivityId, x.CheckedAt })
             .ToListAsync();
 
-        var myTeams = await db.TeamMembers.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Team!.Activity!.ActivityDate >= first && m.Team!.Activity!.ActivityDate <= last
-                && m.Team!.Activity!.ConfirmedDrawNumber != null && m.Team!.DrawNumber <= m.Team!.Activity!.ConfirmedDrawNumber)
-            .Select(m => new { ActivityId = m.Team!.ActivityId, Draw = m.Team!.DrawNumber, m.Team.Name })
-            .ToListAsync();
-
         var records = activities
             .OrderByDescending(a => a.ActivityDate)
             .ThenByDescending(a => a.Id) // 같은 날 여러 세션은 최신 세션 우선
             .Select(a =>
             {
                 var attendance = myAttendances.FirstOrDefault(x => x.ActivityId == a.Id);
-                var teams = myTeams
-                    .Where(t => t.ActivityId == a.Id)
-                    .OrderBy(t => t.Draw)
-                    .Select(t => new TeamAssignmentDto(t.Draw, t.Name))
-                    .ToList();
                 return new ActivityRecordDto(
                     a.Id,
                     a.ActivityDate,
                     a.Status,
                     attendance is not null,
-                    attendance?.CheckedAt,
-                    teams);
+                    attendance?.CheckedAt);
             })
             .ToList();
 

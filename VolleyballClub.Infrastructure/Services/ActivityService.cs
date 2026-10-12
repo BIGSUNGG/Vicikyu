@@ -194,6 +194,10 @@ public class ActivityService(
         }
 
         var now = KstClock.NowUtc(timeProvider);
+        // 마감 시 현재 팀은 삭제한다 — 팀 데이터는 진행 중 활동에만 존재
+        var teams = await db.Teams.Where(t => t.ActivityId == activity.Id).ToListAsync();
+        db.Teams.RemoveRange(teams); // 팀원은 FK cascade
+
         activity.Status = ActivityStatus.ActivityClosed;
         activity.ActivityClosedAt = now;
         if (activity.AttendanceOpenedAt is null)
@@ -208,7 +212,8 @@ public class ActivityService(
 
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(), "오늘 활동 마감");
+        await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(),
+            $"오늘 활동 마감{(teams.Count > 0 ? $" (팀 {teams.Count}개 삭제)" : string.Empty)}");
 
         return await LoadAdminDtoAsync(db, activity.Id);
     }
@@ -224,9 +229,8 @@ public class ActivityService(
         }
 
         var now = KstClock.NowUtc(timeProvider);
-        // 팀 편성 데이터가 있으면 TeamCreated, 없으면 AttendanceOpen 상태로 되돌린다
-        var hasTeams = await db.Teams.AnyAsync(t => t.ActivityId == activity.Id);
-        activity.Status = hasTeams ? ActivityStatus.TeamCreated : ActivityStatus.AttendanceOpen;
+        // 마감 시 팀이 삭제되므로 항상 출석 상태로 복귀한다
+        activity.Status = ActivityStatus.AttendanceOpen;
         activity.ActivityClosedAt = null;
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();

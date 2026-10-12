@@ -12,14 +12,10 @@ public record AttendanceMemberDto(
     AttendanceType? AttendanceType,
     int AttendanceId);
 
-/// <summary>한 회차 팀 배정 — 기록·캘린더에 회차별로 표시된다.</summary>
-public record TeamAssignmentDto(int DrawNumber, string TeamName);
-
 public record CalendarDayDto(
     DateOnly Date,
     bool IsAttended,
     DateTime? CheckedAt,
-    List<TeamAssignmentDto> Teams,
     bool IsMissed = false);
 
 /// <summary>현재 집계 중인 학기 범위 — Name이 null이면 관리자 설정 없이 기본 규칙(3/1~8/31, 9/1~12/31)으로 집계 중.</summary>
@@ -37,14 +33,13 @@ public record MyCalendarDto(
     int TotalCount,
     SemesterScopeDto? Semester = null);
 
-/// <summary>기록 페이지용 활동 1건 — 날짜별 이벤트(출석·팀 배정·활동 종료)의 원천.</summary>
+/// <summary>기록 페이지용 활동 1건 — 날짜별 이벤트(출석·활동 종료)의 원천.</summary>
 public record ActivityRecordDto(
     int ActivityId,
     DateOnly Date,
     ActivityStatus Status,
     bool IsAttended,
-    DateTime? CheckedAt,
-    List<TeamAssignmentDto> Teams);
+    DateTime? CheckedAt);
 
 /// <summary>기록 페이지 월간 조회 결과 — 해당 월의 모든 활동(최신순)과 출석 수.</summary>
 public record MyRecordsDto(

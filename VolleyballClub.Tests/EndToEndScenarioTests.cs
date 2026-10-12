@@ -93,16 +93,16 @@ public class EndToEndScenarioTests
         await Assert.ThrowsAsync<ConflictException>(
             () => host.Team.GenerateAsync(new TeamCreateRequest([m1, m2], [], [1, 1])));
 
-        // 재오픈 가능
+        // 재오픈 가능 — 마감 시 팀이 삭제되므로 출석 상태로 복귀
         await host.Activity.ReopenActivityAsync();
-        Assert.Equal(ActivityStatus.TeamCreated, (await host.Activity.GetTodayForAdminAsync()).Status);
+        Assert.Equal(ActivityStatus.AttendanceOpen, (await host.Activity.GetTodayForAdminAsync()).Status);
 
         // 23-24. 개인 캘린더·랭킹 반영
         host.AsMember(m2);
         var calendar = await host.Attendance.GetMyCalendarAsync(m2, 2026, 10);
         Assert.Equal(1, calendar.MonthCount);
         var attendedDay = calendar.Days.Single(d => d.IsAttended);
-        Assert.NotEmpty(attendedDay.Teams);
+        Assert.Equal(new DateOnly(2026, 10, 1), attendedDay.Date);
 
         var stats = await host.Attendance.GetMySemesterStatsAsync(m2);
         Assert.Equal(1, stats.MyAttendances);

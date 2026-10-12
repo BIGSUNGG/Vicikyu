@@ -90,7 +90,7 @@
 @if (teams.Count > 0)
 {
     <div class="sec">
-        <span class="sec-title">지금 팀 <span class="badge badge-orange">@(teams[0].DrawNumber)회차</span></span>
+        <span class="sec-title">지금 팀</span>
         <span class="sec-right">
             <span class="sec-more">@(teams.Sum(t => t.Members.Count))명 · @(teams.Count)팀</span>
             <button type="button" class="sec-expand" @onclick="OpenTeamBoard" aria-label="팀 편성표 전체화면">⤢</button>
@@ -125,7 +125,7 @@
         <div class="team-fs" @onclick="CloseTeamBoard">
             <div class="team-fs-panel" @onclick:stopPropagation="true">
                 <div class="team-fs-head">
-                    <span class="sec-title">팀 편성표 <span class="badge badge-orange">@(teams[0].DrawNumber)회차</span></span>
+                    <span class="sec-title">팀 편성표</span>
                     <button type="button" class="team-fs-close" @onclick="CloseTeamBoard" aria-label="닫기">✕</button>
                 </div>
                 <div class="team-fs-grid @(teams.Count >= 4 ? "quad" : "")">

@@ -3,6 +3,7 @@
 
 @inject ITeamService TeamSvc
 @inject IAttendanceService AttendanceSvc
+@inject IActivityService Activities
 @inject ISettingService Settings
 @inject ISnackbar Snackbar
 
@@ -15,7 +16,7 @@
     <div class="card">
         <div class="card-row">
                 <h2 class="card-title" style="margin:0">편성 결과</h2>
-                <span class="badge badge-orange">@(drawnTeams[0].DrawNumber)회차 · @(selectedUserIds.Count)명 참가</span>
+                <span class="badge badge-orange">@(selectedUserIds.Count)명 참가</span>
             </div>
     </div>
 
@@ -93,7 +94,7 @@
             <button type="button" class="btn-primary" @onclick="ConfirmAsync">팀 편성 확정</button>
         }
     </div>
-    <button type="button" class="btn-ghost btn-block" @onclick="() => showCancelDraw = true"><img class="icon" src="/icons/trash.svg" alt=""> @(drawnTeams[0].DrawNumber)회차 취소</button>
+    <button type="button" class="btn-ghost btn-block" @onclick="() => showCancelDraw = true"><img class="icon" src="/icons/trash.svg" alt=""> 팀 편성 취소</button>
     <div style="height:8px"></div>
 }
 else
@@ -185,23 +186,11 @@ else
 {
     <div class="confirm-overlay" @onclick="() => showCancelDraw = false">
         <div class="confirm-box" @onclick:stopPropagation>
-            <h3>@(drawnTeams.Count > 0 ? $"{drawnTeams[0].DrawNumber}회차 취소" : "회차 취소")</h3>
-            <p>이 회차의 팀 편성과 배정 기록이 삭제됩니다.
-                @if (confirmedDraw == (drawnTeams.Count > 0 ? drawnTeams[0].DrawNumber : 0))
-                {
-                    if (confirmedDraw is null || confirmedDraw <= 1)
-                    {
-                        <text>부원에게는 더 이상 팀이 표시되지 않습니다.</text>
-                    }
-                    else
-                    {
-                        <text>부원에게는 이전 확정 회차가 다시 표시됩니다.</text>
-                    }
-                }
-                계속하시겠습니까?</p>
+            <h3>팀 편성 취소</h3>
+            <p>현재 팀 편성과 배정 인원이 모두 삭제되고 부원에게는 팀이 표시되지 않습니다. 계속하시겠습니까?</p>
             <div class="btn-row">
                 <button type="button" class="btn-ghost" @onclick="() => showCancelDraw = false">취소</button>
-                <button type="button" class="btn-primary" @onclick="CancelDrawAsync">회차 취소</button>
+                <button type="button" class="btn-primary" @onclick="CancelDrawAsync">편성 취소</button>
             </div>
         </div>
     </div>
@@ -261,7 +250,7 @@ else
     private List<TeamResultDto> drawnTeams = [];
     private TeamMemberDto? movingMember;
     private int moveTargetTeamId;
-    private int? confirmedDraw;
+    private ActivityStatus activityStatus = ActivityStatus.Ready;
     private ParticipantDto? addingParticipant;
     private int addTargetTeamId;
     private bool showRedrawConfirm;
@@ -275,9 +264,9 @@ else
         teamCount = await Settings.GetIntAsync("DefaultTeamCount", 3);
         await LoadParticipantsAsync();
 
-        // 이미 편성되어 있으면 최신 회차를 표시. 확정된 회차와 다르면 재확정 대상.
+        // 이미 편성되어 있으면 현재 팀을 표시
         drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
-        confirmedDraw = await TeamSvc.GetConfirmedDrawNumberAsync();
+        await LoadStatusAsync();
         if (drawnTeams.Count > 0)
         {
             SyncSelectionFromTeams();
@@ -288,8 +277,20 @@ else
         }
     }
 
-    /// <summary>최신 회차가 아직 확정되지 않았을 때만 확정 버튼을 노출한다.</summary>
-    private bool canConfirm => drawnTeams.Count > 0 && drawnTeams[0].DrawNumber != confirmedDraw;
+    /// <summary>팀이 있고 아직 부원에게 공개(확정)되지 않았을 때만 확정 버튼을 노출한다.</summary>
+    private bool canConfirm => drawnTeams.Count > 0 && activityStatus != ActivityStatus.TeamCreated;
+
+    private async Task LoadStatusAsync()
+    {
+        try
+        {
+            activityStatus = (await Activities.GetTodayForAdminAsync()).Status;
+        }
+        catch (AppException)
+        {
+            // 활동이 아직 없으면 기본값 유지
+        }
+    }
 
     private async Task LoadParticipantsAsync()
     {
@@ -387,7 +388,7 @@ else
         try
         {
             drawnTeams = await TeamSvc.GenerateAsync(new TeamCreateRequest(selectedUserIds.ToList(), selectedGuestIds.ToList(), teamSizes.ToList()));
-            Snackbar.Add($"{drawnTeams[0].DrawNumber}회차 팀을 편성했습니다. 확인 후 확정해 주세요.", Severity.Success);
+            Snackbar.Add("팀을 편성했습니다.", Severity.Success);
         }
         catch (AppException ex)
         {
@@ -411,7 +412,7 @@ else
             ?? drawnTeams.FirstOrDefault()?.TeamId ?? 0;
     }
 
-    /// <summary>최신 회차에 배정되지 않은 참가자(누락 인원·게스트).</summary>
+    /// <summary>팀에 배정되지 않은 참가자(누락 인원·게스트).</summary>
     private List<ParticipantDto> UnassignedParticipants
     {
         get
@@ -477,14 +478,13 @@ else
     private async Task CancelDrawAsync()
     {
         showCancelDraw = false;
-        var drawNumber = drawnTeams.Count > 0 ? drawnTeams[0].DrawNumber : 0;
         try
         {
-            await TeamSvc.CancelLatestDrawAsync();
+            await TeamSvc.CancelTeamsAsync();
             drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
-            confirmedDraw = await TeamSvc.GetConfirmedDrawNumberAsync();
+            await LoadStatusAsync();
             await LoadParticipantsAsync();
-            Snackbar.Add($"{drawNumber}회차 편성을 취소했습니다.", Severity.Success);
+            Snackbar.Add("팀 편성을 취소했습니다.", Severity.Success);
         }
         catch (AppException ex)
         {
@@ -522,8 +522,8 @@ else
         try
         {
             await TeamSvc.ConfirmAsync();
-            confirmedDraw = drawnTeams[0].DrawNumber;
-            Snackbar.Add($"{confirmedDraw}회차 팀 편성이 확정되었습니다. 부원에게 공개됩니다.", Severity.Success);
+            await LoadStatusAsync();
+            Snackbar.Add("팀 편성이 확정되었습니다. 부원에게 공개됩니다.", Severity.Success);
             drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
         }
         catch (AppException ex)
@@ -550,7 +550,7 @@ else
         }
     }
 
-    /// <summary>게스트 삭제(게스트와 모든 회차 배정 기록이 삭제된다).</summary>
+    /// <summary>게스트 삭제(게스트와 팀 배정 기록이 삭제된다).</summary>
     private async Task DeleteGuestAsync(string name, int guestId)
     {
         movingMember = null;

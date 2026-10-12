@@ -78,7 +78,7 @@ public class ActivityCancelTests : IAsyncLifetime
     private async Task SeedTeamAsync(int activityId)
     {
         await using var db = host.Db.CreateContext();
-        var team = new Team { ActivityId = activityId, Name = "A TEAM", Order = 0, DrawNumber = 1, CreatedAt = DateTime.UtcNow };
+        var team = new Team { ActivityId = activityId, Name = "A TEAM", Order = 0, CreatedAt = DateTime.UtcNow };
         db.Teams.Add(team);
         db.TeamMembers.Add(new TeamMember { Team = team, UserId = "user-202512002", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();

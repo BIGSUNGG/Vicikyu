@@ -103,7 +103,6 @@
             {
                 <div class="dd-info">
                     <img class="icon" src="/icons/check.svg" alt=""> 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
-                    @(sel.Teams.Count > 0 ? $" · {string.Join(", ", sel.Teams.Select(t => $"{t.DrawNumber}회차 {t.TeamName}"))}" : "")
                 </div>
             }
             else if (sel.IsMissed)
@@ -268,7 +267,7 @@
         for (var day = 1; day <= daysInMonth; day++)
         {
             var date = new DateOnly(year, month, day);
-            cells.Add(byDate.TryGetValue(date, out var dto) ? dto : new CalendarDayDto(date, false, null, null));
+            cells.Add(byDate.TryGetValue(date, out var dto) ? dto : new CalendarDayDto(date, false, null));
         }
 
         while (cells.Count % 7 != 0)

@@ -61,24 +61,22 @@ public class TeamGenerationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Redraw_CreatesNextDraw_AndKeepsPrevious()
+    public async Task Redraw_ReplacesPreviousDraw()
     {
         await GenerateAsync(3, 3);
         var redrawn = await GenerateAsync(2, 2, 2);
 
-        // 새 회차는 2회차, 구성은 새로 뽑혀도 참가자 전원 1회씩
-        Assert.All(redrawn, t => Assert.Equal(2, t.DrawNumber));
+        // 다시 뽑기는 기존 팀을 지우고 새로 편성 — 이력 없이 현재 팀만 남는다
+        Assert.Equal(3, redrawn.Count);
         var assigned = redrawn.SelectMany(t => t.Members).Select(m => m.UserId).ToList();
         Assert.Equal(6, assigned.Distinct().Count());
 
-        // 이전 회차는 삭제되지 않고 유지된다
         await using var db = host.Db.CreateContext();
-        Assert.Equal(5, await db.Teams.CountAsync());
-        Assert.Equal(12, await db.TeamMembers.CountAsync());
+        Assert.Equal(3, await db.Teams.CountAsync());
+        Assert.Equal(6, await db.TeamMembers.CountAsync());
 
-        // 관리자 조회는 최신 회차만 반환한다
         var adminView = await host.Team.GetTodayTeamsForAdminAsync();
-        Assert.All(adminView, t => Assert.Equal(2, t.DrawNumber));
+        Assert.Equal(3, adminView.Count);
     }
 
     [Fact]
@@ -131,49 +129,22 @@ public class TeamGenerationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Redraw_AfterConfirm_MemberKeepsPreviousDrawUntilReconfirm()
+    public async Task Redraw_AfterConfirm_MemberSeesNewTeamsImmediately()
     {
         await GenerateAsync(2, 2, 2);
         await host.Team.ConfirmAsync();
 
-        host.AsMember(memberIds[0]);
-        var published = await host.Team.GetTodayTeamsAsync();
-        Assert.All(published, t => Assert.Equal(1, t.DrawNumber));
-
-        // 2회차를 뽑아도 확정 전까지 부원은 1회차를 본다
-        host.AsAdmin();
+        // 다시 뽑아도 상태는 팀 편성 완료로 유지 — 부원은 곧바로 새 팀을 본다
         await GenerateAsync(3, 3);
-
-        host.AsMember(memberIds[0]);
-        var stillPrevious = await host.Team.GetTodayTeamsAsync();
-        Assert.All(stillPrevious, t => Assert.Equal(1, t.DrawNumber));
-
-        // 재확정하면 2회차가 공개된다
-        host.AsAdmin();
-        await host.Team.ConfirmAsync();
 
         host.AsMember(memberIds[0]);
         var latest = await host.Team.GetTodayTeamsAsync();
         Assert.Equal(2, latest.Count);
-        Assert.All(latest, t => Assert.Equal(2, t.DrawNumber));
+        Assert.Equal(6, latest.Sum(t => t.Members.Count));
     }
 
     [Fact]
-    public async Task MoveMember_InPreviousDraw_Throws()
-    {
-        await GenerateAsync(2, 2, 2);
-        await GenerateAsync(2, 2, 2); // 2회차 존재
-
-        await using var db = host.Db.CreateContext();
-        var oldMember = await db.TeamMembers.AsNoTracking().FirstAsync(m => m.Team!.DrawNumber == 1);
-        var latestTeam = await db.Teams.AsNoTracking().FirstAsync(t => t.DrawNumber == 2);
-
-        await Assert.ThrowsAsync<RuleViolationException>(
-            () => host.Team.MoveMemberAsync(oldMember.Id, latestTeam.Id));
-    }
-
-    [Fact]
-    public async Task RemoveMember_RemovesFromLatestDraw()
+    public async Task RemoveMember_RemovesFromTeam()
     {
         var teams = await GenerateAsync(2, 2, 2);
         var victim = teams[0].Members[0];
@@ -202,36 +173,51 @@ public class TeamGenerationTests : IAsyncLifetime
         Assert.Equal(4, updated[0].Members.Count);
         Assert.Contains(updated[0].Members, m => m.IsGuest);
 
-        // 이미 최신 회차에 배정된 게스트 재추가 거부
+        // 이미 팀에 배정된 게스트 재추가 거부
         await Assert.ThrowsAsync<RuleViolationException>(
             () => host.Team.AddMemberAsync(guest.Key, teams[1].TeamId));
     }
 
     [Fact]
-    public async Task CancelLatestDraw_RemovesDraw_AndRollsBackConfirmation()
+    public async Task CancelTeams_RemovesAllTeams_AndUnpublishes()
     {
         await GenerateAsync(2, 2, 2);
         await host.Team.ConfirmAsync();
-        await GenerateAsync(3, 3);
-        await host.Team.ConfirmAsync();
-        Assert.Equal(2, await host.Team.GetConfirmedDrawNumberAsync());
 
-        await host.Team.CancelLatestDrawAsync();
+        await host.Team.CancelTeamsAsync();
 
-        // 1회차는 유지되고 공개도 1회차로 되돌아간다
         await using var db = host.Db.CreateContext();
-        Assert.Equal(3, await db.Teams.CountAsync());
-        Assert.Equal(6, await db.TeamMembers.CountAsync());
-        Assert.Equal(1, await host.Team.GetConfirmedDrawNumberAsync());
+        Assert.Equal(0, await db.Teams.CountAsync());
+        Assert.Equal(0, await db.TeamMembers.CountAsync());
+
+        var activity = await host.GetTodayActivityAsync();
+        Assert.Equal(ActivityStatus.AttendanceOpen, activity.Status); // 부원 공개 철회
 
         host.AsMember(memberIds[0]);
-        var published = await host.Team.GetTodayTeamsAsync();
-        Assert.All(published, t => Assert.Equal(1, t.DrawNumber));
+        Assert.Empty(await host.Team.GetTodayTeamsAsync());
 
-        // 남은 회차도 취소하면 공개가 없어진다
+        // 편성이 없으면 취소 거부
         host.AsAdmin();
-        await host.Team.CancelLatestDrawAsync();
-        Assert.Null(await host.Team.GetConfirmedDrawNumberAsync());
-        Assert.Empty(await host.Team.GetTodayTeamsForAdminAsync());
+        await Assert.ThrowsAsync<RuleViolationException>(() => host.Team.CancelTeamsAsync());
+    }
+
+    /// <summary>마감하면 현재 팀은 삭제된다 — 팀 데이터는 진행 중 활동에만 존재.</summary>
+    [Fact]
+    public async Task CloseActivity_DeletesCurrentTeams()
+    {
+        await GenerateAsync(2, 2, 2);
+        await host.Team.ConfirmAsync();
+        await host.Activity.CloseActivityAsync();
+
+        await using var db = host.Db.CreateContext();
+        Assert.Equal(0, await db.Teams.CountAsync());
+        Assert.Equal(0, await db.TeamMembers.CountAsync());
+
+        var activity = await host.GetTodayActivityAsync();
+        Assert.Equal(ActivityStatus.ActivityClosed, activity.Status);
+
+        // 재오픈하면 출석 상태로 복귀(팀 없음)
+        await host.Activity.ReopenActivityAsync();
+        Assert.Equal(ActivityStatus.AttendanceOpen, (await host.Activity.GetTodayForAdminAsync()).Status);
     }
 }
