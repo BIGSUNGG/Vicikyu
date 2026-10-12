@@ -108,6 +108,26 @@ public class FeeService(
         return new FeePeriodDto(period.Id, period.Name, period.StartDate, period.EndDate, period.FeeAmount);
     }
 
+    public async Task DeletePeriodAsync(int periodId)
+    {
+        await currentUser.RequireAdminAsync();
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var period = await db.FeePeriods.FirstOrDefaultAsync(p => p.Id == periodId)
+            ?? throw new NotFoundException("회비 기간을 찾을 수 없습니다.");
+
+        // 납부 처리된 부원이 있으면 삭제를 차단한다 — 미납 처리 이력만 있는 기간은 삭제 가능(미납 행은 함께 정리)
+        var paidCount = await db.FeePayments.CountAsync(p => p.FeePeriodId == periodId && p.IsPaid);
+        if (paidCount > 0)
+        {
+            throw new RuleViolationException($"납부 처리된 부원 {paidCount}명이 있어 삭제할 수 없습니다.");
+        }
+
+        db.FeePeriods.Remove(period);
+        await db.SaveChangesAsync();
+        await auditLog.LogAsync(AdminAction.FeePeriodDelete, "FeePeriod", period.Id.ToString(), $"회비 기간 '{period.Name}' 삭제");
+    }
+
     private static void ValidatePeriod(string name, DateOnly startDate, DateOnly endDate, int feeAmount)
     {
         if (string.IsNullOrWhiteSpace(name))

@@ -28,4 +28,5 @@ public enum AdminAction
     ActivityCancel = 6,
     FeePeriodUpdate = 21,
     MemberPasswordReset = 22,
+    FeePeriodDelete = 23,
 }

@@ -89,6 +89,9 @@
             </EditForm>
         }
 
+        <div style="height:8px"></div>
+        <button type="button" class="btn-danger btn-block" @onclick="() => showDeleteConfirm = true">기간 삭제</button>
+
         <div class="toolbar-row">
             <div class="filter-group">
                 @foreach (var (value, label) in new[] { (FeeFilter.All, "전체"), (FeeFilter.Paid, "납부"), (FeeFilter.Unpaid, "미납") })
@@ -126,6 +129,21 @@
     </div>
 }
 
+@if (showDeleteConfirm)
+{
+    <div class="confirm-overlay" @onclick="() => showDeleteConfirm = false">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>기간 삭제</h3>
+            <p><b>@selectedPeriod?.Name</b> 기간을 삭제합니다. 되돌릴 수 없습니다.</p>
+            <p style="font-size:0.85rem">납부 처리된 부원이 있는 기간은 삭제할 수 없습니다.</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showDeleteConfirm = false">취소</button>
+                <button type="button" class="btn-danger" @onclick="DeletePeriodAsync">삭제</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<FeePeriodDto> periods = [];
     private int? selectedPeriodId;
@@ -135,6 +153,7 @@
     private string search = "";
     private bool showCreatePeriod;
     private bool showEditPeriod;
+    private bool showDeleteConfirm;
     private PeriodForm periodForm = new() { StartDate = DateOnly.FromDateTime(DateTime.Today), EndDate = DateOnly.FromDateTime(DateTime.Today.AddMonths(4)) };
     private PeriodForm editPeriodForm = new();
 
@@ -275,6 +294,31 @@
         }
         catch (AppException ex)
         {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeletePeriodAsync()
+    {
+        if (selectedPeriod is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var name = selectedPeriod.Name;
+            await FeeSvc.DeletePeriodAsync(selectedPeriod.Id);
+            Snackbar.Add($"{name} 삭제", Severity.Success);
+            showDeleteConfirm = false;
+            showEditPeriod = false;
+            selectedPeriodId = null;
+            await LoadAsync();
+        }
+        catch (AppException ex)
+        {
+            // 차단(납부 기록 존재) 안내가 모달에 가려지지 않도록 닫고 스낵바로 표시한다
+            showDeleteConfirm = false;
             Snackbar.Add(ex.Message, Severity.Error);
         }
     }
