@@ -1936,6 +1936,7 @@ button.court-head {
 		display: flex;
 		align-items: center;
 		gap: 12px;
+		margin-bottom: 10px;
 	}
 
 	.toolbar-row .filter-group {
