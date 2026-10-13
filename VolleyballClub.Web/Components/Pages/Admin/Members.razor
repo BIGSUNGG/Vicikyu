@@ -52,16 +52,7 @@
         </div>
     }
 
-    <div class="toolbar-row members-sortbar">
-        <div class="field">
-            <select class="form-control" value="@pageSize" @onchange="e => SetPageSizeAsync(int.Parse(e.Value!.ToString()!))" aria-label="페이지당 인원">
-                @foreach (var size in new[] { 10, 20, 30, 40 })
-                {
-                    <option value="@size" selected="@(size == pageSize)">@(size)개씩</option>
-                }
-            </select>
-        </div>
-        <div class="sort-strip">
+    <div class="sort-strip">
             @foreach (var (field, label) in new[]
                      {
                          (MemberSortField.TotalAttendance, "총 출석"),
@@ -74,7 +65,6 @@
                     @label@(selected ? (ascending ? " ↑" : " ↓") : "")
                 </button>
             }
-        </div>
     </div>
 
     <div class="card-list split-2">
@@ -172,7 +162,6 @@
     private bool? feePaid;
     private MemberSortField sort = MemberSortField.SemesterAttendance;
     private bool ascending;
-    private int pageSize = 10;
     private int pageNumber = 1;
     private bool showAddForm;
     private bool showFilters;
@@ -199,8 +188,7 @@
                 feePaid,
                 sort,
                 ascending,
-                pageNumber,
-                pageSize));
+                pageNumber));
         }
         catch (AppException ex)
         {
@@ -255,13 +243,6 @@
             ascending = false;
         }
 
-        pageNumber = 1;
-        await ReloadAsync();
-    }
-
-    private async Task SetPageSizeAsync(int size)
-    {
-        pageSize = size;
         pageNumber = 1;
         await ReloadAsync();
     }

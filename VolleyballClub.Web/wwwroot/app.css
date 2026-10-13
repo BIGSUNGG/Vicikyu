@@ -1601,13 +1601,9 @@ button.court-head {
 	color: #b45309;
 }
 
-/* 부원 관리 — 필터 버튼과 그 아래 정렬 줄의 세로 간격 */
+/* 부원 관리 — 필터 버튼 행의 세로 간격 */
 .members-toolbar {
 	margin-bottom: 12px;
-}
-
-.members-sortbar {
-	align-items: center;
 }
 
 .confirm-overlay {
@@ -1985,11 +1981,6 @@ button.court-head {
 
 	.toolbar-row .filter-group {
 		flex: 1;
-		margin-bottom: 0;
-	}
-
-	.toolbar-row .sort-strip {
-		width: auto;
 		margin-bottom: 0;
 	}
 
