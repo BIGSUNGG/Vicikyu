@@ -1,3 +1,5 @@
+using VolleyballClub.Domain.Enums;
+
 namespace VolleyballClub.Application.Dtos;
 
 public record MemberListDto(
@@ -6,10 +8,52 @@ public record MemberListDto(
     string StudentNumber,
     string Department,
     string Role,
-    bool IsActive,
+    MemberStatus Status,
     int TotalAttendance,
     bool FeePaidCurrent,
     string? Color);
+
+/// <summary>부원 목록 정렬 기준.</summary>
+public enum MemberSortField
+{
+    Name,
+    StudentNumber,
+    Department,
+    TotalAttendance,
+    SemesterAttendance,
+    MonthAttendance,
+}
+
+/// <summary>부원 목록 조회 요청 — 서버 쿼리 필터링·정렬·페이징.</summary>
+public record MemberPageRequest(
+    string? Search = null,
+    IReadOnlyCollection<MemberStatus>? Statuses = null,
+    bool? SheetMapped = null,
+    bool? FeePaid = null,
+    MemberSortField Sort = MemberSortField.Name,
+    bool Ascending = true,
+    int Page = 1,
+    int PageSize = 10);
+
+public record MemberListItemDto(
+    string UserId,
+    string Name,
+    string StudentNumber,
+    string Department,
+    string Role,
+    MemberStatus Status,
+    string? Color,
+    int SemesterAttendance,
+    int MonthAttendance,
+    int TotalAttendance,
+    bool FeePaidCurrent,
+    bool SheetMapped);
+
+public record MemberPageDto(
+    IReadOnlyList<MemberListItemDto> Items,
+    int TotalCount,
+    int Page,
+    int PageSize);
 
 public record MemberCreateRequest(
     string StudentNumber,
@@ -23,7 +67,7 @@ public record MemberUpdateRequest(
     string Department,
     string? StudentNumber = null,
     string? Role = null,
-    bool? IsActive = null,
+    MemberStatus? Status = null,
     string? Color = null,
     string? NewPassword = null);
 

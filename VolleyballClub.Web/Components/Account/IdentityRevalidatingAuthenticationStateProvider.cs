@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
+using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Identity;
 
 namespace VolleyballClub.Web.Components.Account;
@@ -27,7 +28,7 @@ internal sealed class IdentityRevalidatingAuthenticationStateProvider(
     private async Task<bool> ValidateSecurityStampAsync(UserManager<ApplicationUser> userManager, ClaimsPrincipal principal)
     {
         var user = await userManager.GetUserAsync(principal);
-        if (user is null || !user.IsActive)
+        if (user is null || user.Status != MemberStatus.Active)
         {
             return false;
         }

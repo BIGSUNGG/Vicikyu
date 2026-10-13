@@ -157,7 +157,7 @@ public class FeeService(
                 .Where(p => p.FeePeriodId == periodId)
                 on u.Id equals p.UserId into gp
             from p in gp.DefaultIfEmpty()
-            where u.IsActive
+            where u.Status == MemberStatus.Active
             select new FeeStatusDto(
                 periodId,
                 "",

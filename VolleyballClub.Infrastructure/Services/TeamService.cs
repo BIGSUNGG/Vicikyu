@@ -112,7 +112,7 @@ public class TeamService(
         }
 
         var validUsers = await db.Users.AsNoTracking()
-            .Where(u => userIds.Contains(u.Id) && u.IsActive)
+            .Where(u => userIds.Contains(u.Id)  && u.Status == MemberStatus.Active)
             .ToDictionaryAsync(u => u.Id, u => u.Name);
         foreach (var userId in userIds)
         {
@@ -315,7 +315,7 @@ public class TeamService(
         if (participantKey.StartsWith("u:"))
         {
             var userId = participantKey[2..];
-            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive)
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId  && u.Status == MemberStatus.Active)
                 ?? throw new RuleViolationException("유효하지 않은 부원입니다.");
             return (userId, null, user.Name);
         }

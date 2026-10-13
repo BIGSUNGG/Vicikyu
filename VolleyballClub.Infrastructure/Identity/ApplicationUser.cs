@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using VolleyballClub.Domain.Enums;
 
 namespace VolleyballClub.Infrastructure.Identity;
 
@@ -14,7 +15,8 @@ public class ApplicationUser : IdentityUser
 
     public string Department { get; set; } = "";
 
-    public bool IsActive { get; set; } = true;
+    /// <summary>활동 상태(활동/탈퇴/퇴출). 레거시 IsActive를 대체한다 — 비활동 부원은 로그인·출석·팀 편성에서 제외된다.</summary>
+    public MemberStatus Status { get; set; } = MemberStatus.Active;
 
     /// <summary>부원 색(MemberColors 팔레트 값). 미지정(레거시)은 null — 중립색으로 렌더링.</summary>
     public string? Color { get; set; }

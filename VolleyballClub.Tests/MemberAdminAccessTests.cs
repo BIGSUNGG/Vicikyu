@@ -43,7 +43,7 @@ public class MemberAdminAccessTests
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Fee.CreatePeriodAsync(
             new FeePeriodCreateRequest("테스트학기", new DateOnly(2026, 9, 1), new DateOnly(2026, 12, 31), 1000)));
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Fee.SetPaidAsync(1, member, isPaid: true));
-        await Assert.ThrowsAsync<ForbiddenException>(() => host.Member.GetListAsync());
+        await Assert.ThrowsAsync<ForbiddenException>(() => host.Member.GetPageAsync(new MemberPageRequest()));
         await Assert.ThrowsAsync<ForbiddenException>(
             () => host.Member.AddAsync(new MemberCreateRequest("202512099", "가짜부원", "학과", "Password123!")));
 
@@ -66,7 +66,7 @@ public class MemberAdminAccessTests
         await Assert.ThrowsAsync<Application.Exceptions.ConflictException>(
             () => host.Member.AddAsync(new MemberCreateRequest("202512099", "또다른부원", "학과", "Password123!")));
 
-        var list = await host.Member.GetListAsync();
-        Assert.Contains(list, m => m.StudentNumber == "202512099");
+        var list = await host.Member.GetPageAsync(new MemberPageRequest());
+        Assert.Contains(list.Items, m => m.StudentNumber == "202512099");
     }
 }

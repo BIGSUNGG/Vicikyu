@@ -73,3 +73,30 @@ public record AttendanceRankingDto(
     string Department,
     int Count,
     bool IsViewer);
+
+/// <summary>관리자용 부원 출석 기록 1건.</summary>
+public record MemberAttendanceRecordDto(
+    int AttendanceId,
+    int ActivityId,
+    DateOnly ActivityDate,
+    AttendanceType Type,
+    DateTime CheckedAt,
+    bool HasTeam);
+
+/// <summary>출석 추가 시 선택할 활동 — AlreadyAttended가 true면 이미 출석한 활동.</summary>
+public record ActivityOptionDto(
+    int ActivityId,
+    DateOnly Date,
+    ActivityStatus Status,
+    bool AlreadyAttended);
+
+/// <summary>관리자 부원 상세의 출석 기록 섹션 데이터 — 집계 3종 + 기록 목록 + 추가 가능 활동.</summary>
+public record MemberAttendanceAdminDto(
+    string UserId,
+    string Name,
+    int MonthCount,
+    int SemesterCount,
+    int TotalCount,
+    SemesterScopeDto Semester,
+    IReadOnlyList<MemberAttendanceRecordDto> Records,
+    IReadOnlyList<ActivityOptionDto> AddableActivities);

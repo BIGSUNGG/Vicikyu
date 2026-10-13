@@ -65,7 +65,7 @@ public class ActivityService(
             .FirstOrDefaultAsync();
 
         var attendanceCount = await CountAttendanceAsync(db, activity.Id);
-        var totalMembers = await db.Users.CountAsync(u => u.IsActive);
+        var totalMembers = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
 
         return new MyTodayDto(
             activity.Id,
@@ -281,7 +281,7 @@ public class ActivityService(
     {
         var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == activityId);
         var attendanceCount = await CountAttendanceAsync(db, activityId);
-        var totalMembers = await db.Users.CountAsync(u => u.IsActive);
+        var totalMembers = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
         var teamCount = await db.Teams.CountAsync(t => t.ActivityId == activityId);
         var guestCount = await db.Guests.CountAsync(g => g.ActivityId == activityId);
         return new AdminTodayDto(

@@ -188,7 +188,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);
-        Member = new MemberService(Db.Factory, CreateUserManager(), Current, Audit, Time);
+        Member = new MemberService(Db.Factory, CreateUserManager(), Current, Audit, FormatResolver, Time);
         Users = CreateUserManager();
     }
 
@@ -230,7 +230,7 @@ public sealed class ServiceHost : IAsyncDisposable
     }
 
     /// <summary>테스트용 부원을 직접 DB에 삽입하고 Id를 반환한다.</summary>
-    public async Task<string> SeedUserAsync(string name, string studentNumber, bool isActive = true)
+    public async Task<string> SeedUserAsync(string name, string studentNumber, MemberStatus status = MemberStatus.Active)
     {
         await using var db = Db.CreateContext();
         var user = new ApplicationUser
@@ -241,7 +241,7 @@ public sealed class ServiceHost : IAsyncDisposable
             StudentNumber = studentNumber,
             Name = name,
             Department = "테스트학과",
-            IsActive = isActive,
+            Status = status,
             JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,

@@ -4,7 +4,11 @@ namespace VolleyballClub.Application.Abstractions;
 
 public interface IMemberService
 {
-    Task<List<MemberListDto>> GetListAsync(string? search = null);
+    /// <summary>부원 목록 — 서버 쿼리 필터링·정렬·페이징.</summary>
+    Task<MemberPageDto> GetPageAsync(MemberPageRequest request);
+
+    /// <summary>부원 1명. 없으면 NotFoundException.</summary>
+    Task<MemberListDto> GetAsync(string userId);
 
     Task<MemberListDto> AddAsync(MemberCreateRequest request);
 

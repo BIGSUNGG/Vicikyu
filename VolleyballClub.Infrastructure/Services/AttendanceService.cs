@@ -45,7 +45,7 @@ public class AttendanceService(
         }
 
         var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-        if (member is null || !member.IsActive)
+        if (member is null || member.Status != MemberStatus.Active)
         {
             throw new ForbiddenException("활성화된 부원만 출석할 수 있습니다.");
         }
@@ -88,7 +88,7 @@ public class AttendanceService(
             throw new ConflictException("이미 출석 처리되었습니다.");
         }
 
-        var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId && u.IsActive)
+        var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId  && u.Status == MemberStatus.Active)
             ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
 
         var now = KstClock.NowUtc(timeProvider);
@@ -123,6 +123,64 @@ public class AttendanceService(
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }
 
+        await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
+    }
+
+    public async Task AdminAddForActivityAsync(string targetUserId, int activityId)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.Id == activityId)
+            ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
+
+        if (activity.Status == ActivityStatus.Ready)
+        {
+            throw new ConflictException("아직 출석이 시작되지 않은 활동입니다.");
+        }
+
+        if (await db.Attendances.AnyAsync(a => a.ActivityId == activity.Id && a.UserId == targetUserId))
+        {
+            throw new ConflictException("이미 출석 처리되었습니다.");
+        }
+
+        var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId)
+            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+
+        var now = KstClock.NowUtc(timeProvider);
+        db.Attendances.Add(new Attendance
+        {
+            ActivityId = activity.Id,
+            UserId = targetUserId,
+            AttendanceType = AttendanceType.Admin,
+            CheckedAt = now,
+            CreatedAt = now,
+        });
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            throw new ConflictException("이미 출석 처리되었습니다.");
+        }
+
+        await auditLog.LogAsync(AdminAction.AttendanceAdd, "User", targetUserId,
+            $"{member.Name} {activity.ActivityDate:MM.dd} 출석 추가");
+    }
+
+    public async Task AdminRemoveForActivityAsync(string targetUserId, int activityId, bool confirmTeamImpact = false)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.Id == activityId)
+            ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
+
+        await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
+    }
+
+    /// <summary>지정 활동의 출석 기록 삭제 — 팀 편성 영향 확인과 팀원 제거를 당일·과거 기록이 공유한다.</summary>
+    private async Task RemoveAttendanceCoreAsync(ApplicationDbContext db, string targetUserId, Activity activity, bool confirmTeamImpact)
+    {
         var attendance = await db.Attendances.FirstOrDefaultAsync(a => a.ActivityId == activity.Id && a.UserId == targetUserId)
             ?? throw new NotFoundException("출석 기록이 없습니다.");
 
@@ -141,7 +199,63 @@ public class AttendanceService(
             .ToListAsync();
         db.TeamMembers.RemoveRange(teamMembers);
         await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.AttendanceRemove, "User", targetUserId, $"{member?.Name ?? targetUserId} 출석 취소");
+        await auditLog.LogAsync(AdminAction.AttendanceRemove, "User", targetUserId,
+            $"{member?.Name ?? targetUserId} {activity.ActivityDate:MM.dd} 출석 취소");
+    }
+
+    public async Task<MemberAttendanceAdminDto> GetAdminRecordsAsync(string userId)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+
+        var today = KstClock.Today(timeProvider);
+        var scope = await GetCurrentSemesterScopeAsync(db);
+        var (semStart, semEnd) = (scope.Start, scope.End);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        var monthCount = await db.Attendances.AsNoTracking().CountAsync(x =>
+            x.UserId == userId && x.Activity!.ActivityDate >= monthStart && x.Activity!.ActivityDate <= monthEnd);
+        var semesterCount = await db.Attendances.AsNoTracking().CountAsync(x =>
+            x.UserId == userId && x.Activity!.ActivityDate >= semStart && x.Activity!.ActivityDate <= semEnd);
+        var totalCount = await db.Attendances.AsNoTracking().CountAsync(x => x.UserId == userId);
+
+        var records = await db.Attendances.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.Activity!.ActivityDate)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new { x.Id, x.ActivityId, x.Activity!.ActivityDate, x.AttendanceType, x.CheckedAt })
+            .ToListAsync();
+        var teamActivityIds = (await db.TeamMembers.AsNoTracking()
+                .Where(m => m.UserId == userId)
+                .Select(m => m.Team!.ActivityId)
+                .Distinct()
+                .ToListAsync())
+            .ToHashSet();
+
+        // 출석 추가 후보 — 현재 학기의 시작된 활동(이미 출석한 활동은 화면에서 비활성 표시)
+        var attendedIds = records.Select(x => x.ActivityId).ToHashSet();
+        var candidates = await db.Activities.AsNoTracking()
+            .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
+            .OrderByDescending(a => a.ActivityDate)
+            .ThenByDescending(a => a.Id)
+            .Select(a => new { a.Id, a.ActivityDate, a.Status })
+            .ToListAsync();
+
+        return new MemberAttendanceAdminDto(
+            userId,
+            member.Name,
+            monthCount,
+            semesterCount,
+            totalCount,
+            scope,
+            records.Select(x => new MemberAttendanceRecordDto(
+                x.Id, x.ActivityId, x.ActivityDate, x.AttendanceType, x.CheckedAt, teamActivityIds.Contains(x.ActivityId)))
+                .ToList(),
+            candidates.Select(a => new ActivityOptionDto(a.Id, a.ActivityDate, a.Status, attendedIds.Contains(a.Id)))
+                .ToList());
     }
 
     public async Task<List<AttendanceMemberDto>> GetTodayMembersAsync(string? search = null)
@@ -157,7 +271,7 @@ public class AttendanceService(
                 .Where(x => x.ActivityId == currentActivityId)
                 on m.Id equals a.UserId into ga
             from a in ga.DefaultIfEmpty()
-            where m.IsActive
+            where m.Status == MemberStatus.Active
             select new AttendanceMemberDto(
                 m.Id,
                 m.Name,
@@ -334,7 +448,7 @@ public class AttendanceService(
         var myAttendances = await db.Attendances.AsNoTracking()
             .CountAsync(x => x.UserId == userId && countedActivities.Contains(x.ActivityId));
 
-        var totalActiveMembers = await db.Users.CountAsync(u => u.IsActive);
+        var totalActiveMembers = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
 
         var counts = await db.Attendances.AsNoTracking()
             .Where(x => countedActivities.Contains(x.ActivityId))
@@ -365,7 +479,7 @@ public class AttendanceService(
             where a.Activity!.ActivityDate >= start && a.Activity!.ActivityDate <= end
                 && a.Activity.Status != ActivityStatus.Ready
             join u in db.Users.AsNoTracking() on a.UserId equals u.Id
-            where u.IsActive
+            where u.Status == MemberStatus.Active
             group a by new { u.Id, u.Name, u.Department } into g
             select new { g.Key.Id, g.Key.Name, g.Key.Department, Count = g.Count() }
         ).ToListAsync();

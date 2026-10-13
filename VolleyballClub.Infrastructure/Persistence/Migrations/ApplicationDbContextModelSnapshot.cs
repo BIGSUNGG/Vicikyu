@@ -560,9 +560,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
-
                     b.Property<DateTime>("JoinedAt")
                         .HasColumnType("TEXT");
 
@@ -595,6 +592,9 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("StudentNumber")
                         .IsRequired()

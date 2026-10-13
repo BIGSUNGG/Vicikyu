@@ -15,62 +15,169 @@ public class MemberService(
     UserManager<ApplicationUser> userManager,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
+    ISheetFormatResolver formatResolver,
     TimeProvider timeProvider) : IMemberService
 {
-    public async Task<List<MemberListDto>> GetListAsync(string? search = null)
+    public async Task<MemberPageDto> GetPageAsync(MemberPageRequest request)
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
 
         var today = KstClock.Today(timeProvider);
+        var (semStart, semEnd) = await SemesterPeriodResolver.GetCurrentRangeAsync(db, today);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
         var currentPeriod = await db.FeePeriods.AsNoTracking()
             .Where(p => p.StartDate <= today && p.EndDate >= today)
             .OrderByDescending(p => p.StartDate)
             .FirstOrDefaultAsync();
 
-        var roles = await (
-            from ur in db.UserRoles.AsNoTracking()
-            join r in db.Roles.AsNoTracking() on ur.RoleId equals r.Id
-            select new { ur.UserId, r.Name }
-        ).ToListAsync();
-        var roleByUser = roles
-            .GroupBy(r => r.UserId)
-            .ToDictionary(g => g.Key, g => g.Any(r => r.Name == "ADMIN") ? "ADMIN" : "MEMBER");
+        var roleByUser = await GetRoleByUserAsync(db);
 
-        var totalAttendance = await db.Attendances.AsNoTracking()
-            .GroupBy(a => a.UserId)
-            .Select(g => new { UserId = g.Key, Count = g.Count() })
+        // 시트 연결 판별 — 현재 학기 출석 탭 기준(GetUnmappedUserIdsAsync와 동일 규칙)
+        var tabName = formatResolver.ResolveByDate(today)?.TabName;
+        var sheetIds = await db.SheetDefinitions.AsNoTracking()
+            .Where(s => s.Kind == SheetKind.Attendance)
+            .Select(s => s.Id)
             .ToListAsync();
-        var attendanceByUser = totalAttendance.ToDictionary(x => x.UserId, x => x.Count);
+        var mappedSet = tabName is null || sheetIds.Count == 0
+            ? new HashSet<string>()
+            : (await db.SheetMemberMappings.AsNoTracking()
+                .Where(m => m.TabName == tabName && sheetIds.Contains(m.SheetDefinitionId))
+                .Select(m => m.UserId)
+                .ToListAsync()).ToHashSet();
 
-        var paidUsers = currentPeriod is null
-            ? []
-            : await db.FeePayments.AsNoTracking()
+        var paidSet = currentPeriod is null
+            ? new HashSet<string>()
+            : (await db.FeePayments.AsNoTracking()
                 .Where(p => p.FeePeriodId == currentPeriod.Id && p.IsPaid)
                 .Select(p => p.UserId)
-                .ToListAsync();
-        var paidSet = paidUsers.ToHashSet();
+                .ToListAsync()).ToHashSet();
 
         var query = db.Users.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(request.Search))
         {
-            var term = search.Trim().ToLower();
+            var term = request.Search.Trim().ToLower();
             query = query.Where(u => u.Name.ToLower().Contains(term) || u.StudentNumber.ToLower().Contains(term));
         }
 
-        var users = await query.OrderBy(u => u.Name).ToListAsync();
+        if (request.Statuses is { Count: > 0 } statuses)
+        {
+            query = query.Where(u => statuses.Contains(u.Status));
+        }
 
-        return users.Select(u => new MemberListDto(
+        if (request.SheetMapped is { } wantMapped)
+        {
+            query = query.Where(u => mappedSet.Contains(u.Id) == wantMapped);
+        }
+
+        if (request.FeePaid is { } wantPaid)
+        {
+            query = query.Where(u => paidSet.Contains(u.Id) == wantPaid);
+        }
+
+        var total = await query.CountAsync();
+
+        var ordered = (request.Sort, request.Ascending) switch
+        {
+            (MemberSortField.StudentNumber, false) => query.OrderByDescending(u => u.StudentNumber),
+            (MemberSortField.Department, true) => query.OrderBy(u => u.Department).ThenBy(u => u.Name),
+            (MemberSortField.Department, false) => query.OrderByDescending(u => u.Department).ThenBy(u => u.Name),
+            (MemberSortField.TotalAttendance, true) => query.OrderBy(u => db.Attendances.Count(a => a.UserId == u.Id)),
+            (MemberSortField.TotalAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a => a.UserId == u.Id)),
+            (MemberSortField.SemesterAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
+                a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
+            (MemberSortField.SemesterAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a =>
+                a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
+            (MemberSortField.MonthAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
+                a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
+            (MemberSortField.MonthAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a =>
+                a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
+            (_, false) => query.OrderByDescending(u => u.Name),
+            _ => query.OrderBy(u => u.Name),
+        };
+
+        // 동률 행의 2차 정렬 — 페이지를 넘길 때 순서가 흔들려 행이 중복/누락되는 것을 막는다
+        var stable = ordered.ThenBy(u => u.Name);
+
+        var page = Math.Max(1, request.Page);
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
+        var raw = await stable
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(u => new
+            {
+                u.Id,
+                u.Name,
+                u.StudentNumber,
+                u.Department,
+                u.Status,
+                u.Color,
+                Total = db.Attendances.Count(a => a.UserId == u.Id),
+                Semester = db.Attendances.Count(a =>
+                    a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd),
+                Month = db.Attendances.Count(a =>
+                    a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd),
+            })
+            .ToListAsync();
+
+        var items = raw.Select(u => new MemberListItemDto(
                 u.Id,
                 u.Name,
                 u.StudentNumber,
                 u.Department,
                 roleByUser.GetValueOrDefault(u.Id, "MEMBER"),
-                u.IsActive,
-                attendanceByUser.GetValueOrDefault(u.Id, 0),
+                u.Status,
+                u.Color,
+                u.Semester,
+                u.Month,
+                u.Total,
                 paidSet.Contains(u.Id),
-                u.Color))
+                mappedSet.Contains(u.Id)))
             .ToList();
+
+        return new MemberPageDto(items, total, page, pageSize);
+    }
+
+    public async Task<MemberListDto> GetAsync(string userId)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+
+        // 단일 사용자 역할만 확인 — 전체 역할 조인은 목록(GetPageAsync)이 담당한다
+        var adminRole = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name == "ADMIN");
+        var isAdmin = adminRole is not null
+            && await db.UserRoles.AsNoTracking().AnyAsync(ur => ur.UserId == userId && ur.RoleId == adminRole.Id);
+
+        // 총 출석·회비는 상세 화면에서 GetAdminRecordsAsync가 집계하므로 조회하지 않는다(AddAsync/UpdateAsync와 동일 규약)
+        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department,
+            isAdmin ? "ADMIN" : "MEMBER", user.Status, 0, false, user.Color);
+    }
+
+    /// <summary>감사 로그용 상태 라벨.</summary>
+    private static string StatusLabel(MemberStatus status) => status switch
+    {
+        MemberStatus.Withdrawn => "탈퇴",
+        MemberStatus.Expelled => "퇴출",
+        _ => "활동",
+    };
+
+    /// <summary>UserId → "ADMIN"/"MEMBER" 역할 맵.</summary>
+    private async Task<Dictionary<string, string>> GetRoleByUserAsync(ApplicationDbContext db)
+    {
+        var roles = await (
+            from ur in db.UserRoles.AsNoTracking()
+            join r in db.Roles.AsNoTracking() on ur.RoleId equals r.Id
+            select new { ur.UserId, r.Name }
+        ).ToListAsync();
+
+        return roles
+            .GroupBy(r => r.UserId)
+            .ToDictionary(g => g.Key, g => g.Any(r => r.Name == "ADMIN") ? "ADMIN" : "MEMBER");
     }
 
     public async Task<MemberListDto> AddAsync(MemberCreateRequest request)
@@ -108,7 +215,7 @@ public class MemberService(
             StudentNumber = studentNumber,
             Name = request.Name.Trim(),
             Department = request.Department.Trim(),
-            IsActive = true,
+            Status = MemberStatus.Active,
             Color = MemberColors.PickBalanced(colorUsage),
             JoinedAt = now,
             CreatedAt = now,
@@ -125,7 +232,7 @@ public class MemberService(
         await userManager.AddToRoleAsync(user, role);
         await auditLog.LogAsync(AdminAction.MemberCreate, "User", user.Id, $"{user.Name}({studentNumber}) {role} 추가");
 
-        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, true, 0, false, user.Color);
+        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, MemberStatus.Active, 0, false, user.Color);
     }
 
     public async Task<MemberListDto> UpdateAsync(string userId, MemberUpdateRequest request)
@@ -166,13 +273,14 @@ public class MemberService(
             user.Color = requestedColor;
         }
 
-        if (request.IsActive is { } active && active != user.IsActive)
+        if (request.Status is { } status && status != user.Status)
         {
-            user.IsActive = active;
+            user.Status = status;
             // 보안 스탬프를 갱신해 기존 로그인 세션/재검증 흐름과 일치시킨다
             await userManager.UpdateSecurityStampAsync(user);
-            await auditLog.LogAsync(active ? AdminAction.MemberEnable : AdminAction.MemberDisable,
-                "User", user.Id, $"{user.Name} {(active ? "활성화" : "비활성화")}");
+            await auditLog.LogAsync(status == MemberStatus.Active ? AdminAction.MemberEnable : AdminAction.MemberDisable,
+                "User", user.Id,
+                $"{user.Name} 상태 변경 → {StatusLabel(status)}");
         }
 
         var updateResult = await userManager.UpdateAsync(user);
@@ -225,7 +333,7 @@ public class MemberService(
         }
 
         await auditLog.LogAsync(AdminAction.MemberUpdate, "User", user.Id, $"{user.Name} 정보 수정");
-        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.IsActive, 0, false, user.Color);
+        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.Status, 0, false, user.Color);
     }
 
     public async Task<ProfileDto> GetProfileAsync(string userId)

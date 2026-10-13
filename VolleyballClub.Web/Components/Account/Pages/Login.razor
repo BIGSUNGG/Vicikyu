@@ -3,6 +3,7 @@
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Identity
 @using VolleyballClub.Infrastructure.Identity
+@using VolleyballClub.Domain.Enums
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
@@ -72,7 +73,7 @@
         }
 
         var user = await UserManager.FindByNameAsync(Input.StudentNumber.Trim());
-        if (user is null || !user.IsActive)
+        if (user is null || user.Status != MemberStatus.Active)
         {
             errorMessage = "Error: 학번 또는 비밀번호가 올바르지 않거나 비활성화된 계정입니다.";
             return;

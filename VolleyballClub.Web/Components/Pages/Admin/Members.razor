@@ -2,18 +2,126 @@
 @attribute [Authorize(Roles = "ADMIN")]
 
 @inject IMemberService MemberSvc
-@inject ISheetMemberMappingService MappingSvc
+@inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
 <PageTitle>부원 관리 · 배구부</PageTitle>
 
-<AdminNav Icon="/icons/users.svg" Title="부원 관리" Sub="@($"{members.Count}명 · 시트 미연결 {unmapped.Count}명")" Active="members" />
+<AdminNav Icon="/icons/users.svg" Title="부원 관리" Sub="@($"부원 {page?.TotalCount ?? 0}명")" Active="members" />
 
 <div class="card">
+    <h2 class="card-title">부원 목록</h2>
+
     <div class="field">
-        <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" />
+        <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" @bind:event="oninput" @bind:after="SearchAsync" />
     </div>
 
+    <div class="field">
+        <label class="form-label">활동 상태 (복수 선택, 미선택 시 전체)</label>
+        <div class="filter-group">
+            @foreach (var (status, label) in new[] { (MemberStatus.Active, "활동 부원"), (MemberStatus.Withdrawn, "탈퇴 부원"), (MemberStatus.Expelled, "퇴출 부원") })
+            {
+                <button type="button" class="filter-btn @(selectedStatuses.Contains(status) ? "active" : "")"
+                        @onclick="() => ToggleStatusAsync(status)">@label</button>
+            }
+        </div>
+    </div>
+
+    <div class="toolbar-row">
+        <div class="filter-group">
+            @foreach (var (value, label) in new[] { ((bool?)null, "시트 전체"), (true, "시트 연결"), (false, "시트 미연결") })
+            {
+                <button type="button" class="filter-btn @(sheetMapped == value ? "active" : "")"
+                        @onclick="() => SetSheetFilterAsync(value)">@label</button>
+            }
+        </div>
+        <div class="filter-group">
+            @foreach (var (value, label) in new[] { ((bool?)null, "회비 전체"), (true, "완납"), (false, "미납") })
+            {
+                <button type="button" class="filter-btn @(feePaid == value ? "active" : "")"
+                        @onclick="() => SetFeeFilterAsync(value)">@label</button>
+            }
+        </div>
+    </div>
+
+    <div class="toolbar-row">
+        <div class="field">
+            <label class="form-label">정렬</label>
+            <select class="form-control" value="@sort" @onchange="e => SetSortAsync(Enum.Parse<MemberSortField>(e.Value!.ToString()!))">
+                <option value="@MemberSortField.TotalAttendance">총 출석 수</option>
+                <option value="@MemberSortField.SemesterAttendance">이번 학기 출석 수</option>
+                <option value="@MemberSortField.MonthAttendance">이번 달 출석 수</option>
+                <option value="@MemberSortField.StudentNumber">학번</option>
+                <option value="@MemberSortField.Name">이름</option>
+                <option value="@MemberSortField.Department">학과</option>
+            </select>
+        </div>
+        <div class="field">
+            <label class="form-label">방향</label>
+            <button type="button" class="btn-secondary" @onclick="ToggleDirectionAsync">@(ascending ? "오름차순 ↑" : "내림차순 ↓")</button>
+        </div>
+        <div class="field">
+            <label class="form-label">페이지당 인원</label>
+            <select class="form-control" value="@pageSize" @onchange="e => SetPageSizeAsync(int.Parse(e.Value!.ToString()!))">
+                @foreach (var size in new[] { 10, 20, 30, 40 })
+                {
+                    <option value="@size" selected="@(size == pageSize)">@(size)개씩</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="card-list split-2">
+        @if (page is { Items.Count: 0 })
+        {
+            <p class="member-meta">조건에 맞는 부원이 없습니다.</p>
+        }
+        @foreach (var member in page?.Items ?? [])
+        {
+                <div class="member-row" style="cursor:pointer" tabindex="0"
+                     @onclick='() => OpenDetailAsync(member.UserId)'
+                     @onkeydown='e => { if (e.Key == "Enter") OpenDetailAsync(member.UserId); }'>
+                <div>
+                    <div class="member-name">
+                        @if (member.Color is { } c)
+                        {
+                            <span class="member-dot" style="background:@c"></span>
+                        }
+                        @member.Name
+                        @if (member.Status != MemberStatus.Active)
+                        {
+                            <span class="badge @(member.Status == MemberStatus.Expelled ? "badge-red" : "badge-gray")">@StatusLabel(member.Status)</span>
+                        }
+                    </div>
+                    <div class="member-meta">@member.StudentNumber · @member.Department · 이번 학기 @(member.SemesterAttendance)회 · 이번 달 @(member.MonthAttendance)회</div>
+                </div>
+                <div style="margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+                    @if (!member.SheetMapped)
+                    {
+                        <span class="badge badge-red">시트 미연결</span>
+                    }
+                    <span class="badge @(member.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(member.Role == "ADMIN" ? "관리자" : "부원")</span>
+                    <span class="badge @(member.FeePaidCurrent ? "badge-green" : "badge-red")">@(member.FeePaidCurrent ? "납부" : "미납")</span>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (TotalPages > 1 || (page?.TotalCount ?? 0) > 0)
+    {
+        <div class="filter-group" style="margin-top:14px;align-items:center">
+            <button type="button" class="filter-btn" disabled="@(pageNumber <= 1)" @onclick="() => GoToPageAsync(pageNumber - 1)">이전</button>
+            @for (var p = 1; p <= TotalPages; p++)
+            {
+                var n = p;
+                <button type="button" class="filter-btn @(n == pageNumber ? "active" : "")" @onclick="() => GoToPageAsync(n)">@n</button>
+            }
+            <button type="button" class="filter-btn" disabled="@(pageNumber >= TotalPages)" @onclick="() => GoToPageAsync(pageNumber + 1)">다음</button>
+        </div>
+    }
+</div>
+
+<div class="card">
     <button type="button" class="btn-secondary btn-block" @onclick="() => showAddForm = !showAddForm">
         @(showAddForm ? "추가 취소" : "+ 부원 추가")
     </button>
@@ -50,197 +158,103 @@
     }
 </div>
 
-@if (editing is not null)
-{
-    <div class="card reveal">
-        <h2 class="card-title">부원 수정 — @editing.Name</h2>
-        <EditForm Model="editForm" OnValidSubmit="SaveEditAsync">
-            <DataAnnotationsValidator />
-            <div class="field">
-                <label class="form-label">학번</label>
-                <InputText @bind-Value="editForm.StudentNumber" class="form-control" />
-            </div>
-            <div class="field">
-                <label class="form-label">이름</label>
-                <InputText @bind-Value="editForm.Name" class="form-control" />
-            </div>
-            <div class="field">
-                <label class="form-label">학과</label>
-                <InputText @bind-Value="editForm.Department" class="form-control" />
-            </div>
-            <div class="field">
-                <label class="form-label">색상</label>
-                <div class="color-swatches">
-                    @foreach (var color in Domain.MemberColors.Palette)
-                    {
-                        <button type="button" class="color-swatch @(editForm.Color == color ? "selected" : "")"
-                                style="--mc:@color" aria-label="색상 @color" @onclick="() => editForm.Color = color"></button>
-                    }
-                </div>
-            </div>
-            <div class="field">
-                <label class="form-label">역할</label>
-                <select class="form-control" value="@editForm.Role" @onchange='e => editForm.Role = e.Value?.ToString() ?? "MEMBER"'>
-                    <option value="MEMBER">부원</option>
-                    <option value="ADMIN">관리자</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="form-label">새 비밀번호 (선택)</label>
-                <InputText type="password" @bind-Value="editForm.NewPassword" class="form-control"
-                           placeholder="비워 두면 변경하지 않음" autocomplete="new-password" />
-            </div>
-            <div class="btn-row">
-                <button type="button" class="btn-ghost" @onclick="() => editing = null">취소</button>
-                <button type="submit" class="btn-primary">저장</button>
-            </div>
-        </EditForm>
-        <div style="height:10px"></div>
-        <button type="button" class="btn-danger btn-block" @onclick="ToggleActiveAsync">
-            @(editing.IsActive ? "비활성화" : "활성화")
-        </button>
-    </div>
-
-    <div class="card reveal">
-        <h2 class="card-title">시트 연결 — @editing.Name</h2>
-        @if (tabMappings is null)
-        {
-            <p class="member-meta">시트에서 부원 행을 불러오는 중…</p>
-        }
-        else if (tabMappings.Count == 0)
-        {
-            <p class="member-meta">등록된 출석 시트가 없습니다 — 설정에서 먼저 등록하세요.</p>
-        }
-        else
-        {
-            @foreach (var tab in tabMappings)
-            {
-                <div class="field">
-                    <label class="form-label">@tab.SheetName · @tab.TabName 탭</label>
-                    <select class="form-control" value="@tab.CurrentRowLabel"
-                            @onchange="e => SetMappingAsync(tab, e.Value?.ToString())">
-                        <option value="">미지정</option>
-                        @foreach (var option in tab.Options)
-                        {
-                            <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
-                        }
-                    </select>
-                </div>
-            }
-            <p class="member-meta">★ 은 이름이 같아 추천하는 행입니다. 미지정 두면 동기화에서 건너뜁니다.</p>
-        }
-    </div>
-}
-
-<div class="card">
-    <h2 class="card-title">부원 목록</h2>
-    <div class="toolbar-row">
-        <div class="filter-group">
-            @foreach (var (value, label) in new[] { (MemberFilter.All, "전체"), (MemberFilter.Active, "활성"), (MemberFilter.Inactive, "비활성"), (MemberFilter.Unmapped, "미지정") })
-            {
-                <button type="button" class="filter-btn @(filter == value ? "active" : "")" @onclick="() => filter = value">@label</button>
-            }
-        </div>
-    </div>
-    <div class="card-list split-2">
-        @foreach (var member in visibleMembers)
-        {
-            <div class="member-row" style="cursor:pointer" @onclick="() => BeginEditAsync(member)">
-                <div>
-                    <div class="member-name">
-                        @if (member.Color is { } c)
-                        {
-                            <span class="member-dot" style="background:@c"></span>
-                        }
-                        @member.Name
-                        @if (!member.IsActive)
-                        {
-                            <span class="badge badge-gray">비활성</span>
-                        }
-                    </div>
-                    <div class="member-meta">@member.StudentNumber · @member.Department · 총 출석 @(member.TotalAttendance)회</div>
-                </div>
-                <div style="margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-                    @if (unmapped.Contains(member.UserId))
-                    {
-                        <span class="badge badge-red">시트 미연결</span>
-                    }
-                    <span class="badge @(member.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(member.Role == "ADMIN" ? "관리자" : "부원")</span>
-                    <span class="badge @(member.FeePaidCurrent ? "badge-green" : "badge-red")">@(member.FeePaidCurrent ? "납부" : "미납")</span>
-                </div>
-            </div>
-        }
-    </div>
-</div>
-
-@if (confirmDeactivate is not null)
-{
-    <div class="confirm-overlay" @onclick="() => confirmDeactivate = null">
-        <div class="confirm-box" @onclick:stopPropagation>
-            <h3>@(confirmDeactivate.IsActive ? "비활성화" : "활성화")</h3>
-            <p>@confirmDeactivate.Name 님을 @(confirmDeactivate.IsActive ? "비활성화" : "활성화")하시겠습니까? 출석 기록은 보존됩니다.</p>
-            <div class="btn-row">
-                <button type="button" class="btn-ghost" @onclick="() => confirmDeactivate = null">취소</button>
-                <button type="button" class="btn-primary" @onclick="DoToggleActiveAsync">확인</button>
-            </div>
-        </div>
-    </div>
-}
-
 @code {
-    private List<MemberListDto> members = [];
-    private IReadOnlySet<string> unmapped = new HashSet<string>();
-    private MemberFilter filter = MemberFilter.All;
+    private MemberPageDto? page;
     private string search = "";
+    private HashSet<MemberStatus> selectedStatuses = [];
+    private bool? sheetMapped;
+    private bool? feePaid;
+    private MemberSortField sort = MemberSortField.Name;
+    private bool ascending = true;
+    private int pageSize = 10;
+    private int pageNumber = 1;
     private bool showAddForm;
-    private MemberListDto? editing;
-    private MemberListDto? confirmDeactivate;
     private MemberCreateForm createForm = new();
-    private MemberEditForm editForm = new();
-    private List<MemberTabMappingDto>? tabMappings;
 
-    private List<MemberListDto> visibleMembers
+    private int TotalPages => page is null
+        ? 1
+        : Math.Max(1, (int)Math.Ceiling(page.TotalCount / (double)page.PageSize));
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
     {
-        get
+        try
         {
-            var term = search.Trim();
-            var query = string.IsNullOrEmpty(term)
-                ? members.AsEnumerable()
-                : members.Where(m => m.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-                    || m.StudentNumber.Contains(term, StringComparison.CurrentCultureIgnoreCase));
-            query = filter switch
-            {
-                MemberFilter.Active => query.Where(m => m.IsActive),
-                MemberFilter.Inactive => query.Where(m => !m.IsActive),
-                MemberFilter.Unmapped => query.Where(m => unmapped.Contains(m.UserId)),
-                _ => query
-            };
-            return query.ToList();
+            page = await MemberSvc.GetPageAsync(new MemberPageRequest(
+                string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                selectedStatuses.Count > 0 ? selectedStatuses.ToArray() : null,
+                sheetMapped,
+                feePaid,
+                sort,
+                ascending,
+                pageNumber,
+                pageSize));
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
         }
     }
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private void OpenDetailAsync(string userId) => Nav.NavigateTo($"/admin/members/{userId}");
 
-    private async Task LoadAsync()
+    private async Task SearchAsync()
     {
-        try
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task ToggleStatusAsync(MemberStatus status)
+    {
+        if (!selectedStatuses.Remove(status))
         {
-            members = await MemberSvc.GetListAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
+            selectedStatuses.Add(status);
         }
 
-        try
-        {
-            unmapped = await MappingSvc.GetUnmappedUserIdsAsync();
-        }
-        catch (AppException ex)
-        {
-            unmapped = new HashSet<string>();
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task SetSheetFilterAsync(bool? value)
+    {
+        sheetMapped = value;
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task SetFeeFilterAsync(bool? value)
+    {
+        feePaid = value;
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task SetSortAsync(MemberSortField value)
+    {
+        sort = value;
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task ToggleDirectionAsync()
+    {
+        ascending = !ascending;
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task SetPageSizeAsync(int size)
+    {
+        pageSize = size;
+        pageNumber = 1;
+        await ReloadAsync();
+    }
+
+    private async Task GoToPageAsync(int n)
+    {
+        pageNumber = Math.Clamp(n, 1, TotalPages);
+        await ReloadAsync();
     }
 
     private async Task AddMemberAsync()
@@ -256,7 +270,7 @@
             Snackbar.Add($"{createForm.Name} 추가 완료", Severity.Success);
             createForm = new MemberCreateForm();
             showAddForm = false;
-            await LoadAsync();
+            await ReloadAsync();
         }
         catch (AppException ex)
         {
@@ -264,138 +278,12 @@
         }
     }
 
-    private async Task BeginEditAsync(MemberListDto member)
+    private static string StatusLabel(MemberStatus status) => status switch
     {
-        editing = member;
-        tabMappings = null;
-        editForm = new MemberEditForm
-        {
-            StudentNumber = member.StudentNumber,
-            Name = member.Name,
-            Department = member.Department,
-            Role = member.Role,
-            Color = member.Color ?? Domain.MemberColors.Palette[0],
-        };
-
-        await LoadMappingsAsync(member.UserId);
-    }
-
-    private async Task LoadMappingsAsync(string userId)
-    {
-        try
-        {
-            tabMappings = await MappingSvc.GetForMemberAsync(userId);
-        }
-        catch (AppException ex)
-        {
-            tabMappings = [];
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-        catch (Exception)
-        {
-            tabMappings = [];
-            Snackbar.Add("시트를 읽지 못했습니다 — 키·공유 상태를 확인하세요.", Severity.Error);
-        }
-    }
-
-    private async Task SetMappingAsync(MemberTabMappingDto tab, string? rowLabel)
-    {
-        try
-        {
-            var report = await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, editing!.UserId,
-                string.IsNullOrEmpty(rowLabel) ? null : rowLabel);
-            tabMappings = [.. (tabMappings ?? []).Select(t => t == tab
-                ? t with { CurrentRowLabel = string.IsNullOrEmpty(rowLabel) ? null : rowLabel }
-                : t)];
-            if (report is null)
-            {
-                Snackbar.Add("연결 저장됨 — 시트 동기화 실패, 다음 기동에 반영됩니다.", Severity.Warning);
-            }
-            else if (report.ImportedAttendances > 0)
-            {
-                Snackbar.Add($"연결 저장 및 출석 {report.ImportedAttendances}건 반영 완료", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("연결 저장됨", Severity.Success);
-            }
-
-            await LoadAsync(); // 부원 목록의 총 출석 수 갱신
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
-    private async Task SaveEditAsync()
-    {
-        if (editing is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await MemberSvc.UpdateAsync(editing.UserId, new MemberUpdateRequest(
-                editForm.Name.Trim(),
-                editForm.Department.Trim(),
-                editForm.StudentNumber.Trim(),
-                editForm.Role,
-                Color: editForm.Color,
-                NewPassword: string.IsNullOrWhiteSpace(editForm.NewPassword) ? null : editForm.NewPassword));
-            Snackbar.Add("수정 완료", Severity.Success);
-            editing = null;
-            await LoadAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
-    private void ToggleActiveAsync()
-    {
-        if (editing is not null)
-        {
-            confirmDeactivate = editing;
-        }
-    }
-
-    private async Task DoToggleActiveAsync()
-    {
-        if (confirmDeactivate is null)
-        {
-            return;
-        }
-
-        var target = confirmDeactivate;
-        confirmDeactivate = null;
-        try
-        {
-            await MemberSvc.UpdateAsync(target.UserId, new MemberUpdateRequest(
-                target.Name,
-                target.Department,
-                null,
-                null,
-                !target.IsActive));
-            Snackbar.Add(!target.IsActive ? $"{target.Name} 활성화" : $"{target.Name} 비활성화", Severity.Success);
-            editing = null;
-            await LoadAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
-    private enum MemberFilter
-    {
-        All,
-        Active,
-        Inactive,
-        Unmapped
-    }
+        MemberStatus.Withdrawn => "탈퇴",
+        MemberStatus.Expelled => "퇴출",
+        _ => "활동",
+    };
 
     private class MemberCreateForm
     {
@@ -412,23 +300,5 @@
         public string Password { get; set; } = "";
 
         public string Role { get; set; } = "MEMBER";
-    }
-
-    private class MemberEditForm
-    {
-        [Required(ErrorMessage = "학번을 입력하세요.")]
-        public string StudentNumber { get; set; } = "";
-
-        [Required(ErrorMessage = "이름을 입력하세요.")]
-        public string Name { get; set; } = "";
-
-        public string Department { get; set; } = "";
-
-        public string Role { get; set; } = "MEMBER";
-
-        public string Color { get; set; } = "";
-
-        // 선택 필드 — MinLength는 빈 문자열을 거부하므로 길이 검증은 서버(MemberService)에 맡긴다
-        public string NewPassword { get; set; } = "";
     }
 }

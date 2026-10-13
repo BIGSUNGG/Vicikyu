@@ -85,7 +85,7 @@ public class SheetUnmappedTests
     public async Task 미연결조회_비활성_부원도_포함한다()
     {
         var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())).AsAdmin();
-        var inactive = await host.SeedUserAsync("최비활", "2001", isActive: false);
+        var inactive = await host.SeedUserAsync("최비활", "2001", MemberStatus.Withdrawn);
         await SeedAttendanceSheetAsync(host);
 
         var result = await NewService(host).GetUnmappedUserIdsAsync();

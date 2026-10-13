@@ -804,7 +804,6 @@ public sealed class SheetSyncTests
         StudentNumber = studentNumber,
         Name = $"부원{studentNumber[^2..]}",
         Department = "테스트학과",
-        IsActive = true,
         JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
