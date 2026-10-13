@@ -270,11 +270,25 @@
     {
         try
         {
-            await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, editing!.UserId,
+            var report = await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, editing!.UserId,
                 string.IsNullOrEmpty(rowLabel) ? null : rowLabel);
             tabMappings = [.. (tabMappings ?? []).Select(t => t == tab
                 ? t with { CurrentRowLabel = string.IsNullOrEmpty(rowLabel) ? null : rowLabel }
                 : t)];
+            if (report is null)
+            {
+                Snackbar.Add("연결 저장됨 — 시트 동기화 실패, 다음 기동에 반영됩니다.", Severity.Warning);
+            }
+            else if (report.ImportedAttendances > 0)
+            {
+                Snackbar.Add($"연결 저장 및 출석 {report.ImportedAttendances}건 반영 완료", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("연결 저장됨", Severity.Success);
+            }
+
+            await LoadAsync(); // 부원 목록의 총 출석 수 갱신
         }
         catch (AppException ex)
         {

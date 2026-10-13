@@ -16,6 +16,7 @@ public interface ISheetMemberMappingService
     /// <summary>부원 하나의 탭별 연결 상태 + 행 라벨 후보(추천 순 정렬). 시트를 실시간으로 읽는다.</summary>
     Task<List<MemberTabMappingDto>> GetForMemberAsync(string userId);
 
-    /// <summary>탭별 연결 저장. rowLabel이 null이면 미지정으로 해제한다.</summary>
-    Task SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel);
+    /// <summary>탭별 연결 저장. rowLabel이 null이면 미지정으로 해제한다.
+    /// 저장 후 즉시 동기화를 실행하고 결과를 반환한다(실패 시 null — 저장 자체는 유지, 다음 기동에 반영).</summary>
+    Task<SheetSyncReport?> SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel);
 }

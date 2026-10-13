@@ -8,13 +8,15 @@ using VolleyballClub.Infrastructure.Persistence;
 namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>탭별 부원↔시트 행 연결 관리. 행 후보는 시트를 실시간으로 읽고
-/// 라벨의 이름 접두사가 부원 이름과 같으면 추천(최상단 강조)으로 올린다.</summary>
+/// 라벨의 이름 접두사가 부원 이름과 같으면 추천(최상단 강조)으로 올린다.
+/// 연결 변경 즉시 동기화를 실행해 과거 출석이 바로 반영된다(재기동 불필요).</summary>
 public sealed class SheetMemberMappingService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ISheetClient sheetClient,
     ISheetFormatResolver resolver,
     ICurrentUserService currentUser,
-    IAuditLogService auditLog) : ISheetMemberMappingService
+    IAuditLogService auditLog,
+    ISheetSyncService sync) : ISheetMemberMappingService
 {
     public async Task<List<MemberTabMappingDto>> GetForMemberAsync(string userId)
     {
@@ -68,7 +70,7 @@ public sealed class SheetMemberMappingService(
         return result;
     }
 
-    public async Task SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel)
+    public async Task<SheetSyncReport?> SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel)
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -89,9 +91,11 @@ public sealed class SheetMemberMappingService(
                 await db.SaveChangesAsync();
                 await auditLog.LogAsync(AdminAction.MemberSheetMapping, "SheetMemberMapping",
                     $"{sheetId}/{tabName}/{userId}", "시트 연결 해제");
+
+                return await TrySyncAsync();
             }
 
-            return;
+            return null;
         }
 
         var held = await db.SheetMemberMappings.FirstOrDefaultAsync(m =>
@@ -120,6 +124,22 @@ public sealed class SheetMemberMappingService(
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.MemberSheetMapping, "SheetMemberMapping",
             $"{sheetId}/{tabName}/{userId}", $"시트 연결: '{rowLabel}'");
+
+        // 매핑 변경 즉시 반영 — 재기동 없이 과거 출석이 백필된다
+        return await TrySyncAsync();
+    }
+
+    /// <summary>동기화 실패는 매핑 저장을 롤백하지 않는다 — null 반환(다음 기동 SyncAsync가 반영).</summary>
+    private async Task<SheetSyncReport?> TrySyncAsync()
+    {
+        try
+        {
+            return await sync.SyncAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     /// <summary>라벨에서 이름 추출 — "박유진 24 만화" → "박유진".</summary>

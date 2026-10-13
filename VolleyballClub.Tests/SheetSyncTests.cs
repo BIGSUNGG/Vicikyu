@@ -80,16 +80,19 @@ public sealed class SheetSyncHost : IAsyncDisposable
 
     public FakeSheetClient Client { get; } = new();
 
+    public FakeSemesterFormat Format { get; }
+
     public SheetSyncService Sync { get; }
 
     public int SheetId { get; private set; }
 
     public SheetSyncHost(FakeSemesterFormat? format = null)
     {
+        Format = format ?? new FakeSemesterFormat();
         Sync = new SheetSyncService(
             Db.Factory,
             Client,
-            new SheetFormatResolver([format ?? new FakeSemesterFormat()]),
+            new SheetFormatResolver([Format]),
             new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc)));
     }
 
@@ -344,6 +347,35 @@ public sealed class SheetSyncTests
 
         Assert.DoesNotContain("Google:ServiceAccountJson", all.Keys);
         Assert.Contains("ClubName", all.Keys);
+    }
+
+    [Fact]
+    public async Task 매핑_저장_즉시_과거_출석이_백필된다()
+    {
+        await using var host = new SheetSyncHost(new FakeSemesterFormat
+        {
+            Data = new SheetSemesterData([new SheetActivityColumn(new DateOnly(2026, 3, 10), ["박유진 24 만콘"])]),
+        });
+        var (user1, _) = await SeedUsersAsync(host.Db);
+        await host.SeedSheetAsync();
+        host.Client.Tabs.Add(new SheetTab("2026-1", []));
+        await host.Sync.SyncAsync(); // 첫 가져오기 — 매핑 없음 → 출석 0
+
+        // UI에서 매핑 저장 → 즉시 동기화 → 백필되어야 한다(재기동 불필요)
+        var mapping = new SheetMemberMappingService(
+            host.Db.Factory,
+            host.Client,
+            new SheetFormatResolver([host.Format]),
+            new FakeCurrentUser("admin-1", isAdmin: true),
+            new AuditLogService(host.Db.Factory, new FakeCurrentUser("admin-1", isAdmin: true),
+                new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc))),
+            host.Sync);
+        var report = await mapping.SetMappingAsync(host.SheetId, "2026-1", user1, "박유진 24 만콘");
+
+        Assert.NotNull(report);
+        Assert.Equal(1, report!.ImportedAttendances);
+        await using var db = host.Db.CreateContext();
+        Assert.Equal(1, await db.Attendances.CountAsync(a => a.AttendanceType == AttendanceType.Sheet));
     }
 
     private static async Task<(string Id1, string Id2)> SeedUsersAsync(TestDb db)
