@@ -4,7 +4,6 @@
 @inject ITeamService TeamSvc
 @inject IAttendanceService AttendanceSvc
 @inject IActivityService Activities
-@inject ISettingService Settings
 @inject ISnackbar Snackbar
 
 <PageTitle>팀 뽑기 · 배구부</PageTitle>
@@ -261,7 +260,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        teamCount = await Settings.GetIntAsync("DefaultTeamCount", 3);
         await LoadParticipantsAsync();
 
         // 이미 편성되어 있으면 현재 팀을 표시

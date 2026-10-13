@@ -147,6 +147,11 @@ body {
 	color: var(--vb-muted);
 }
 
+/* 설정 — 구글 시트 카드 안 '시트 목록' 소제목을 위 키 저장 버튼과 띄운다 */
+.settings-card > .btn-primary + .card-title {
+	margin-top: 24px;
+}
+
 .card-row {
 	display: flex;
 	justify-content: space-between;
@@ -1953,7 +1958,6 @@ button.court-head {
 	}
 
 	.settings-card > .card-title,
-	.settings-card > .field:nth-of-type(3),
 	.settings-card > .btn-row,
 	.settings-card > .btn-primary {
 		grid-column: 1 / -1;

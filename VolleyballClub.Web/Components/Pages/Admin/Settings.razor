@@ -11,35 +11,6 @@
 <h1 class="page-title"><img class="icon" src="/icons/gear.svg" alt=""> 설정</h1>
 
 <div class="card settings-card">
-    <h2 class="card-title">기본 정보</h2>
-    <div class="field">
-        <label class="form-label">학교명</label>
-        <input class="form-control" @bind="schoolName" />
-    </div>
-    <div class="field">
-        <label class="form-label">동아리명</label>
-        <input class="form-control" @bind="clubName" />
-    </div>
-    <div class="field">
-        <label class="form-label">회비 사용 내역 URL (Google Sheets)</label>
-        <input class="form-control" type="url" placeholder="https://docs.google.com/…" @bind="feeSheetUrl" />
-    </div>
-    <div class="btn-row">
-        <div class="field">
-            <label class="form-label">기본 팀 수</label>
-            <input class="form-control" type="number" min="2" max="10" value="@defaultTeamCount"
-                   @onchange="e => defaultTeamCount = int.TryParse(e.Value?.ToString(), out var n) ? n : defaultTeamCount" />
-        </div>
-        <div class="field">
-            <label class="form-label">OTP 자릿수</label>
-            <input class="form-control" type="number" min="4" max="8" value="@otpLength"
-                   @onchange="e => otpLength = int.TryParse(e.Value?.ToString(), out var n) ? n : otpLength" />
-        </div>
-    </div>
-    <button type="button" class="btn-primary btn-block" @onclick="SaveAsync">저장</button>
-</div>
-
-<div class="card settings-card">
     <h2 class="card-title">구글 시트 연동</h2>
     <div class="field">
         <label class="form-label">서비스 계정 키 (JSON 본문 또는 파일 경로) — 변경할 때만 입력</label>
@@ -78,11 +49,6 @@
 </div>
 
 @code {
-    private string schoolName = "";
-    private string clubName = "";
-    private string feeSheetUrl = "";
-    private int defaultTeamCount = 3;
-    private int otpLength = 4;
     private string serviceAccountKey = "";
     private List<EditableSheet> sheets = [];
     private string newSheetName = "";
@@ -99,33 +65,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var all = await SettingSvc.GetAllAsync();
-        schoolName = all.GetValueOrDefault("SchoolName", "");
-        clubName = all.GetValueOrDefault("ClubName", "");
-        feeSheetUrl = all.GetValueOrDefault("FeeSheetUrl", "");
-        defaultTeamCount = int.TryParse(all.GetValueOrDefault("DefaultTeamCount"), out var t) ? t : 3;
-        otpLength = int.TryParse(all.GetValueOrDefault("OtpLength"), out var o) ? o : 4;
         serviceAccountKey = ""; // 미리 불러오지 않는다 — 민감 키는 표시하지 않고 변경 시에만 입력
         sheets = (await SheetAdminSvc.GetListAsync())
             .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
             .ToList();
-    }
-
-    private async Task SaveAsync()
-    {
-        if (!string.IsNullOrEmpty(feeSheetUrl) && !Uri.IsWellFormedUriString(feeSheetUrl, UriKind.Absolute))
-        {
-            Snackbar.Add("회비 사용 내역 URL 형식이 올바르지 않습니다.", Severity.Warning);
-            return;
-        }
-
-        await SettingSvc.SetAsync("SchoolName", schoolName.Trim());
-        await SettingSvc.SetAsync("ClubName", clubName.Trim());
-        await SettingSvc.SetAsync("FeeSheetUrl", feeSheetUrl.Trim());
-        await SettingSvc.SetAsync("DefaultTeamCount", Math.Clamp(defaultTeamCount, 2, 10).ToString());
-        await SettingSvc.SetAsync("OtpLength", Math.Clamp(otpLength, 4, 8).ToString());
-        await Audit.LogAsync(AdminAction.SettingChange, "Setting", "*", "사이트 설정 변경");
-        Snackbar.Add("저장되었습니다.", Severity.Success);
     }
 
     private async Task SaveKeyAsync()

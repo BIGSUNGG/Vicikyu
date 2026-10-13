@@ -14,7 +14,6 @@ public class ActivityService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
-    ISettingService settings,
     ISheetSyncService sheetSync,
     TimeProvider timeProvider) : IActivityService
 {
@@ -87,19 +86,17 @@ public class ActivityService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await FindCurrentAsync(db, today);
 
-        activity.OtpCode = await GenerateOtpCodeAsync();
+        activity.OtpCode = GenerateOtpCode();
         activity.UpdatedAt = KstClock.NowUtc(timeProvider);
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.OtpChange, "Activity", activity.Id.ToString(), "당일 OTP 생성/변경");
         return activity.OtpCode;
     }
 
-    /// <summary>OTP 숫자 코드 생성 — 설정의 OtpLength(4~8)를 따른다.</summary>
-    private async Task<string> GenerateOtpCodeAsync()
+    /// <summary>OTP 숫자 코드 생성 — 4자리 고정.</summary>
+    private static string GenerateOtpCode()
     {
-        var length = Math.Clamp(await settings.GetIntAsync("OtpLength", 4), 4, 8);
-        var max = (int)Math.Pow(10, length);
-        return RandomNumberGenerator.GetInt32(0, max).ToString().PadLeft(length, '0');
+        return RandomNumberGenerator.GetInt32(0, 10000).ToString().PadLeft(4, '0');
     }
 
     public async Task<AdminTodayDto> StartActivityAsync()
@@ -114,7 +111,7 @@ public class ActivityService(
 
         if (string.IsNullOrEmpty(activity.OtpCode))
         {
-            activity.OtpCode = await GenerateOtpCodeAsync();
+            activity.OtpCode = GenerateOtpCode();
         }
 
         var now = KstClock.NowUtc(timeProvider);
@@ -147,7 +144,7 @@ public class ActivityService(
         {
             ActivityDate = today,
             Status = ActivityStatus.AttendanceOpen,
-            OtpCode = await GenerateOtpCodeAsync(),
+            OtpCode = GenerateOtpCode(),
             AttendanceOpenedAt = now,
             CreatedByUserId = adminId,
             CreatedAt = now,

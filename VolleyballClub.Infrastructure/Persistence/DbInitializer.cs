@@ -99,15 +99,6 @@ public static class DbInitializer
         var now = KstClock.NowUtc(timeProvider);
         var today = KstClock.Today(timeProvider);
 
-        // 설정 기본값
-        db.Settings.AddRange(
-            new Setting { Key = "SchoolName", Value = "OO대학교", UpdatedAt = now },
-            new Setting { Key = "ClubName", Value = "배구부", UpdatedAt = now },
-            new Setting { Key = "FeeSheetUrl", Value = "https://docs.google.com/spreadsheets/", UpdatedAt = now },
-            new Setting { Key = "DefaultTeamCount", Value = "3", UpdatedAt = now },
-            new Setting { Key = "OtpLength", Value = "4", UpdatedAt = now });
-        await db.SaveChangesAsync();
-
         // 관리자
         var admin = new ApplicationUser
         {

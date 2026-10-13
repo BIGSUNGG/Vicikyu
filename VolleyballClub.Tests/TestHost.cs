@@ -183,7 +183,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Db = new TestDb();
         Audit = new AuditLogService(Db.Factory, Current, Time);
         Settings = new SettingService(Db.Factory, Current, Time);
-        Activity = new ActivityService(Db.Factory, Current, Audit, Settings, SheetSync, Time);
+        Activity = new ActivityService(Db.Factory, Current, Audit, SheetSync, Time);
         Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);

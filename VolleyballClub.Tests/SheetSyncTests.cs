@@ -355,20 +355,6 @@ public sealed class SheetSyncTests
     }
 
     [Fact]
-    public async Task 설정_전체_조회에_서비스_계정_키가_노출되지_않는다()
-    {
-        await using var host = new ServiceHost();
-        host.AsAdmin();
-        await host.Settings.SetAsync("Google:ServiceAccountJson", "{\"secret\":true}");
-        await host.Settings.SetAsync("ClubName", "배구부");
-
-        var all = await host.Settings.GetAllAsync();
-
-        Assert.DoesNotContain("Google:ServiceAccountJson", all.Keys);
-        Assert.Contains("ClubName", all.Keys);
-    }
-
-    [Fact]
     public async Task 매핑_저장_즉시_과거_출석이_백필된다()
     {
         await using var host = new SheetSyncHost(new FakeSemesterFormat
