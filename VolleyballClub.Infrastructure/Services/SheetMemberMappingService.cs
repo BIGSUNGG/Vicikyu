@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Domain;
 using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Identity;
 using VolleyballClub.Infrastructure.Persistence;
@@ -16,7 +17,8 @@ public sealed class SheetMemberMappingService(
     ISheetFormatResolver resolver,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
-    ISheetSyncService sync) : ISheetMemberMappingService
+    ISheetSyncService sync,
+    TimeProvider time) : ISheetMemberMappingService
 {
     public async Task<List<MemberTabMappingDto>> GetForMemberAsync(string userId)
     {
@@ -127,6 +129,36 @@ public sealed class SheetMemberMappingService(
 
         // 매핑 변경 즉시 반영 — 재기동 없이 과거 출석이 백필된다
         return await TrySyncAsync();
+    }
+
+    public async Task<IReadOnlySet<string>> GetUnmappedUserIdsAsync()
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var tabName = resolver.ResolveByDate(KstClock.Today(time))?.TabName;
+        if (tabName is null)
+        {
+            return new HashSet<string>();
+        }
+
+        var sheetIds = await db.SheetDefinitions
+            .Where(s => s.Kind == SheetKind.Attendance)
+            .Select(s => s.Id)
+            .ToListAsync();
+        if (sheetIds.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        var mapped = await db.SheetMemberMappings
+            .Where(m => m.TabName == tabName && sheetIds.Contains(m.SheetDefinitionId))
+            .Select(m => m.UserId)
+            .ToHashSetAsync();
+
+        var unmapped = await db.Users.Select(u => u.Id).ToHashSetAsync();
+        unmapped.ExceptWith(mapped);
+        return unmapped;
     }
 
     /// <summary>동기화 실패는 매핑 저장을 롤백하지 않는다 — null 반환(다음 기동 SyncAsync가 반영).</summary>

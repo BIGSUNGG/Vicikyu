@@ -7,7 +7,7 @@
 
 <PageTitle>부원 관리 · 배구부</PageTitle>
 
-<AdminNav Icon="/icons/users.svg" Title="부원 관리" Sub="@($"{members.Count}명 · 검색·추가·수정")" Active="members" />
+<AdminNav Icon="/icons/users.svg" Title="부원 관리" Sub="@($"{members.Count}명 · 시트 미연결 {unmapped.Count}명")" Active="members" />
 
 <div class="card">
     <div class="field">
@@ -134,6 +134,14 @@
 
 <div class="card">
     <h2 class="card-title">부원 목록</h2>
+    <div class="toolbar-row">
+        <div class="filter-group">
+            @foreach (var (value, label) in new[] { (MemberFilter.All, "전체"), (MemberFilter.Active, "활성"), (MemberFilter.Inactive, "비활성"), (MemberFilter.Unmapped, "미지정") })
+            {
+                <button type="button" class="filter-btn @(filter == value ? "active" : "")" @onclick="() => filter = value">@label</button>
+            }
+        </div>
+    </div>
     <div class="card-list split-2">
         @foreach (var member in visibleMembers)
         {
@@ -153,6 +161,10 @@
                     <div class="member-meta">@member.StudentNumber · @member.Department · 총 출석 @(member.TotalAttendance)회</div>
                 </div>
                 <div style="margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+                    @if (unmapped.Contains(member.UserId))
+                    {
+                        <span class="badge badge-red">시트 미연결</span>
+                    }
                     <span class="badge @(member.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(member.Role == "ADMIN" ? "관리자" : "부원")</span>
                     <span class="badge @(member.FeePaidCurrent ? "badge-green" : "badge-red")">@(member.FeePaidCurrent ? "납부" : "미납")</span>
                 </div>
@@ -177,6 +189,8 @@
 
 @code {
     private List<MemberListDto> members = [];
+    private IReadOnlySet<string> unmapped = new HashSet<string>();
+    private MemberFilter filter = MemberFilter.All;
     private string search = "";
     private bool showAddForm;
     private MemberListDto? editing;
@@ -190,10 +204,18 @@
         get
         {
             var term = search.Trim();
-            return string.IsNullOrEmpty(term)
-                ? members
+            var query = string.IsNullOrEmpty(term)
+                ? members.AsEnumerable()
                 : members.Where(m => m.Name.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-                    || m.StudentNumber.Contains(term, StringComparison.CurrentCultureIgnoreCase)).ToList();
+                    || m.StudentNumber.Contains(term, StringComparison.CurrentCultureIgnoreCase));
+            query = filter switch
+            {
+                MemberFilter.Active => query.Where(m => m.IsActive),
+                MemberFilter.Inactive => query.Where(m => !m.IsActive),
+                MemberFilter.Unmapped => query.Where(m => unmapped.Contains(m.UserId)),
+                _ => query
+            };
+            return query.ToList();
         }
     }
 
@@ -207,6 +229,16 @@
         }
         catch (AppException ex)
         {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+
+        try
+        {
+            unmapped = await MappingSvc.GetUnmappedUserIdsAsync();
+        }
+        catch (AppException ex)
+        {
+            unmapped = new HashSet<string>();
             Snackbar.Add(ex.Message, Severity.Error);
         }
     }
@@ -355,6 +387,14 @@
         {
             Snackbar.Add(ex.Message, Severity.Error);
         }
+    }
+
+    private enum MemberFilter
+    {
+        All,
+        Active,
+        Inactive,
+        Unmapped
     }
 
     private class MemberCreateForm

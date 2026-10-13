@@ -388,7 +388,8 @@ public sealed class SheetSyncTests
             new FakeCurrentUser("admin-1", isAdmin: true),
             new AuditLogService(host.Db.Factory, new FakeCurrentUser("admin-1", isAdmin: true),
                 new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc))),
-            host.Sync);
+            host.Sync,
+            new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc)));
         var report = await mapping.SetMappingAsync(host.SheetId, "2026-1", user1, "박유진 24 만콘");
 
         Assert.NotNull(report);
