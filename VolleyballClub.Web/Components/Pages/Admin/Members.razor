@@ -16,58 +16,64 @@
         <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" @bind:event="oninput" @bind:after="SearchAsync" />
     </div>
 
-    <div class="field">
-        <label class="form-label">활동 상태 (복수 선택, 미선택 시 전체)</label>
-        <div class="filter-group">
-            @foreach (var (status, label) in new[] { (MemberStatus.Active, "활동 부원"), (MemberStatus.Withdrawn, "탈퇴 부원"), (MemberStatus.Expelled, "퇴출 부원") })
-            {
-                <button type="button" class="filter-btn @(selectedStatuses.Contains(status) ? "active" : "")"
-                        @onclick="() => ToggleStatusAsync(status)">@label</button>
-            }
-        </div>
+    <div class="toolbar-row members-toolbar">
+        <button type="button" class="btn-secondary" @onclick="() => showFilters = !showFilters">
+            필터 @(ActiveFilterCount > 0 ? $"({ActiveFilterCount})" : "") @(showFilters ? "▲" : "▼")
+        </button>
     </div>
 
-    <div class="toolbar-row">
-        <div class="filter-group">
-            @foreach (var (value, label) in new[] { ((bool?)null, "시트 전체"), (true, "시트 연결"), (false, "시트 미연결") })
-            {
-                <button type="button" class="filter-btn @(sheetMapped == value ? "active" : "")"
-                        @onclick="() => SetSheetFilterAsync(value)">@label</button>
-            }
-        </div>
-        <div class="filter-group">
-            @foreach (var (value, label) in new[] { ((bool?)null, "회비 전체"), (true, "완납"), (false, "미납") })
-            {
-                <button type="button" class="filter-btn @(feePaid == value ? "active" : "")"
-                        @onclick="() => SetFeeFilterAsync(value)">@label</button>
-            }
-        </div>
-    </div>
+    @if (showFilters)
+    {
+        <div class="reveal">
+            <div class="filter-group">
+                @foreach (var (status, label) in new[] { (MemberStatus.Active, "활동 부원"), (MemberStatus.Withdrawn, "탈퇴 부원"), (MemberStatus.Expelled, "퇴출 부원") })
+                {
+                    <button type="button" class="filter-btn @(selectedStatuses.Contains(status) ? "active" : "")"
+                            @onclick="() => ToggleStatusAsync(status)">@label</button>
+                }
+            </div>
 
-    <div class="toolbar-row">
-        <div class="field">
-            <label class="form-label">정렬</label>
-            <select class="form-control" value="@sort" @onchange="e => SetSortAsync(Enum.Parse<MemberSortField>(e.Value!.ToString()!))">
-                <option value="@MemberSortField.TotalAttendance">총 출석 수</option>
-                <option value="@MemberSortField.SemesterAttendance">이번 학기 출석 수</option>
-                <option value="@MemberSortField.MonthAttendance">이번 달 출석 수</option>
-                <option value="@MemberSortField.StudentNumber">학번</option>
-                <option value="@MemberSortField.Name">이름</option>
-                <option value="@MemberSortField.Department">학과</option>
-            </select>
+            <div class="toolbar-row">
+                <div class="filter-group">
+                    @foreach (var (value, label) in new[] { (true, "시트 연결"), (false, "시트 미연결") })
+                    {
+                        <button type="button" class="filter-btn @(sheetMapped == value ? "active" : "")"
+                                @onclick="() => SetSheetFilterAsync(value)">@label</button>
+                    }
+                </div>
+                <div class="filter-group">
+                    @foreach (var (value, label) in new[] { (true, "회비 완납"), (false, "회비 미납") })
+                    {
+                        <button type="button" class="filter-btn @(feePaid == value ? "active" : "")"
+                                @onclick="() => SetFeeFilterAsync(value)">@label</button>
+                    }
+                </div>
+            </div>
         </div>
+    }
+
+    <div class="toolbar-row members-sortbar">
         <div class="field">
-            <label class="form-label">방향</label>
-            <button type="button" class="btn-secondary" @onclick="ToggleDirectionAsync">@(ascending ? "오름차순 ↑" : "내림차순 ↓")</button>
-        </div>
-        <div class="field">
-            <label class="form-label">페이지당 인원</label>
-            <select class="form-control" value="@pageSize" @onchange="e => SetPageSizeAsync(int.Parse(e.Value!.ToString()!))">
+            <select class="form-control" value="@pageSize" @onchange="e => SetPageSizeAsync(int.Parse(e.Value!.ToString()!))" aria-label="페이지당 인원">
                 @foreach (var size in new[] { 10, 20, 30, 40 })
                 {
                     <option value="@size" selected="@(size == pageSize)">@(size)개씩</option>
                 }
             </select>
+        </div>
+        <div class="sort-strip">
+            @foreach (var (field, label) in new[]
+                     {
+                         (MemberSortField.TotalAttendance, "총 출석"),
+                         (MemberSortField.SemesterAttendance, "이번 학기 출석"),
+                         (MemberSortField.MonthAttendance, "이번 달 출석"),
+                     })
+            {
+                var selected = sort == field;
+                <button type="button" class="sort-link @(selected ? "active" : "")" @onclick="() => ToggleSortAsync(field)">
+                    @label@(selected ? (ascending ? " ↑" : " ↓") : "")
+                </button>
+            }
         </div>
     </div>
 
@@ -164,16 +170,21 @@
     private HashSet<MemberStatus> selectedStatuses = [];
     private bool? sheetMapped;
     private bool? feePaid;
-    private MemberSortField sort = MemberSortField.Name;
-    private bool ascending = true;
+    private MemberSortField sort = MemberSortField.SemesterAttendance;
+    private bool ascending;
     private int pageSize = 10;
     private int pageNumber = 1;
     private bool showAddForm;
+    private bool showFilters;
     private MemberCreateForm createForm = new();
 
     private int TotalPages => page is null
         ? 1
         : Math.Max(1, (int)Math.Ceiling(page.TotalCount / (double)page.PageSize));
+
+    private int ActiveFilterCount => selectedStatuses.Count
+        + (sheetMapped is not null ? 1 : 0)
+        + (feePaid is not null ? 1 : 0);
 
     protected override async Task OnInitializedAsync() => await ReloadAsync();
 
@@ -218,28 +229,32 @@
 
     private async Task SetSheetFilterAsync(bool? value)
     {
-        sheetMapped = value;
+        // 토글 — 활성 버튼을 다시 누르면 해제(전체)
+        sheetMapped = sheetMapped == value ? null : value;
         pageNumber = 1;
         await ReloadAsync();
     }
 
     private async Task SetFeeFilterAsync(bool? value)
     {
-        feePaid = value;
+        feePaid = feePaid == value ? null : value;
         pageNumber = 1;
         await ReloadAsync();
     }
 
-    private async Task SetSortAsync(MemberSortField value)
+    private async Task ToggleSortAsync(MemberSortField value)
     {
-        sort = value;
-        pageNumber = 1;
-        await ReloadAsync();
-    }
+        // 같은 정렬 텍스트를 다시 누르면 오름/내림 전환, 다른 텍스트는 내림차순부터 시작
+        if (sort == value)
+        {
+            ascending = !ascending;
+        }
+        else
+        {
+            sort = value;
+            ascending = false;
+        }
 
-    private async Task ToggleDirectionAsync()
-    {
-        ascending = !ascending;
         pageNumber = 1;
         await ReloadAsync();
     }

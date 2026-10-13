@@ -141,6 +141,9 @@ public class MemberPageTests
             Sort: MemberSortField.TotalAttendance, Ascending: false));
         var asc = await host.Member.GetPageAsync(new MemberPageRequest(
             Sort: MemberSortField.MonthAttendance, Ascending: true));
+        var semDesc = await host.Member.GetPageAsync(new MemberPageRequest(
+            Sort: MemberSortField.SemesterAttendance, Ascending: false));
+        var defaults = await host.Member.GetPageAsync(new MemberPageRequest()); // 기본값 = 이번 학기 내림차순
 
         var busyRow = desc.Items.Single(m => m.UserId == busy);
         Assert.Equal(4, busyRow.TotalAttendance);
@@ -149,6 +152,8 @@ public class MemberPageTests
 
         Assert.Equal([busy, some, none], desc.Items.Select(m => m.UserId)); // 총 출석 내림: 4, 1, 0
         Assert.Equal([some, none, busy], asc.Items.Select(m => m.UserId)); // 10월 출석 오름: 0, 0(이름순), 2
+        Assert.Equal([busy, some, none], semDesc.Items.Select(m => m.UserId)); // 학기 출석 내림: 3, 1, 0
+        Assert.Equal([busy, some, none], defaults.Items.Select(m => m.UserId));
     }
 
     [Fact]

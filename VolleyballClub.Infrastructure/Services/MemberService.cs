@@ -81,9 +81,6 @@ public class MemberService(
 
         var ordered = (request.Sort, request.Ascending) switch
         {
-            (MemberSortField.StudentNumber, false) => query.OrderByDescending(u => u.StudentNumber),
-            (MemberSortField.Department, true) => query.OrderBy(u => u.Department).ThenBy(u => u.Name),
-            (MemberSortField.Department, false) => query.OrderByDescending(u => u.Department).ThenBy(u => u.Name),
             (MemberSortField.TotalAttendance, true) => query.OrderBy(u => db.Attendances.Count(a => a.UserId == u.Id)),
             (MemberSortField.TotalAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a => a.UserId == u.Id)),
             (MemberSortField.SemesterAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
@@ -92,10 +89,8 @@ public class MemberService(
                 a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
             (MemberSortField.MonthAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
                 a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
-            (MemberSortField.MonthAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a =>
+            _ => query.OrderByDescending(u => db.Attendances.Count(a =>
                 a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
-            (_, false) => query.OrderByDescending(u => u.Name),
-            _ => query.OrderBy(u => u.Name),
         };
 
         // 동률 행의 2차 정렬 — 페이지를 넘길 때 순서가 흔들려 행이 중복/누락되는 것을 막는다

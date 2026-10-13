@@ -13,25 +13,22 @@ public record MemberListDto(
     bool FeePaidCurrent,
     string? Color);
 
-/// <summary>부원 목록 정렬 기준.</summary>
+/// <summary>부원 목록 정렬 기준 — 출석 수 3종(학번·이름·학과 정렬은 UI에서 제거됨).</summary>
 public enum MemberSortField
 {
-    Name,
-    StudentNumber,
-    Department,
     TotalAttendance,
     SemesterAttendance,
     MonthAttendance,
 }
 
-/// <summary>부원 목록 조회 요청 — 서버 쿼리 필터링·정렬·페이징.</summary>
+/// <summary>부원 목록 조회 요청 — 서버 쿼리 필터링·정렬·페이징. 기본 정렬은 이번 학기 출석 내림차순.</summary>
 public record MemberPageRequest(
     string? Search = null,
     IReadOnlyCollection<MemberStatus>? Statuses = null,
     bool? SheetMapped = null,
     bool? FeePaid = null,
-    MemberSortField Sort = MemberSortField.Name,
-    bool Ascending = true,
+    MemberSortField Sort = MemberSortField.SemesterAttendance,
+    bool Ascending = false,
     int Page = 1,
     int PageSize = 10);
 

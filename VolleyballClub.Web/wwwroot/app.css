@@ -1566,6 +1566,49 @@ button.court-head {
 	color: #b45309;
 }
 
+/* 정렬 텍스트 스트립 — 정렬 항목 텍스트를 누르면 해당 정렬, 다시 누르면 오름/내림 전환.
+   모바일에서는 우측 정렬 + 화면 폭의 약 1/3 */
+.sort-strip {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	width: 33%;
+	margin-left: auto;
+	gap: 2px;
+	margin-bottom: 10px;
+}
+
+.sort-link {
+	border: none;
+	background: none;
+	font-family: inherit;
+	font-weight: 800;
+	font-size: 0.72rem;
+	color: var(--vb-muted);
+	padding: 5px 7px;
+	border-radius: 12px;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease-out,
+		color 0.15s ease-out;
+}
+
+.sort-link:hover,
+.sort-link.active {
+	background: var(--vb-sun-soft);
+	color: #b45309;
+}
+
+/* 부원 관리 — 필터 버튼과 그 아래 정렬 줄의 세로 간격 */
+.members-toolbar {
+	margin-bottom: 12px;
+}
+
+.members-sortbar {
+	align-items: center;
+}
+
 .confirm-overlay {
 	position: fixed;
 	inset: 0;
@@ -1941,6 +1984,11 @@ button.court-head {
 
 	.toolbar-row .filter-group {
 		flex: 1;
+		margin-bottom: 0;
+	}
+
+	.toolbar-row .sort-strip {
+		width: auto;
 		margin-bottom: 0;
 	}
 
