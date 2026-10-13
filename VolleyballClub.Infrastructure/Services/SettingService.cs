@@ -46,7 +46,11 @@ public class SettingService(
     public async Task<Dictionary<string, string>> GetAllAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Settings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
+        // 서비스 계정 키(개인키)는 민감 — 관리자 페이지 렌더에도 노출하지 않는다.
+        // 시트 클라이언트는 Setting 테이블을 직접 읽으므로 여기서 제외해도 무관하다.
+        return await db.Settings.AsNoTracking()
+            .Where(s => s.Key != GoogleSheetClient.CredentialsSettingKey)
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
     }
 
     public async Task<string> GetClubDisplayNameAsync()

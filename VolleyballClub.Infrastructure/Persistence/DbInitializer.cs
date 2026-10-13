@@ -8,6 +8,7 @@ using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Identity;
 using VolleyballClub.Infrastructure.Persistence;
+using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Infrastructure.Persistence;
 
@@ -50,6 +51,37 @@ public static class DbInitializer
             user.Color = NextColor();
         }
         if (noColorUsers.Count > 0)
+        {
+            await db.SaveChangesAsync();
+        }
+
+        // 시트 연동 시드(멱등): 개발 구성의 자격증명·시트 ID가 있으면 Setting/SheetDefinition으로 옮긴다(1회)
+        var configuration = sp.GetRequiredService<IConfiguration>();
+        var seedNow = KstClock.NowUtc(sp.GetRequiredService<TimeProvider>());
+        if (!await db.Settings.AnyAsync(s => s.Key == GoogleSheetClient.CredentialsSettingKey)
+            && !string.IsNullOrWhiteSpace(configuration["Google:ServiceAccountJson"]))
+        {
+            db.Settings.Add(new Setting
+            {
+                Key = GoogleSheetClient.CredentialsSettingKey,
+                Value = configuration["Google:ServiceAccountJson"]!,
+                UpdatedAt = seedNow,
+            });
+        }
+
+        if (!await db.SheetDefinitions.AnyAsync() && !string.IsNullOrWhiteSpace(configuration["Google:SpreadsheetId"]))
+        {
+            db.SheetDefinitions.Add(new SheetDefinition
+            {
+                Name = "출석부",
+                SpreadsheetId = configuration["Google:SpreadsheetId"]!,
+                Kind = SheetKind.Attendance,
+                CreatedAt = seedNow,
+                UpdatedAt = seedNow,
+            });
+        }
+
+        if (db.ChangeTracker.HasChanges())
         {
             await db.SaveChangesAsync();
         }

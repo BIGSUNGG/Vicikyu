@@ -21,6 +21,10 @@ public class Activity
 
     public DateTime? ActivityClosedAt { get; set; }
 
+    /// <summary>시트 내보내기 완료 시각. null이면 마감됐지만 시트에 아직 기록 안 됨 — 시작 동기화가 복구한다.
+    /// 다시 열기(Reopen) 시 null로 초기화되어, 재마감 시 같은 날짜 열을 제자리 덮어써 변경분이 반영된다.</summary>
+    public DateTime? SheetExportedAt { get; set; }
+
     public string CreatedByUserId { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }

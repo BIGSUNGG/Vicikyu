@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "ADMIN")]
 
 @inject IMemberService MemberSvc
+@inject ISheetMemberMappingService MappingSvc
 @inject ISnackbar Snackbar
 
 <PageTitle>부원 관리 · 배구부</PageTitle>
@@ -99,6 +100,36 @@
             @(editing.IsActive ? "비활성화" : "활성화")
         </button>
     </div>
+
+    <div class="card reveal">
+        <h2 class="card-title">시트 연결 — @editing.Name</h2>
+        @if (tabMappings is null)
+        {
+            <p class="member-meta">시트에서 부원 행을 불러오는 중…</p>
+        }
+        else if (tabMappings.Count == 0)
+        {
+            <p class="member-meta">등록된 출석 시트가 없습니다 — 설정에서 먼저 등록하세요.</p>
+        }
+        else
+        {
+            @foreach (var tab in tabMappings)
+            {
+                <div class="field">
+                    <label class="form-label">@tab.SheetName · @tab.TabName 탭</label>
+                    <select class="form-control" value="@tab.CurrentRowLabel"
+                            @onchange="e => SetMappingAsync(tab, e.Value?.ToString())">
+                        <option value="">미지정</option>
+                        @foreach (var option in tab.Options)
+                        {
+                            <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
+                        }
+                    </select>
+                </div>
+            }
+            <p class="member-meta">★ 은 이름이 같아 추천하는 행입니다. 미지정 두면 동기화에서 건너뜁니다.</p>
+        }
+    </div>
 }
 
 <div class="card">
@@ -106,7 +137,7 @@
     <div class="card-list split-2">
         @foreach (var member in visibleMembers)
         {
-            <div class="member-row" style="cursor:pointer" @onclick="() => BeginEdit(member)">
+            <div class="member-row" style="cursor:pointer" @onclick="() => BeginEditAsync(member)">
                 <div>
                     <div class="member-name">
                         @if (member.Color is { } c)
@@ -152,6 +183,7 @@
     private MemberListDto? confirmDeactivate;
     private MemberCreateForm createForm = new();
     private MemberEditForm editForm = new();
+    private List<MemberTabMappingDto>? tabMappings;
 
     private List<MemberListDto> visibleMembers
     {
@@ -200,9 +232,10 @@
         }
     }
 
-    private void BeginEdit(MemberListDto member)
+    private async Task BeginEditAsync(MemberListDto member)
     {
         editing = member;
+        tabMappings = null;
         editForm = new MemberEditForm
         {
             StudentNumber = member.StudentNumber,
@@ -211,6 +244,42 @@
             Role = member.Role,
             Color = member.Color ?? Domain.MemberColors.Palette[0],
         };
+
+        await LoadMappingsAsync(member.UserId);
+    }
+
+    private async Task LoadMappingsAsync(string userId)
+    {
+        try
+        {
+            tabMappings = await MappingSvc.GetForMemberAsync(userId);
+        }
+        catch (AppException ex)
+        {
+            tabMappings = [];
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception)
+        {
+            tabMappings = [];
+            Snackbar.Add("시트를 읽지 못했습니다 — 키·공유 상태를 확인하세요.", Severity.Error);
+        }
+    }
+
+    private async Task SetMappingAsync(MemberTabMappingDto tab, string? rowLabel)
+    {
+        try
+        {
+            await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, editing!.UserId,
+                string.IsNullOrEmpty(rowLabel) ? null : rowLabel);
+            tabMappings = [.. (tabMappings ?? []).Select(t => t == tab
+                ? t with { CurrentRowLabel = string.IsNullOrEmpty(rowLabel) ? null : rowLabel }
+                : t)];
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private async Task SaveEditAsync()

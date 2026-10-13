@@ -404,3 +404,8 @@ FodyWeavers.xsd
 .pi-glla/
 .pi-subagents/
 .diag/
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal

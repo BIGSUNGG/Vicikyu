@@ -28,6 +28,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public DbSet<SheetDefinition> SheetDefinitions => Set<SheetDefinition>();
+
+    public DbSet<SheetMemberMapping> SheetMemberMappings => Set<SheetMemberMapping>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

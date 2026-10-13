@@ -1,0 +1,187 @@
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Services;
+using Google.Apis.Sheets.v4;
+using Google.Apis.Sheets.v4.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using VolleyballClub.Application.Abstractions;
+using VolleyballClub.Application.Dtos;
+using VolleyballClub.Infrastructure.Persistence;
+
+namespace VolleyballClub.Infrastructure.Services;
+
+/// <summary>Google Sheets API 기반 ISheetClient 구현.
+/// 자격증명(서비스 계정 JSON 본문 또는 파일 경로)은 Setting 테이블의 Google:ServiceAccountJson 값을
+/// 우선 사용하고, 없으면 구성(개발 user-secrets) 값으로 폴백한다 — 값이 바뀌면 서비스를 재구성한다.</summary>
+public sealed class GoogleSheetClient(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    IConfiguration configuration) : ISheetClient
+{
+    public const string CredentialsSettingKey = "Google:ServiceAccountJson";
+
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private SheetsService? service;
+    private string? serviceCredentials;
+
+    public async Task<IReadOnlyList<SheetTab>> GetTabsAsync(
+        string spreadsheetId, IEnumerable<string>? tabNames = null, CancellationToken ct = default)
+    {
+        var svc = await GetServiceAsync(ct);
+        var names = tabNames is null
+            ? (await GetSheetPropertiesAsync(svc, spreadsheetId, fields: "sheets(properties(title))", ct))
+                .Select(p => p.Title!.ToString())
+                .ToList()
+            : tabNames.ToList();
+        if (names.Count == 0)
+        {
+            return [];
+        }
+
+        var batch = svc.Spreadsheets.Values.BatchGet(spreadsheetId);
+        batch.Ranges = names;
+        var response = await batch.ExecuteAsync(ct);
+
+        // BatchGet은 요청 순서대로 반환한다. 빈 탭은 Values가 null로 온다.
+        return names.Select((name, i) => new SheetTab(
+                name,
+                ToRows(response.ValueRanges is not null && i < response.ValueRanges.Count
+                    ? response.ValueRanges[i].Values
+                    : null)))
+            .ToList();
+    }
+
+    public async Task WriteColumnAsync(
+        string spreadsheetId, string tabName, int columnIndex, SheetColumn column, CancellationToken ct = default)
+    {
+        if (column.Cells.Count == 0)
+        {
+            return;
+        }
+
+        var svc = await GetServiceAsync(ct);
+        var letter = ColumnLetter(columnIndex);
+        var lastRow = column.FirstRowIndex + column.Cells.Count - 1;
+        var range = $"{QuoteTab(tabName)}!{letter}{column.FirstRowIndex}:{letter}{lastRow}";
+
+        var update = svc.Spreadsheets.Values.Update(
+            new ValueRange
+            {
+                Values = column.Cells.Select(cell => (IList<object>)new List<object> { cell }).ToList(),
+            },
+            spreadsheetId,
+            range);
+        update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.RAW;
+        await update.ExecuteAsync(ct);
+    }
+
+    public async Task InsertColumnAsync(
+        string spreadsheetId, string tabName, int columnIndex, SheetColumn column, CancellationToken ct = default)
+    {
+        var svc = await GetServiceAsync(ct);
+        var sheetId = (await GetSheetPropertiesAsync(
+                svc,
+                spreadsheetId,
+                fields: "sheets(properties(sheetId,title))",
+                ct))
+            .FirstOrDefault(p => p.Title == tabName)?.SheetId
+            ?? throw new InvalidOperationException($"시트에서 탭 '{tabName}'을(를) 찾을 수 없습니다.");
+
+        var request = new BatchUpdateSpreadsheetRequest
+        {
+            Requests =
+            [
+                new Request
+                {
+                    InsertDimension = new InsertDimensionRequest
+                    {
+                        Range = new DimensionRange
+                        {
+                            SheetId = sheetId,
+                            Dimension = "COLUMNS",
+                            StartIndex = columnIndex - 1, // 0-based, 반 닫힌 구간
+                            EndIndex = columnIndex,
+                        },
+                        // 왼쪽(이전 날짜) 열 서식을 상속해 날짜 열 서식을 유지한다
+                        InheritFromBefore = true,
+                    },
+                },
+            ],
+        };
+        await svc.Spreadsheets.BatchUpdate(request, spreadsheetId).ExecuteAsync(ct);
+
+        await WriteColumnAsync(spreadsheetId, tabName, columnIndex, column, ct);
+    }
+
+    private async Task<SheetsService> GetServiceAsync(CancellationToken ct)
+    {
+        var credentials = await GetCurrentCredentialsAsync(ct);
+        if (service is not null && serviceCredentials == credentials)
+        {
+            return service;
+        }
+
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (service is not null && serviceCredentials == credentials)
+            {
+                return service;
+            }
+
+            var credential = credentials.TrimStart().StartsWith('{')
+                ? CredentialFactory.FromJson<ServiceAccountCredential>(credentials).ToGoogleCredential()
+                : (await CredentialFactory.FromFileAsync<ServiceAccountCredential>(credentials, ct)).ToGoogleCredential();
+            service?.Dispose();
+            service = new SheetsService(new BaseClientService.Initializer
+            {
+                HttpClientInitializer = credential.CreateScoped(SheetsService.Scope.Spreadsheets),
+            });
+            serviceCredentials = credentials;
+            return service;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<string> GetCurrentCredentialsAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var fromSetting = await db.Settings
+            .Where(s => s.Key == CredentialsSettingKey)
+            .Select(s => s.Value)
+            .FirstOrDefaultAsync(ct);
+        return fromSetting
+            ?? configuration["Google:ServiceAccountJson"]
+            ?? throw new InvalidOperationException(
+                "구글 시트 자격증명이 없습니다. 관리자 설정의 서비스 계정 키 또는 user-secrets 'Google:ServiceAccountJson'을 확인하세요.");
+    }
+
+    private static async Task<IList<SheetProperties>> GetSheetPropertiesAsync(
+        SheetsService svc, string spreadsheetId, string fields, CancellationToken ct)
+    {
+        var request = svc.Spreadsheets.Get(spreadsheetId);
+        request.Fields = fields;
+        var spreadsheet = await request.ExecuteAsync(ct);
+        return spreadsheet.Sheets.Select(sheet => sheet.Properties).ToList();
+    }
+
+    private static IReadOnlyList<IReadOnlyList<string>> ToRows(IList<IList<object>>? values) =>
+        values?.Select(row => (IReadOnlyList<string>)row.Select(cell => cell?.ToString() ?? "").ToList()).ToList()
+            ?? [];
+
+    private static string QuoteTab(string tabName) => $"'{tabName.Replace("'", "''")}'";
+
+    private static string ColumnLetter(int column)
+    {
+        var letters = "";
+        while (column > 0)
+        {
+            letters = (char)('A' + (column - 1) % 26) + letters;
+            column = (column - 1) / 26;
+        }
+
+        return letters;
+    }
+}

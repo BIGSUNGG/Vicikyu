@@ -21,7 +21,7 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
         // Blazor Interactive Server에서 DbContext를 회로에 오래 들고 있지 않도록 팩토리 사용(호출마다 단기 컨텍스트)
-        services.AddDbContextFactory<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContextFactory<ApplicationDbContext>(options => options.UseSqlite(connectionString));
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
@@ -40,6 +40,17 @@ public static class DependencyInjection
             .AddDefaultTokenProviders();
 
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ISheetClient, GoogleSheetClient>();
+        services.AddSingleton<ISheetFormatResolver, SheetFormatResolver>();
+        services.AddScoped<ISheetSyncService, SheetSyncService>();
+        services.AddScoped<ISheetAdminService, SheetAdminService>();
+        services.AddScoped<ISheetMemberMappingService, SheetMemberMappingService>();
+
+        // 학기별 출석부 서식 전략(Design/sheet-formats.md) — 새 학기는 SemesterTabFormat.All()에 추가
+        foreach (var format in SemesterTabFormat.All())
+        {
+            services.AddSingleton<ISemesterSheetFormat>(format);
+        }
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ISettingService, SettingService>();
         services.AddScoped<IAuditLogService, AuditLogService>();

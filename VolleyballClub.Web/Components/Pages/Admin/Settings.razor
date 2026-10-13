@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "ADMIN")]
 
 @inject ISettingService SettingSvc
+@inject ISheetAdminService SheetAdminSvc
 @inject IAuditLogService Audit
 @inject ISnackbar Snackbar
 
@@ -38,12 +39,63 @@
     <button type="button" class="btn-primary btn-block" @onclick="SaveAsync">저장</button>
 </div>
 
+<div class="card settings-card">
+    <h2 class="card-title">구글 시트 연동</h2>
+    <div class="field">
+        <label class="form-label">서비스 계정 키 (JSON 본문 또는 파일 경로) — 변경할 때만 입력</label>
+        <textarea class="form-control" rows="3" @bind="serviceAccountKey"
+                  placeholder='{"type": "service_account", …} 또는 C:\path\key.json'></textarea>
+    </div>
+    <button type="button" class="btn-primary btn-block" @onclick="SaveKeyAsync">키 저장</button>
+    <div style="height:10px"></div>
+    <h2 class="card-title">시트 목록 (종류별)</h2>
+    @foreach (var sheet in sheets)
+    {
+        <div class="btn-row" style="align-items:flex-end">
+            <div class="field" style="flex:1">
+                <label class="form-label">이름</label>
+                <input class="form-control" @bind="sheet.Name" />
+            </div>
+            <div class="field" style="flex:2">
+                <label class="form-label">주소 (docs.google.com/…)</label>
+                <input class="form-control" @bind="sheet.SpreadsheetId" />
+            </div>
+            <button type="button" class="btn-secondary" @onclick="() => SaveSheetAsync(sheet)">저장</button>
+            <button type="button" class="btn-danger" @onclick="() => DeleteSheetAsync(sheet)">삭제</button>
+        </div>
+    }
+    <div class="btn-row" style="align-items:flex-end">
+        <div class="field" style="flex:1">
+            <label class="form-label">새 시트 이름</label>
+            <input class="form-control" @bind="newSheetName" placeholder="출석부" />
+        </div>
+        <div class="field" style="flex:2">
+            <label class="form-label">새 시트 주소</label>
+            <input class="form-control" @bind="newSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" />
+        </div>
+        <button type="button" class="btn-secondary" @onclick="AddSheetAsync">추가</button>
+    </div>
+</div>
+
 @code {
     private string schoolName = "";
     private string clubName = "";
     private string feeSheetUrl = "";
     private int defaultTeamCount = 3;
     private int otpLength = 4;
+    private string serviceAccountKey = "";
+    private List<EditableSheet> sheets = [];
+    private string newSheetName = "";
+    private string newSheetUrl = "";
+
+    private class EditableSheet
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = "";
+
+        public string SpreadsheetId { get; set; } = "";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,6 +105,10 @@
         feeSheetUrl = all.GetValueOrDefault("FeeSheetUrl", "");
         defaultTeamCount = int.TryParse(all.GetValueOrDefault("DefaultTeamCount"), out var t) ? t : 3;
         otpLength = int.TryParse(all.GetValueOrDefault("OtpLength"), out var o) ? o : 4;
+        serviceAccountKey = ""; // 미리 불러오지 않는다 — 민감 키는 표시하지 않고 변경 시에만 입력
+        sheets = (await SheetAdminSvc.GetListAsync())
+            .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
+            .ToList();
     }
 
     private async Task SaveAsync()
@@ -70,5 +126,64 @@
         await SettingSvc.SetAsync("OtpLength", Math.Clamp(otpLength, 4, 8).ToString());
         await Audit.LogAsync(AdminAction.SettingChange, "Setting", "*", "사이트 설정 변경");
         Snackbar.Add("저장되었습니다.", Severity.Success);
+    }
+
+    private async Task SaveKeyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(serviceAccountKey))
+        {
+            Snackbar.Add("저장된 키를 유지합니다 — 변경할 때만 입력하세요.", Severity.Info);
+            return;
+        }
+
+        await SettingSvc.SetAsync("Google:ServiceAccountJson", serviceAccountKey.Trim());
+        await Audit.LogAsync(AdminAction.SettingChange, "Setting", "Google:ServiceAccountJson", "구글 시트 키 변경");
+        Snackbar.Add("키가 저장되었습니다. 다음 동기화부터 적용됩니다.", Severity.Success);
+        serviceAccountKey = "";
+    }
+
+    private async Task SaveSheetAsync(EditableSheet sheet)
+    {
+        try
+        {
+            await SheetAdminSvc.SaveAsync(sheet.Id, sheet.Name, sheet.SpreadsheetId);
+            Snackbar.Add($"시트 '{sheet.Name.Trim()}' 저장 완료", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task AddSheetAsync()
+    {
+        try
+        {
+            await SheetAdminSvc.SaveAsync(null, newSheetName, newSheetUrl);
+            Snackbar.Add($"시트 '{newSheetName.Trim()}' 추가 완료", Severity.Success);
+            newSheetName = "";
+            newSheetUrl = "";
+            sheets = (await SheetAdminSvc.GetListAsync())
+                .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
+                .ToList();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteSheetAsync(EditableSheet sheet)
+    {
+        try
+        {
+            await SheetAdminSvc.DeleteAsync(sheet.Id);
+            Snackbar.Add($"시트 '{sheet.Name}' 삭제", Severity.Success);
+            sheets.Remove(sheet);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 }

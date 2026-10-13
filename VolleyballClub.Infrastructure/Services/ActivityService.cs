@@ -15,6 +15,7 @@ public class ActivityService(
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
     ISettingService settings,
+    ISheetSyncService sheetSync,
     TimeProvider timeProvider) : IActivityService
 {
     public async Task<AdminTodayDto> GetOrCreateTodayAsync()
@@ -215,6 +216,13 @@ public class ActivityService(
         await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(),
             $"오늘 활동 마감{(teams.Count > 0 ? $" (팀 {teams.Count}개 삭제)" : string.Empty)}");
 
+        // 시트 출석부 내보내기 — 실패해도 마감은 유지한다(다음 시작 동기화가 복구)
+        if (!await sheetSync.ExportClosedActivityAsync(activity.Id))
+        {
+            await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(),
+                "시트 내보내기 실패 — 다음 기동 시 재동기화 예정");
+        }
+
         return await LoadAdminDtoAsync(db, activity.Id);
     }
 
@@ -232,6 +240,8 @@ public class ActivityService(
         // 마감 시 팀이 삭제되므로 항상 출석 상태로 복귀한다
         activity.Status = ActivityStatus.AttendanceOpen;
         activity.ActivityClosedAt = null;
+        // 다시 열면 시트 재기록 대상으로 — 재마감 시 같은 날짜 열을 제자리 덮어쓰므로 중복 열이 생기지 않는다
+        activity.SheetExportedAt = null;
         activity.UpdatedAt = now;
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.ActivityReopen, "Activity", activity.Id.ToString(), "활동 다시 열기");

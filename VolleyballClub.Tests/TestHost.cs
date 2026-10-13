@@ -15,6 +15,21 @@ using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
 
+/// <summary>시트 동기화 스텁 — 마감 내보내기 호출만 기록한다.</summary>
+public sealed class FakeSheetSyncService : ISheetSyncService
+{
+    public List<int> ExportedActivityIds { get; } = [];
+
+    public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) =>
+        Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
+
+    public Task<bool> ExportClosedActivityAsync(int activityId, CancellationToken ct = default)
+    {
+        ExportedActivityIds.Add(activityId);
+        return Task.FromResult(true);
+    }
+}
+
 /// <summary>시간을 고정하는 TimeProvider — '오늘'과 OTP 시각을 테스트에서 제어한다.</summary>
 public sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
 {
@@ -127,6 +142,8 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public ISemesterService Semester { get; }
 
+    public FakeSheetSyncService SheetSync { get; } = new();
+
     public IMemberService Member { get; }
 
     /// <summary>테스트 검증용(비밀번호 확인 등) — 서비스와 별개 컨텍스트로 DB를 읽는다.</summary>
@@ -143,7 +160,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Db = new TestDb();
         Audit = new AuditLogService(Db.Factory, Current, Time);
         Settings = new SettingService(Db.Factory, Current, Time);
-        Activity = new ActivityService(Db.Factory, Current, Audit, Settings, Time);
+        Activity = new ActivityService(Db.Factory, Current, Audit, Settings, SheetSync, Time);
         Attendance = new AttendanceService(Db.Factory, Current, Audit, Time);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);

@@ -90,9 +90,9 @@ ASP.NET 웹 백엔드 프로젝트. 이 파일은 pi 하네스가 매 세션 시
 
 ```bash
 dotnet build                 # 전체 솔루션 빌드(0 오류 기준)
-dotnet test                  # xUnit 전체(32개, VolleyballClub.Tests)
+dotnet test                  # xUnit 전체(69개, VolleyballClub.Tests)
 
-# EF Core 마이그레이션(로컬 PostgreSQL 대상 — 연결 문자열은 Web 프로젝트 user-secrets)
+# EF Core 마이그레이션(로컬 SQLite — 연결 문자열은 Web appsettings.json)
 dotnet ef database update --project VolleyballClub.Infrastructure --startup-project VolleyballClub.Web
 
 # 실행(Development — 자동 마이그레이션+시드)
