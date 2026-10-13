@@ -26,7 +26,10 @@
         @if (!string.IsNullOrEmpty(today.OtpCode))
         {
             <div style="margin-bottom:12px">
-                <div class="card-title">오늘 OTP · 부원에게 보여주세요</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                    <div class="card-title">오늘 OTP · 부원에게 보여주세요</div>
+                    <button type="button" class="sec-expand" aria-label="OTP 확대해서 보기" @onclick="() => showOtpZoom = true">⤢</button>
+                </div>
                 <div class="otp-big">
                     @{ var i = 0; }
                     @foreach (var ch in today.OtpCode)
@@ -97,6 +100,25 @@
     }
 </div>
 </div>
+
+@if (showOtpZoom && !string.IsNullOrEmpty(today?.OtpCode))
+{
+    <div class="otp-fs" @onclick="() => showOtpZoom = false">
+        <div class="otp-fs-panel" @onclick:stopPropagation="true">
+            <div class="otp-fs-head">
+                <span class="sec-title">오늘의 OTP</span>
+                <button type="button" class="team-fs-close" @onclick="() => showOtpZoom = false" aria-label="닫기">✕</button>
+            </div>
+            <div class="otp-fs-body">
+                @{ var j = 0; }
+                @foreach (var ch in today?.OtpCode ?? "")
+                {
+                    <span @key="@(j++ + "-" + ch)">@ch</span>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @if (showCancelConfirm)
 {
@@ -183,6 +205,7 @@
 
     private AdminTodayDto? today;
     private List<TeamResultDto> teams = [];
+    private bool showOtpZoom;
     private bool showCloseConfirm;
     private bool showReopenConfirm;
     private bool showStartNewConfirm;
