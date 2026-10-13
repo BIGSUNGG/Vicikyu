@@ -14,6 +14,7 @@ public class AttendanceService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
+    ISheetFormatResolver formatResolver,
     TimeProvider timeProvider) : IAttendanceService
 {
     public async Task<DateTime> CheckInWithOtpAsync(string otp)
@@ -193,7 +194,7 @@ public class AttendanceService(
 
         var activityIdsByDate = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
-            .Select(a => new { a.Id, a.ActivityDate, a.Status })
+            .Select(a => new { a.Id, a.ActivityDate, a.Status, a.CreatedByUserId })
             .ToListAsync();
 
         // 같은 날 여러 세션이면 하루 치로 병합한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
@@ -203,10 +204,14 @@ public class AttendanceService(
             .ToList();
 
         // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
-        // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
+        // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지).
+        // 시트 가져오기 활동은 그 학기 탭에 매핑된 부원만 결석으로 표시한다(비회원 학기 제외)
         var attendedDates = myAttendances.Select(x => x.ActivityDate).ToHashSet();
+        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
         days.AddRange(activityIdsByDate
-            .Where(a => a.Status == ActivityStatus.ActivityClosed && !attendedDates.Contains(a.ActivityDate))
+            .Where(a => a.Status == ActivityStatus.ActivityClosed
+                && !attendedDates.Contains(a.ActivityDate)
+                && CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
             .GroupBy(a => a.ActivityDate)
             .Select(g => new CalendarDayDto(g.Key, false, null, IsMissed: true)));
 
@@ -219,6 +224,27 @@ public class AttendanceService(
 
         return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount, scope);
     }
+
+    /// <summary>이 부원이 시트 탭에 매핑된 학기 기간 목록 — 매핑은 곧 '그 학기에 부원이었다'의 판별 근거.</summary>
+    private async Task<List<(DateOnly From, DateOnly To)>> GetMappedPeriodsAsync(ApplicationDbContext db, string userId)
+    {
+        var tabNames = await db.SheetMemberMappings.AsNoTracking()
+            .Where(m => m.UserId == userId)
+            .Select(m => m.TabName)
+            .ToListAsync();
+
+        return tabNames
+            .Select(formatResolver.ResolveByTabName)
+            .Where(format => format is not null)
+            .Select(format => (format!.From, format.To))
+            .ToList();
+    }
+
+    /// <summary>미출석 계산 대상 활동인지 — 앱 활동은 항상 대상,
+    /// 시트 가져오기 활동은 그 학기 탭에 매핑된 부원만 대상(비회원 학기의 과거 활동은 미출석에서 제외).</summary>
+    private static bool CountsForUser(string createdByUserId, DateOnly activityDate, List<(DateOnly From, DateOnly To)> mappedPeriods) =>
+        createdByUserId != Activity.SheetImportCreator
+        || mappedPeriods.Any(p => activityDate >= p.From && activityDate <= p.To);
 
     /// <summary>현재 학기 범위 DTO — 학기 행이 없으면 기본 규칙 범위에 Name=null.</summary>
     private async Task<SemesterScopeDto> GetCurrentSemesterScopeAsync(ApplicationDbContext db)
@@ -242,7 +268,7 @@ public class AttendanceService(
 
         var activities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
-            .Select(a => new { a.Id, a.ActivityDate, a.Status })
+            .Select(a => new { a.Id, a.ActivityDate, a.Status, a.CreatedByUserId })
             .ToListAsync();
 
         var myAttendances = await db.Attendances.AsNoTracking()
@@ -250,7 +276,14 @@ public class AttendanceService(
             .Select(x => new { x.ActivityId, x.CheckedAt })
             .ToListAsync();
 
-        var records = activities
+        // 시트 가져오기 활동 중 이 부원이 매핑되지 않은 학기는 비회원 기간 — 미출석으로 표시하지 않는다
+        var attendedIds = myAttendances.Select(x => x.ActivityId).ToHashSet();
+        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
+        var visible = activities
+            .Where(a => attendedIds.Contains(a.Id) || CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
+            .ToList();
+
+        var records = visible
             .OrderByDescending(a => a.ActivityDate)
             .ThenByDescending(a => a.Id) // 같은 날 여러 세션은 최신 세션 우선
             .Select(a =>
@@ -265,7 +298,7 @@ public class AttendanceService(
             })
             .ToList();
 
-        return new MyRecordsDto(year, month, records, myAttendances.Count, activities.Count);
+        return new MyRecordsDto(year, month, records, myAttendances.Count, visible.Count);
     }
 
     public async Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId)
@@ -274,19 +307,25 @@ public class AttendanceService(
         var scope = await GetCurrentSemesterScopeAsync(db);
         var (semStart, semEnd) = (scope.Start, scope.End);
 
-        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모
+        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모.
+        // 시트 가져오기 활동 중 이 부원이 매핑되지 않은 학기는 비회원 기간 — 분모에서도 제외한다
         var semesterActivities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
-            .Select(a => a.Id)
+            .Select(a => new { a.Id, a.ActivityDate, a.CreatedByUserId })
             .ToListAsync();
+        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
+        var countedActivities = semesterActivities
+            .Where(a => CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
+            .Select(a => a.Id)
+            .ToList();
 
         var myAttendances = await db.Attendances.AsNoTracking()
-            .CountAsync(x => x.UserId == userId && semesterActivities.Contains(x.ActivityId));
+            .CountAsync(x => x.UserId == userId && countedActivities.Contains(x.ActivityId));
 
         var totalActiveMembers = await db.Users.CountAsync(u => u.IsActive);
 
         var counts = await db.Attendances.AsNoTracking()
-            .Where(x => semesterActivities.Contains(x.ActivityId))
+            .Where(x => countedActivities.Contains(x.ActivityId))
             .GroupBy(x => x.UserId)
             .Select(g => new { UserId = g.Key, Count = g.Count() })
             .ToListAsync();
@@ -294,8 +333,8 @@ public class AttendanceService(
         var myCount = counts.FirstOrDefault(c => c.UserId == userId)?.Count ?? 0;
         var rank = counts.Count(c => c.Count > myCount) + 1;
 
-        var rate = semesterActivities.Count == 0 ? 0 : (int)Math.Round(myAttendances * 100.0 / semesterActivities.Count);
-        return new MySemesterStatsDto(semesterActivities.Count, myAttendances, rate, rank, totalActiveMembers, scope);
+        var rate = countedActivities.Count == 0 ? 0 : (int)Math.Round(myAttendances * 100.0 / countedActivities.Count);
+        return new MySemesterStatsDto(countedActivities.Count, myAttendances, rate, rank, totalActiveMembers, scope);
     }
 
     public async Task<List<AttendanceRankingDto>> GetRankingAsync(RankingPeriod period, string? viewerUserId = null)

@@ -378,6 +378,78 @@ public sealed class SheetSyncTests
         Assert.Equal(1, await db.Attendances.CountAsync(a => a.AttendanceType == AttendanceType.Sheet));
     }
 
+    [Fact]
+    public async Task 시트가져오기_활동은_매핑된_학기만_미출석으로_표시한다()
+    {
+        // 전략은 2026-1(2/1~7/31)만 커버 — 매핑도 2026-1 탭에만 존재
+        var format = new FakeSemesterFormat("2026-1") { From = new DateOnly(2026, 2, 1), To = new DateOnly(2026, 7, 31) };
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver([format]));
+        var user = await host.SeedUserAsync("박유진", "2025120101");
+        await SeedImportedActivityAsync(host.Db, new DateOnly(2026, 3, 10)); // 매핑 학기
+        await SeedImportedActivityAsync(host.Db, new DateOnly(2026, 9, 11)); // 비회원 학기(2026-2)
+
+        await using (var db = host.Db.CreateContext())
+        {
+            var sheet = new SheetDefinition
+            {
+                Name = "출석부",
+                SpreadsheetId = "ss-test",
+                Kind = SheetKind.Attendance,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.SheetDefinitions.Add(sheet);
+            await db.SaveChangesAsync();
+            db.SheetMemberMappings.Add(new SheetMemberMapping
+            {
+                SheetDefinitionId = sheet.Id,
+                TabName = "2026-1",
+                RowLabel = "박유진 24 만콘",
+                UserId = user,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // 기록: 매핑 학기는 미출석으로 표시, 비회원 학기는 아예 표시하지 않는다
+        var march = await host.Attendance.GetMyRecordsAsync(user, 2026, 3);
+        Assert.Single(march.Records);
+        Assert.False(march.Records[0].IsAttended);
+        Assert.Equal(1, march.MonthActivities);
+
+        var september = await host.Attendance.GetMyRecordsAsync(user, 2026, 9);
+        Assert.Empty(september.Records);
+        Assert.Equal(0, september.MonthActivities);
+
+        // 달력: 비회원 학기 활동은 결석일로 표시하지 않는다
+        var calendar = await host.Attendance.GetMyCalendarAsync(user, 2026, 9);
+        Assert.DoesNotContain(calendar.Days, d => d.IsMissed);
+
+        // 학기 통계(고정 시각 2026-10-01 → 2026-2 범위): 비회원 학기 활동은 분모 제외
+        var stats = await host.Attendance.GetMySemesterStatsAsync(user);
+        Assert.Equal(0, stats.SemesterActivities);
+    }
+
+    private static async Task<Activity> SeedImportedActivityAsync(TestDb db, DateOnly date)
+    {
+        await using var ctx = db.CreateContext();
+        var now = DateTime.UtcNow;
+        var activity = new Activity
+        {
+            ActivityDate = date,
+            Status = ActivityStatus.ActivityClosed,
+            AttendanceOpenedAt = now,
+            AttendanceClosedAt = now,
+            ActivityClosedAt = now,
+            CreatedByUserId = Activity.SheetImportCreator,
+            CreatedAt = now,
+            UpdatedAt = now,
+            SheetExportedAt = now,
+        };
+        ctx.Activities.Add(activity);
+        await ctx.SaveChangesAsync();
+        return activity;
+    }
+
     private static async Task<(string Id1, string Id2)> SeedUsersAsync(TestDb db)
     {
         await using var ctx = db.CreateContext();

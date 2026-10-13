@@ -9,6 +9,12 @@ public interface ISemesterSheetFormat
     /// <summary>이 전략이 다루는 시트 탭 이름.</summary>
     string TabName { get; }
 
+    /// <summary>이 학기 탭이 커버하는 날짜 범위 시작 — 부원 매핑 기간(비회원 학기 판별) 산출에 사용.</summary>
+    DateOnly From { get; }
+
+    /// <summary>이 학기 탭이 커버하는 날짜 범위 끝.</summary>
+    DateOnly To { get; }
+
     /// <summary>활동 날짜가 이 학기 탭에 기록되는 범위인지.</summary>
     bool CoversDate(DateOnly date);
 

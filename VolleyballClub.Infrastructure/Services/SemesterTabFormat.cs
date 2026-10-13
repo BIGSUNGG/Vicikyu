@@ -13,6 +13,10 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
 
     public string TabName => tabName;
 
+    public DateOnly From => from;
+
+    public DateOnly To => to;
+
     /// <summary>등록된 전 학기 전략(Design/sheet-formats.md) — 새 학기는 여기에 한 줄 추가한다.</summary>
     public static IReadOnlyList<SemesterTabFormat> All() =>
     [

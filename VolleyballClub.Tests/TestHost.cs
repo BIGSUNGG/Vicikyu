@@ -144,6 +144,9 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public FakeSheetSyncService SheetSync { get; } = new();
 
+    /// <summary>출석 서비스가 참조할 학기 전략 리졸버 — 기본은 전략 없음(모든 시트 활동이 비회원 학기가 됨).</summary>
+    public ISheetFormatResolver FormatResolver { get; }
+
     public IMemberService Member { get; }
 
     /// <summary>테스트 검증용(비밀번호 확인 등) — 서비스와 별개 컨텍스트로 DB를 읽는다.</summary>
@@ -153,15 +156,16 @@ public sealed class ServiceHost : IAsyncDisposable
     {
     }
 
-    public ServiceHost(FixedTimeProvider time, FakeCurrentUser current)
+    public ServiceHost(FixedTimeProvider? time = null, FakeCurrentUser? current = null, ISheetFormatResolver? formatResolver = null)
     {
-        Time = time;
-        Current = current;
+        Time = time ?? new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
+        Current = current ?? new FakeCurrentUser();
+        FormatResolver = formatResolver ?? new SheetFormatResolver([]);
         Db = new TestDb();
         Audit = new AuditLogService(Db.Factory, Current, Time);
         Settings = new SettingService(Db.Factory, Current, Time);
         Activity = new ActivityService(Db.Factory, Current, Audit, Settings, SheetSync, Time);
-        Attendance = new AttendanceService(Db.Factory, Current, Audit, Time);
+        Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);

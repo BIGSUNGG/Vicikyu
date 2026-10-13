@@ -96,7 +96,7 @@ public sealed class SheetSyncService(
                     var now2 = KstClock.NowUtc(timeProvider);
                     if (existing is not null)
                     {
-                        if (existing.CreatedByUserId == "sheet-import"
+                        if (existing.CreatedByUserId == Activity.SheetImportCreator
                             && existing.SheetExportedAt is not null
                             && existing.Attendances.Count == 0
                             && userIds.Count > 0)
@@ -126,7 +126,7 @@ public sealed class SheetSyncService(
                         AttendanceOpenedAt = now,
                         AttendanceClosedAt = now,
                         ActivityClosedAt = now,
-                        CreatedByUserId = "sheet-import",
+                        CreatedByUserId = Activity.SheetImportCreator,
                         CreatedAt = now,
                         UpdatedAt = now,
                         // 이미 시트에 있는 열이므로 내보내기 대상에서 제외
