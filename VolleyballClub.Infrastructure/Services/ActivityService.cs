@@ -184,6 +184,11 @@ public class ActivityService(
         var attendanceCount = await db.Attendances.CountAsync(a => a.ActivityId == activity.Id);
         var guestCount = await db.Guests.CountAsync(g => g.ActivityId == activity.Id);
         var teamCount = await db.Teams.CountAsync(t => t.ActivityId == activity.Id);
+
+        // 마감으로 시트에 기록했던 출석 정보를 먼저 지운다(완료→없음 + 마크 공란) — 삭제 후엔 날짜를 알 수 없다.
+        // best-effort: 실패해도 취소는 진행한다(남은 시트 표기는 수기 정리 대상).
+        await sheetSync.RemoveCancelledActivityAsync(activity.Id);
+
         db.Activities.Remove(activity);
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.ActivityCancel, "Activity", activity.Id.ToString(),

@@ -62,6 +62,23 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
     private static string Cell(IReadOnlyList<string> row, int index0) =>
         row.Count > index0 ? row[index0].Trim() : "";
 
+    /// <summary>부원 구간의 끝(미포함) 행 인덱스 — '총 참여자 수'(없으면 '탈퇴/퇴출자') 라벨 행부터는
+    /// 집계·명단 구간이라 부원으로 읽지 않는다. 둘 다 없으면 시트 끝까지(탈퇴자가 부원 사이에 섞인 구 탭 호환).</summary>
+    private static int MemberEndRow(SheetTab tab, int headerIndex)
+    {
+        var end = tab.Rows.Count;
+        for (var row = headerIndex + 1; row < end; row++)
+        {
+            var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
+            if (label is "총 참여자 수" or "탈퇴/퇴출자")
+            {
+                return row;
+            }
+        }
+
+        return end;
+    }
+
     public SheetSemesterData Parse(SheetTab tab)
     {
         var (headerIndex, statusRow) = Layout(tab);
@@ -70,7 +87,7 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         foreach (var (date, col) in DateColumns(tab, headerIndex))
         {
             var attended = new List<string>();
-            for (var row = headerIndex + 1; row < tab.Rows.Count; row++)
+            for (var row = headerIndex + 1; row < MemberEndRow(tab, headerIndex); row++)
             {
                 var cells = tab.Rows[row];
                 var label = cells.Count > 0 ? cells[0].Trim() : "";
@@ -121,6 +138,56 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         return new SheetSemesterData(activities);
     }
 
+    /// <summary>'총 참여자 수' 라벨 행의 1-based 행 번호 — 없으면 0(수식 미기록).</summary>
+    private static int TotalsRow(SheetTab tab, int headerIndex)
+    {
+        for (var row = headerIndex + 1; row < tab.Rows.Count; row++)
+        {
+            var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
+            if (label == "총 참여자 수")
+            {
+                return row + 1;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>삽입 열의 총 참여자 수 수식 — 신형 COUNTIF("출석"), 구형 SUM("1").</summary>
+    private static string TotalsFormula(int column1Based, int firstMemberRow, int lastMemberRow, bool isNew)
+    {
+        var letter = ColumnLetter(column1Based);
+        return isNew
+            ? $"=COUNTIF({letter}{firstMemberRow}:{letter}{lastMemberRow},\"출석\")"
+            : $"=SUM({letter}{firstMemberRow}:{letter}{lastMemberRow})";
+    }
+
+    private static string ColumnLetter(int column)
+    {
+        var letters = "";
+        while (column > 0)
+        {
+            letters = (char)('A' + (column - 1) % 26) + letters;
+            column = (column - 1) / 26;
+        }
+
+        return letters;
+    }
+
+    /// <summary>삽입 경로의 부가 열 — 총 참여자 수 행 수식(있는 탭만).</summary>
+    private static SheetColumn? TotalsColumn(SheetTab tab, int headerIndex, int insertAt, int memberCount, bool isNew)
+    {
+        var totalsRow = TotalsRow(tab, headerIndex);
+        if (totalsRow == 0)
+        {
+            return null;
+        }
+
+        var firstMember = headerIndex + 2; // 1-based
+        var lastMember = firstMember + memberCount - 1;
+        return new SheetColumn(totalsRow, [TotalsFormula(insertAt, firstMember, lastMember, isNew)]);
+    }
+
     public SheetWriteTarget BuildColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels)
     {
         var (headerIndex, statusRow) = Layout(tab);
@@ -145,11 +212,21 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
             insertAt = (dateColumns.Count > 0 ? dateColumns[^1].Column : 1) + 1;
         }
 
-        // 신형 삽입 열은 상태(1행)+헤더(2행)+부원(3행~)이 연속이라 한 덩어리로 쓴다
+        // 신형 삽입 열은 상태(1행)+헤더(2행)+부원(3행~)이 연속이라 한 덩어리로 쓰고,
+        // 총 참여자 수 행 수식은 삽입 후 별도 쓰기(StatusColumn)로 채운다
         string[] cells = isNew
             ? [StatusCompleted, BuildHeaderText(tab, headerIndex, activityDate), .. marks]
             : [BuildHeaderText(tab, headerIndex, activityDate), .. marks];
-        return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells));
+        return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells),
+            TotalsColumn(tab, headerIndex, insertAt, marks.Count, isNew));
+    }
+
+    /// <summary>활동 날짜의 시트 열 번호(1-based) — 없으면 null. 취소 시 열 삭제에 쓴다.</summary>
+    public int? FindDateColumnIndex(SheetTab tab, DateOnly date)
+    {
+        var (headerIndex, _) = Layout(tab);
+        var exact = DateColumns(tab, headerIndex).FirstOrDefault(c => c.Date == date);
+        return exact.Date == date ? exact.Column : null;
     }
 
     public SheetWriteTarget? BuildLiveColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels)
@@ -162,7 +239,7 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         var dateColumns = DateColumns(tab, headerIndex).ToList();
         // 진행 중 마크: 출석자만 표시하고 미출석자는 공란(마감 전에는 아직 출석할 수 있으므로 — 예정 열 공란 규칙)
         var marks = new List<string>();
-        for (var row = headerIndex + 1; row < tab.Rows.Count; row++)
+        for (var row = headerIndex + 1; row < MemberEndRow(tab, headerIndex); row++)
         {
             var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
             marks.Add(label.Length > 0 && attendedRowLabels.Contains(label) ? MarkAttendedNew : "");
@@ -188,7 +265,8 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         }
 
         string[] cells = [StatusScheduled, BuildHeaderText(tab, headerIndex, activityDate), .. marks];
-        return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells));
+        return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells),
+            TotalsColumn(tab, headerIndex, insertAt, marks.Count, isNew: true));
     }
 
     private static IEnumerable<(DateOnly Date, int Column)> DateColumns(SheetTab tab, int headerIndex)
@@ -231,7 +309,7 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         SheetTab tab, int memberStartRow, IReadOnlySet<string> attendedRowLabels, bool isNew)
     {
         var marks = new List<string>();
-        for (var row = memberStartRow; row < tab.Rows.Count; row++)
+        for (var row = memberStartRow; row < MemberEndRow(tab, memberStartRow - 1); row++)
         {
             var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
             if (label.Length == 0)

@@ -15,6 +15,8 @@ public sealed class FakeSheetClient : ISheetClient
 
     public List<(string TabName, bool Insert, int ColumnIndex, SheetColumn Column)> Writes { get; } = [];
 
+    public List<(string TabName, int ColumnIndex)> Deletions { get; } = [];
+
     public Func<string, int, SheetColumn, Task>? WriteHandler { get; set; }
 
     public Func<string, int, SheetColumn, Task>? InsertHandler { get; set; }
@@ -49,6 +51,13 @@ public sealed class FakeSheetClient : ISheetClient
 
         Writes.Add((tabName, true, columnIndex, column));
     }
+
+    public Task DeleteColumnAsync(
+        string spreadsheetId, string tabName, int columnIndex, CancellationToken ct = default)
+    {
+        Deletions.Add((tabName, columnIndex));
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>학기 서식 스텁 — 파싱 결과와 열 생성을 테스트에서 주입한다.</summary>
@@ -76,6 +85,11 @@ public sealed class FakeSemesterFormat(string tabName = "2026-1") : ISemesterShe
 
     public SheetWriteTarget? BuildLiveColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels) =>
         BuildLiveHandler?.Invoke(activityDate, attendedRowLabels);
+
+    public Func<DateOnly, int?>? FindColumnHandler { get; set; }
+
+    public int? FindDateColumnIndex(SheetTab tab, DateOnly date) =>
+        FindColumnHandler?.Invoke(date);
 }
 
 /// <summary>SheetSyncService 테스트 호스트 — 시트 클라이언트·전략·시트 정의를 직접 조립한다.</summary>
@@ -742,6 +756,28 @@ public sealed class SheetSyncTests
         Assert.Equal(user1, openAttendance.UserId); // 진행 중 출석은 건드리지 않는다
     }
 
+    [Fact]
+    public async Task RemoveCancelledActivityAsync_그_날짜_열을_통째로_삭제한다()
+    {
+        await using var host = new SheetSyncHost(
+            new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
+        await host.SeedSheetAsync();
+        var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 9, 18));
+        host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
+
+        Assert.True(await host.Sync.RemoveCancelledActivityAsync(activity.Id));
+
+        // 9/18 열(1-based 4) 삭제 — 내용 지우기가 아니라 열 제거
+        Assert.Equal([("2026-2", 4)], host.Client.Deletions);
+        Assert.Empty(host.Client.Writes);
+
+        // 열이 없는 날짜 — 삭제 없이 true
+        var other = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 10, 10));
+        host.Client.Deletions.Clear();
+        Assert.True(await host.Sync.RemoveCancelledActivityAsync(other.Id));
+        Assert.Empty(host.Client.Deletions);
+    }
+
     private static async Task<Activity> SeedImportedActivityAsync(TestDb db, DateOnly date)
     {
         await using var ctx = db.CreateContext();
@@ -831,6 +867,10 @@ public sealed class SemesterTabFormatTests
         ["박유진 24 만화", "출석", "출석", "출석", "", "2", "", "", ""],
         ["김하영 25 게임", "활동 불가", "활동 불가", "활동 불가", "", "0", "", "", ""],
         ["김자형 25 만화", "미출석", "출석", "미출석", "", "0", "", "", ""],
+        // 부원 구간 끝 — 아래는 집계·명단이라 부원으로 읽지 않는다
+        ["총 참여자 수", "15", "35", "30", "0", "", "0", "0", "0"],
+        ["탈퇴/퇴출자", "", "", "", "", "", "", "", ""],
+        ["유지원 25 공연 (퇴)", "출석", "1", "", "", "", "", "", "출석"], // 마크가 있어도 무시
     ]);
 
     [Fact]
@@ -877,8 +917,11 @@ public sealed class SemesterTabFormatTests
 
         Assert.True(target.InsertColumn);
         Assert.Equal(9, target.ColumnIndex); // 10/09(8)과 10/16(9) 사이 — 10/16 앞에 삽입
-        Assert.Null(target.StatusColumn); // 삽입은 상태+헤더+부원이 연속이라 한 덩어리
         Assert.Equal(["활동 완료", "26. 10. 10. 토", "미출석", "미출석", "미출석"], target.Column.Cells);
+        // 총 참여자 수 행(6행) 수식이 별도 쓰기로 나간다 — 부원 3~5행 카운트
+        Assert.NotNull(target.StatusColumn);
+        Assert.Equal(6, target.StatusColumn!.FirstRowIndex);
+        Assert.Equal(["=COUNTIF(I3:I5,\"출석\")"], target.StatusColumn.Cells);
     }
 
     [Fact]
@@ -976,6 +1019,61 @@ public sealed class SemesterTabFormatTests
         Assert.Equal(new DateOnly(2026, 10, 2), completed.Date);
         Assert.Equal(SheetDayKind.Completed, completed.Kind);
         Assert.Empty(completed.AttendedRowLabels); // 출석 0명 — 그래도 활동
+    }
+
+    [Fact]
+    public void FindDateColumnIndex_날짜_열_번호를_반환한다()
+    {
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        Assert.Equal(4, format.FindDateColumnIndex(NewFormatTab(), new DateOnly(2026, 9, 18))); // OT 포함 4번째 날짜 열
+        Assert.Equal(9, format.FindDateColumnIndex(NewFormatTab(), new DateOnly(2026, 10, 16)));
+        Assert.Null(format.FindDateColumnIndex(NewFormatTab(), new DateOnly(2026, 10, 10))); // 없는 날
+
+        var old = new SemesterTabFormat("2026-1", new DateOnly(2026, 2, 1), new DateOnly(2026, 7, 31));
+        var tab = new SheetTab("2026-1", [["총 인원 : ", "26. 03. 06. 금"], ["박유진 24 만콘", "1"]]);
+        Assert.Equal(2, old.FindDateColumnIndex(tab, new DateOnly(2026, 3, 6))); // 구형도 동일 규약
+    }
+
+    [Fact]
+    public void BuildColumn_구형_삽입도_총_참여자_수_수식을_채운다()
+    {
+        var tab = new SheetTab("2026-1",
+        [
+            ["총 인원 : ", "26. 03. 06. 금", "3월출석횟수(개인)"],
+            ["소소명 23 패션", "1", "1"],
+            ["구은회 24 패션", "0", "1"],
+            ["총 참여자 수", "1", "2"],
+        ]);
+        var format = new SemesterTabFormat("2026-1", new DateOnly(2026, 2, 1), new DateOnly(2026, 7, 31));
+
+        var target = format.BuildColumn(tab, new DateOnly(2026, 3, 13), new HashSet<string> { "소소명 23 패션" });
+
+        Assert.True(target.InsertColumn);
+        Assert.NotNull(target.StatusColumn); // 4행(총 참여자 수)에 SUM 수식
+        Assert.Equal(4, target.StatusColumn!.FirstRowIndex);
+        Assert.Equal(["=SUM(C2:C3)"], target.StatusColumn.Cells);
+        Assert.Equal(["26. 03. 13. 금", "1", ""], target.Column.Cells); // 픽스처 헤더의 0채움 서식을 따름
+    }
+
+    [Fact]
+    public void Parse_총_참여자_수_아래_행은_부원으로_읽지_않는다()
+    {
+        // 집계 행의 숫자·탈퇴자의 마크가 출석으로 해석되지 않는다(구형 "1" 포함)
+        var tab = new SheetTab("2026-1",
+        [
+            ["총 인원 : ", "26. 03. 06. 금"],
+            ["박유진 24 만콘", "1"],
+            ["총 참여자 수", "35"],
+            ["탈퇴/퇴출자", ""],
+            ["정문경 25 애니 (탈)", "1"], // 탈퇴자 마크 — 무시
+        ]);
+        var format = new SemesterTabFormat("2026-1", new DateOnly(2026, 2, 1), new DateOnly(2026, 7, 31));
+
+        var data = format.Parse(tab);
+
+        var activity = Assert.Single(data.Activities);
+        Assert.Equal(["박유진 24 만콘"], activity.AttendedRowLabels); // 35·탈퇴자 1은 무시
     }
 
     [Fact]

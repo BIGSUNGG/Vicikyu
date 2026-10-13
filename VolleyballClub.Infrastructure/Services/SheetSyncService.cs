@@ -340,6 +340,48 @@ public sealed class SheetSyncService(
         return true;
     }
 
+    /// <summary>활동 취소 직후 — 그 날짜 열을 시트에서 통째로 삭제한다(best-effort).
+    /// 취소는 롤백하지 않는다: 실패해도 활동은 삭제되며, 남은 열은 수기 정리 대상.</summary>
+    public async Task<bool> RemoveCancelledActivityAsync(int activityId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        try
+        {
+            var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == activityId, ct);
+            var format = resolver.ResolveByDate(activity.ActivityDate);
+            if (format is null)
+            {
+                return true; // 기록할 학기 탭 범위가 아님
+            }
+
+            var sheet = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Kind == SheetKind.Attendance, ct);
+            if (sheet is null)
+            {
+                return true;
+            }
+
+            var tabs = await sheetClient.GetTabsAsync(sheet.SpreadsheetId, [format.TabName], ct);
+            if (tabs.Count == 0)
+            {
+                return false;
+            }
+
+            var columnIndex = format.FindDateColumnIndex(tabs[0], activity.ActivityDate);
+            if (columnIndex is null)
+            {
+                return true; // 시트에 그 날짜 열이 없음
+            }
+
+            await sheetClient.DeleteColumnAsync(sheet.SpreadsheetId, format.TabName, columnIndex.Value, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private async Task<int> ExportPendingAsync(ApplicationDbContext db, List<string> warnings, CancellationToken ct)
     {
         var pending = await db.Activities

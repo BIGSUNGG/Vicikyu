@@ -70,7 +70,11 @@ public sealed class GoogleSheetClient(
             },
             spreadsheetId,
             range);
-        update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.RAW;
+        // '='로 시작하는 셀(총 참여자 수 수식)은 USER_ENTERED로 써야 함수로 동작한다 — RAW면 텍스트로 박힌다.
+        // 나머지(출석 마크·상태·라벨)는 RAW 유지 — USER_ENTERED는 날짜형 헤더 등을 오인 파싱할 수 있다.
+        update.ValueInputOption = column.Cells.Any(c => c.StartsWith("="))
+            ? SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED
+            : SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.RAW;
         await update.ExecuteAsync(ct);
     }
 
@@ -110,6 +114,40 @@ public sealed class GoogleSheetClient(
         await svc.Spreadsheets.BatchUpdate(request, spreadsheetId).ExecuteAsync(ct);
 
         await WriteColumnAsync(spreadsheetId, tabName, columnIndex, column, ct);
+    }
+
+    public async Task DeleteColumnAsync(
+        string spreadsheetId, string tabName, int columnIndex, CancellationToken ct = default)
+    {
+        var svc = await GetServiceAsync(ct);
+        var sheetId = (await GetSheetPropertiesAsync(
+                svc,
+                spreadsheetId,
+                fields: "sheets(properties(sheetId,title))",
+                ct))
+            .FirstOrDefault(p => p.Title == tabName)?.SheetId
+            ?? throw new InvalidOperationException($"시트에서 탭 '{tabName}'을(를) 찾을 수 없습니다.");
+
+        var request = new BatchUpdateSpreadsheetRequest
+        {
+            Requests =
+            [
+                new Request
+                {
+                    DeleteDimension = new DeleteDimensionRequest
+                    {
+                        Range = new DimensionRange
+                        {
+                            SheetId = sheetId,
+                            Dimension = "COLUMNS",
+                            StartIndex = columnIndex - 1, // 0-based, 반 닫힌 구간
+                            EndIndex = columnIndex,
+                        },
+                    },
+                },
+            ],
+        };
+        await svc.Spreadsheets.BatchUpdate(request, spreadsheetId).ExecuteAsync(ct);
     }
 
     private async Task<SheetsService> GetServiceAsync(CancellationToken ct)

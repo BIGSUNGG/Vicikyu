@@ -14,4 +14,7 @@ public interface ISheetClient
 
     /// <summary>columnIndex 위치에 새 열을 삽입(왼쪽 열 서식 상속)하고 Cells를 기록한다.</summary>
     Task InsertColumnAsync(string spreadsheetId, string tabName, int columnIndex, SheetColumn column, CancellationToken ct = default);
+
+    /// <summary>columnIndex 열을 통째로 삭제한다(활동 취소 — 시트에서 그 날짜 열 제거).</summary>
+    Task DeleteColumnAsync(string spreadsheetId, string tabName, int columnIndex, CancellationToken ct = default);
 }

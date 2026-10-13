@@ -26,7 +26,11 @@ public class ActivityCancelTests : IAsyncLifetime
         await SeedGuestAsync(activity.Id);
         await SeedTeamAsync(activity.Id);
 
+        var cancelledId = host.GetTodayActivityAsync().Id;
+
         await host.Activity.CancelActivityAsync();
+
+        Assert.Contains(cancelledId, host.SheetSync.CancelledActivityIds); // 시트 출석 정보 제거 호출
 
         await using var db = host.Db.CreateContext();
         Assert.Equal(0, await db.Activities.CountAsync());

@@ -30,8 +30,11 @@ public interface ISemesterSheetFormat
 
     /// <summary>활동 시작(예정)·진행 중 현재 출석을 신형 탭에 임시 기록할 내용을 만든다 — 상태행은 '활동 예정'.
     /// 구형 탭은 상태 행 없이 마크만, 이미 완료/없음으로 확정된 열이면 null(되돌리지 않는다).
-    /// 마감 마크 기록은 BuildColumn을 쓴다.</summary>
+    /// 마감 마크 기록은 BuildColumn을 쓴다. 삽입 시 총 참여자 수 행 수식이 StatusColumn로 함께 나간다.</summary>
     SheetWriteTarget? BuildLiveColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels);
+
+    /// <summary>활동 취소 — 그 날짜 열을 시트에서 통째로 제거한다. 열이 없으면 null.</summary>
+    int? FindDateColumnIndex(SheetTab tab, DateOnly date);
 }
 
 /// <summary>탭 이름/활동 날짜로 학기 전략을 찾는다. 해당하는 것이 없으면 null.</summary>
