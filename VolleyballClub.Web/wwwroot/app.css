@@ -91,10 +91,25 @@ body {
 
 .app-content {
 	flex: 1;
-	padding: 16px 16px calc(var(--vb-nav-height) + 30px);
+	padding: 16px 16px;
 	display: flex;
 	flex-direction: column;
 	gap: 14px;
+}
+
+/* 하단 메뉴가 있는 MainLayout만 nav 회피 여백 예약. */
+.app-content.has-nav {
+	padding-bottom: calc(var(--vb-nav-height) + 30px);
+}
+
+/* 인증 화면은 배경만 전체 폭으로 채우고 폼의 기존 콘텐츠 폭은 유지. */
+.auth-shell {
+	max-width: none;
+}
+.auth-shell > .app-content {
+	width: 100%;
+	max-width: 560px;
+	margin-inline: auto;
 }
 
 .page-title {
@@ -502,7 +517,8 @@ body {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	padding: 22px 18px 14px;
+	/* 배경은 펀치홀까지 채우고, 제목만 안전영역 아래에 배치. */
+	padding: calc(22px + env(safe-area-inset-top)) 18px 14px;
 	background: #fffdf8;
 	border-bottom: 2px dashed #ecdcc4;
 }
@@ -1661,8 +1677,10 @@ button.court-head {
 .bottom-nav {
 	position: fixed;
 	bottom: 10px;
-	left: 50%;
-	transform: translateX(-50%);
+	/* 별도 JS 좌표 추적 없이 수평 중앙 정렬. */
+	left: 0;
+	right: 0;
+	margin-inline: auto;
 	width: calc(100% - 24px);
 	max-width: 512px;
 	height: var(--vb-nav-height);
@@ -1772,7 +1790,7 @@ button.court-head {
 @media (min-width: 1024px) {
 	/* 셸: 단일 컬럼 → 좌(사이드 내비) + 우(콘텐츠) 2단 그리드.
 	   DOM 순서는 main이 먼저 오므로 명시적 배치로 좌우를 지정한다. */
-	.app-shell {
+	.app-shell:not(.auth-shell) {
 		max-width: none;
 		display: grid;
 		grid-template-columns: 230px minmax(0, 1fr);
@@ -1824,8 +1842,8 @@ button.court-head {
 		display: none;
 	}
 
-	/* 콘텐츠: 폭 제한 해제, 여백 재조정, 최대 폭으로 가독성 유지 */
-	.app-content {
+	/* 메뉴가 있는 콘텐츠만 사이드 내비 오른쪽 열에 배치. */
+	.app-content.has-nav {
 		grid-column: 2;
 		grid-row: 1;
 		padding: 0 0 48px;
@@ -1939,6 +1957,12 @@ button.court-head {
 	}
 
 	/* ── 로그인 — 중앙 고정폭 카드(내비 없는 화면) ── */
+	.auth-shell {
+		padding: 32px 48px;
+	}
+	.auth-shell > .app-content {
+		padding-top: 0;
+	}
 	.login-top {
 		max-width: 452px;
 		margin: 40px auto 0;

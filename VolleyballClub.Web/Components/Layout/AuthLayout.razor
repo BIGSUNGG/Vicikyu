@@ -1,0 +1,9 @@
+@inherits LayoutComponentBase
+@* 로그인·로그아웃 등 인증 화면 전용 레이아웃 — 하단 메뉴와 nav 회피 여백 없이
+   깔끔하게. MainLayout의 MudBlazor 프로바이더는 이 화면에서 Mud 컴포넌트를
+   쓰지 않아 불필요(필요해지면 그때 추가). *@
+<div class="app-shell auth-shell">
+    <main class="app-content">
+        @Body
+    </main>
+</div>
