@@ -1235,8 +1235,32 @@ button.court-head {
 	color: var(--vb-lilac);
 	font-size: 0.5rem;
 }
+.day-cell .mark.sched {
+	color: var(--vb-lilac);
+	font-size: 0.5rem;
+}
+.day-cell.scheduled {
+	background: var(--vb-lilac-soft);
+	color: var(--vb-lilac);
+	border: 2px solid #ddd6fe;
+}
+.day-cell .mark.noact {
+	color: var(--vb-muted);
+	font-size: 0.5rem;
+}
+.day-cell.noact {
+	background: var(--vb-bg, #f3f4f6);
+	color: var(--vb-muted);
+	border: 2px solid #e5e7eb;
+}
 .dd-info.miss {
 	color: var(--vb-danger);
+}
+.dd-info.sched {
+	color: var(--vb-lilac);
+}
+.dd-info.noact {
+	color: var(--vb-muted);
 }
 
 .day-detail {

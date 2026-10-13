@@ -62,6 +62,8 @@ public sealed class FakeSemesterFormat(string tabName = "2026-1") : ISemesterShe
 
     public Func<DateOnly, IReadOnlySet<string>, SheetWriteTarget>? BuildHandler { get; set; }
 
+    public Func<DateOnly, SheetWriteTarget?>? BuildScheduledHandler { get; set; }
+
     public string TabName => tabName;
 
     public bool CoversDate(DateOnly date) => date >= From && date <= To;
@@ -71,6 +73,9 @@ public sealed class FakeSemesterFormat(string tabName = "2026-1") : ISemesterShe
     public SheetWriteTarget BuildColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels) =>
         BuildHandler?.Invoke(activityDate, attendedRowLabels)
         ?? new SheetWriteTarget(false, 2, new SheetColumn(2, [activityDate.ToString("M/d")]));
+
+    public SheetWriteTarget? BuildScheduledColumn(SheetTab tab, DateOnly activityDate) =>
+        BuildScheduledHandler?.Invoke(activityDate);
 }
 
 /// <summary>SheetSyncService 테스트 호스트 — 시트 클라이언트·전략·시트 정의를 직접 조립한다.</summary>
@@ -80,13 +85,13 @@ public sealed class SheetSyncHost : IAsyncDisposable
 
     public FakeSheetClient Client { get; } = new();
 
-    public FakeSemesterFormat Format { get; }
+    public ISemesterSheetFormat Format { get; }
 
     public SheetSyncService Sync { get; }
 
     public int SheetId { get; private set; }
 
-    public SheetSyncHost(FakeSemesterFormat? format = null)
+    public SheetSyncHost(ISemesterSheetFormat? format = null)
     {
         Format = format ?? new FakeSemesterFormat();
         Sync = new SheetSyncService(
@@ -422,11 +427,116 @@ public sealed class SheetSyncTests
 
         // 달력: 비회원 학기 활동은 결석일로 표시하지 않는다
         var calendar = await host.Attendance.GetMyCalendarAsync(user, 2026, 9);
-        Assert.DoesNotContain(calendar.Days, d => d.IsMissed);
+        Assert.DoesNotContain(calendar.Days, d => d.Kind == CalendarDayKind.Missed);
 
         // 학기 통계(고정 시각 2026-10-01 → 2026-2 범위): 비회원 학기 활동은 분모 제외
         var stats = await host.Attendance.GetMySemesterStatsAsync(user);
         Assert.Equal(0, stats.SemesterActivities);
+    }
+
+    [Fact]
+    public async Task SyncAsync_신형_탭에서_예정과_없음을_마크로_가져온다()
+    {
+        // 신형(2026-2) 실측 서식 — 1행 상태 Enum, 2행 날짜, 3행~ 부원(출석/미출석/활동 불가)
+        await using var host = new SheetSyncHost(
+            new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
+        var (user1, _) = await SeedUsersAsync(host.Db);
+        await host.SeedSheetAsync();
+        await host.SeedMappingAsync("2026-2", "박유진 24 만화", user1);
+        host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
+
+        var report = await host.Sync.SyncAsync();
+
+        await using var db = host.Db.CreateContext();
+        var activities = await db.Activities.OrderBy(a => a.ActivityDate).ToListAsync();
+        Assert.Equal(2, activities.Count); // 완료 열(9/11, 9/18)만 활동으로
+        Assert.All(activities, a => Assert.Equal(ActivityStatus.ActivityClosed, a.Status));
+        Assert.Equal(2, await db.Attendances.CountAsync(a => a.AttendanceType == AttendanceType.Sheet));
+        Assert.Equal(2, report.ImportedActivities);
+
+        var marks = await db.SheetDayMarks.ToDictionaryAsync(m => m.Date, m => m.Kind);
+        Assert.Equal(4, marks.Count); // 없음 3 + 예정 1
+        Assert.Equal(SheetDayKind.NoActivity, marks[new DateOnly(2026, 9, 25)]); // 사유 괄호는 버림
+        Assert.Equal(SheetDayKind.NoActivity, marks[new DateOnly(2026, 10, 2)]);
+        Assert.Equal(SheetDayKind.NoActivity, marks[new DateOnly(2026, 10, 9)]);
+        Assert.Equal(SheetDayKind.Scheduled, marks[new DateOnly(2026, 10, 16)]);
+    }
+
+    [Fact]
+    public async Task SyncAsync_시트에서_완료로_바뀐_날의_마크를_지운다()
+    {
+        await using var host = new SheetSyncHost(
+            new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
+        var (user1, _) = await SeedUsersAsync(host.Db);
+        await host.SeedSheetAsync();
+        await host.SeedMappingAsync("2026-2", "박유진 24 만화", user1);
+        host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
+        await host.Sync.SyncAsync(); // 10/16 예정 마크 생성
+
+        // 시트에서 10/16이 완료로 전환되고 박유진 출석 표기가 생긴다
+        var rows = SemesterTabFormatTests.NewFormatTab().Rows.Select(r => r.ToList()).ToList();
+        rows[0][8] = "활동 완료";
+        rows[2][8] = "출석";
+        host.Client.Tabs[0] = new SheetTab("2026-2", rows);
+
+        await host.Sync.SyncAsync();
+
+        await using var db = host.Db.CreateContext();
+        var marks = await db.SheetDayMarks.ToDictionaryAsync(m => m.Date, m => m.Kind);
+        Assert.Equal(3, marks.Count); // 10/16 마크 제거
+        Assert.False(marks.ContainsKey(new DateOnly(2026, 10, 16)));
+        Assert.Equal(3, await db.Activities.CountAsync()); // 10/16 활동으로 가져옴
+        Assert.Equal(3, await db.Attendances.CountAsync(a => a.AttendanceType == AttendanceType.Sheet));
+    }
+
+    [Fact]
+    public async Task ExportClosedActivityAsync_신형_기존열에_상태행과_마크를_쓴다()
+    {
+        await using var host = new SheetSyncHost(
+            new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
+        var (user1, _) = await SeedUsersAsync(host.Db);
+        await host.SeedSheetAsync();
+        await host.SeedMappingAsync("2026-2", "박유진 24 만화", user1);
+        var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 10, 16), user1);
+        host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
+        await using (var db = host.Db.CreateContext())
+        {
+            db.SheetDayMarks.Add(new SheetDayMark { Date = new DateOnly(2026, 10, 16), Kind = SheetDayKind.Scheduled });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True(await host.Sync.ExportClosedActivityAsync(activity.Id));
+
+        // 부원 마크(3행~)와 상태행(1행) 갈라 쓰기 — 2행 헤더는 건너뛴다
+        Assert.Equal(2, host.Client.Writes.Count);
+        var marks = host.Client.Writes[0];
+        Assert.False(marks.Insert);
+        Assert.Equal(9, marks.ColumnIndex); // 26. 10. 16 열
+        Assert.Equal(3, marks.Column.FirstRowIndex);
+        Assert.Equal(["출석", "미출석", "미출석"], marks.Column.Cells);
+        var status = host.Client.Writes[1];
+        Assert.Equal(9, status.ColumnIndex);
+        Assert.Equal(1, status.Column.FirstRowIndex);
+        Assert.Equal(["활동 완료"], status.Column.Cells);
+
+        await using var db2 = host.Db.CreateContext();
+        Assert.False(await db2.SheetDayMarks.AnyAsync(m => m.Date == new DateOnly(2026, 10, 16))); // 마크 즉시 제거
+        Assert.True(await db2.Activities.Where(a => a.Id == activity.Id).Select(a => a.SheetExportedAt != null).FirstAsync());
+    }
+
+    [Fact]
+    public async Task ExportScheduledActivityAsync_예정열에_상태만_기록한다()
+    {
+        await using var host = new SheetSyncHost(
+            new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
+        await host.SeedSheetAsync();
+        var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 10, 16));
+        host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
+
+        Assert.True(await host.Sync.ExportScheduledActivityAsync(activity.Id));
+
+        Assert.Contains(host.Client.Writes, w =>
+            w.ColumnIndex == 9 && w.Column.FirstRowIndex == 1 && w.Column.Cells.SequenceEqual(["활동 예정"]));
     }
 
     private static async Task<Activity> SeedImportedActivityAsync(TestDb db, DateOnly date)
@@ -509,6 +619,123 @@ public sealed class SheetSyncTests
 /// <summary>공통 학기 서식 전략(SemesterTabFormat) — 실측 서식(Design/sheet-formats.md) 기반 파싱·기록 검증.</summary>
 public sealed class SemesterTabFormatTests
 {
+    /// <summary>신형(2026-2) 실측 서식 픽스처 — 1행 활동 상태 Enum, 2행 날짜 헤더, 3행~ 부원.
+    /// 완료 2(9/11, 9/18) + 없음 3(9/25 추석, 10/2, 10/9 한글날) + 예정 1(10/16).</summary>
+    internal static SheetTab NewFormatTab() => new("2026-2",
+    [
+        ["활동 상태", "활동 완료", "활동 완료", "활동 완료", "활동 없음(추석 연휴)", "", "활동 없음", "활동 없음(한글날)", "활동 예정"],
+        ["총 인원 : ", "OT 참여", "26. 09. 11. 금", "26. 09. 18. 금", "26. 09. 25. 금", "9월 출석횟수", "26. 10. 02. 금", "26. 10. 09. 금", "26. 10. 16. 금"],
+        ["박유진 24 만화", "출석", "출석", "출석", "", "2", "", "", ""],
+        ["김하영 25 게임", "활동 불가", "활동 불가", "활동 불가", "", "0", "", "", ""],
+        ["김자형 25 만화", "미출석", "출석", "미출석", "", "0", "", "", ""],
+    ]);
+
+    [Fact]
+    public void Parse_신형_서식에서_상태와_출석을_가져온다()
+    {
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        var data = format.Parse(NewFormatTab());
+
+        Assert.Equal(6, data.Activities.Count); // 완료 2 + 없음 3 + 예정 1(집계·OT 열 제외)
+        var byDate = data.Activities.ToDictionary(a => a.Date);
+        Assert.Equal(SheetDayKind.Completed, byDate[new DateOnly(2026, 9, 11)].Kind);
+        Assert.Equal(["박유진 24 만화", "김자형 25 만화"], byDate[new DateOnly(2026, 9, 11)].AttendedRowLabels);
+        Assert.Equal(["박유진 24 만화"], byDate[new DateOnly(2026, 9, 18)].AttendedRowLabels); // 활동 불가·미출석은 흡수되어 기록 없음
+        Assert.Equal(SheetDayKind.NoActivity, byDate[new DateOnly(2026, 9, 25)].Kind); // 사유 괄호는 버림
+        Assert.Equal(SheetDayKind.NoActivity, byDate[new DateOnly(2026, 10, 2)].Kind);
+        Assert.Equal(SheetDayKind.NoActivity, byDate[new DateOnly(2026, 10, 9)].Kind);
+        Assert.Equal(SheetDayKind.Scheduled, byDate[new DateOnly(2026, 10, 16)].Kind);
+        Assert.Empty(byDate[new DateOnly(2026, 10, 16)].AttendedRowLabels);
+    }
+
+    [Fact]
+    public void BuildColumn_신형_기존열에_상태행과_출석마크를_분리해_쓴다()
+    {
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        var target = format.BuildColumn(NewFormatTab(), new DateOnly(2026, 9, 18), new HashSet<string> { "김자형 25 만화" });
+
+        Assert.False(target.InsertColumn);
+        Assert.Equal(4, target.ColumnIndex); // "26. 09. 18. 금" 열(1=라벨, 2=OT, 3=9/11, 4=9/18)
+        Assert.Equal(3, target.Column.FirstRowIndex); // 신형은 부원이 3행부터(상태 1·헤더 2)
+        Assert.Equal(["미출석", "미출석", "출석"], target.Column.Cells);
+        Assert.NotNull(target.StatusColumn);
+        Assert.Equal(1, target.StatusColumn!.FirstRowIndex);
+        Assert.Equal(["활동 완료"], target.StatusColumn.Cells);
+    }
+
+    [Fact]
+    public void BuildColumn_신형_날짜_사이에_상태와_헤더를_함께_삽입한다()
+    {
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        var target = format.BuildColumn(NewFormatTab(), new DateOnly(2026, 10, 10), new HashSet<string>());
+
+        Assert.True(target.InsertColumn);
+        Assert.Equal(9, target.ColumnIndex); // 10/09(8)과 10/16(9) 사이 — 10/16 앞에 삽입
+        Assert.Null(target.StatusColumn); // 삽입은 상태+헤더+부원이 연속이라 한 덩어리
+        Assert.Equal(["활동 완료", "26. 10. 10. 토", "미출석", "미출석", "미출석"], target.Column.Cells);
+    }
+
+    [Fact]
+    public void BuildScheduledColumn_신형은_예정을_상태행에만_기록한다()
+    {
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        // 이미 예정인 열 — 상태행만 갱신(부원 칸은 그대로)
+        var existing = format.BuildScheduledColumn(NewFormatTab(), new DateOnly(2026, 10, 16));
+        Assert.NotNull(existing);
+        Assert.False(existing!.InsertColumn);
+        Assert.Equal(9, existing.ColumnIndex);
+        Assert.Empty(existing.Column.Cells); // 부원 칸 비움 — 쓰기 no-op
+        Assert.Equal(["활동 예정"], existing.StatusColumn!.Cells);
+
+        // 완료·없음으로 확정된 열은 되돌리지 않는다
+        Assert.Null(format.BuildScheduledColumn(NewFormatTab(), new DateOnly(2026, 9, 11)));
+        Assert.Null(format.BuildScheduledColumn(NewFormatTab(), new DateOnly(2026, 9, 25)));
+
+        // 없는 날 — 상태+헤더로 새 열 삽입
+        var insert = format.BuildScheduledColumn(NewFormatTab(), new DateOnly(2026, 10, 10));
+        Assert.NotNull(insert);
+        Assert.True(insert!.InsertColumn);
+        Assert.Equal(["활동 예정", "26. 10. 10. 토"], insert.Column.Cells);
+    }
+
+    [Fact]
+    public void BuildScheduledColumn_구형은_기록하지_않는다()
+    {
+        var tab = new SheetTab("2026-1",
+        [
+            ["총 인원 : ", "26. 03. 06. 금", "26. 03. 13. 금"],
+            ["박유진 24 만콘", "1", ""],
+        ]);
+        var format = new SemesterTabFormat("2026-1", new DateOnly(2026, 2, 1), new DateOnly(2026, 7, 31));
+
+        Assert.Null(format.BuildScheduledColumn(tab, new DateOnly(2026, 3, 6)));
+    }
+
+    [Fact]
+    public void Parse_끝점_없는_12월_헤더도_날짜로_인식한다()
+    {
+        // 실측 2026-2: 12월 헤더는 손입이라 일 뒤 점이 없다("26. 12. 04 금")
+        var tab = new SheetTab("2026-2",
+        [
+            ["활동 상태", "활동 예정", "활동 예정", ""],
+            ["총 인원 : ", "26. 11. 27. 금", "26. 12. 04 금", "12월 출석횟수"],
+            ["박유진 24 만화", "", "", ""],
+        ]);
+        var format = new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31));
+
+        var data = format.Parse(tab);
+
+        Assert.Equal(2, data.Activities.Count);
+        Assert.Equal(SheetDayKind.Scheduled, data.Activities[0].Kind);
+        Assert.Equal(new DateOnly(2026, 11, 27), data.Activities[0].Date);
+        Assert.Equal(SheetDayKind.Scheduled, data.Activities[1].Kind);
+        Assert.Equal(new DateOnly(2026, 12, 4), data.Activities[1].Date); // 집계 열은 여전히 제외
+    }
+
     [Fact]
     public void Parse_실측_서식에서_출석_활동만_가져온다()
     {

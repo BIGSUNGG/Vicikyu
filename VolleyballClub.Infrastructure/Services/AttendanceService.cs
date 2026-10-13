@@ -200,7 +200,7 @@ public class AttendanceService(
         // 같은 날 여러 세션이면 하루 치로 병합한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
         var days = myAttendances
             .GroupBy(x => x.ActivityDate)
-            .Select(g => new CalendarDayDto(g.Key, true, g.OrderByDescending(x => x.CheckedAt).First().CheckedAt))
+            .Select(g => new CalendarDayDto(g.Key, CalendarDayKind.Attended, g.OrderByDescending(x => x.CheckedAt).First().CheckedAt))
             .ToList();
 
         // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
@@ -213,7 +213,19 @@ public class AttendanceService(
                 && !attendedDates.Contains(a.ActivityDate)
                 && CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
             .GroupBy(a => a.ActivityDate)
-            .Select(g => new CalendarDayDto(g.Key, false, null, IsMissed: true)));
+            .Select(g => new CalendarDayDto(g.Key, CalendarDayKind.Missed, null)));
+
+        // 시트의 예정/없음 날징은 캘린더에 상태로 표시한다 — 출석·미출석 표시가 이미 있는 날은 우선한다
+        var markedDates = days.Select(d => d.Date).ToHashSet();
+        var dayMarks = await db.SheetDayMarks.AsNoTracking()
+            .Where(m => m.Date >= first && m.Date <= last)
+            .ToListAsync();
+        days.AddRange(dayMarks
+            .Where(m => !markedDates.Contains(m.Date))
+            .Select(m => new CalendarDayDto(
+                m.Date,
+                m.Kind == SheetDayKind.Scheduled ? CalendarDayKind.Scheduled : CalendarDayKind.NoActivity,
+                null)));
 
         var scope = await GetCurrentSemesterScopeAsync(db);
         var monthCount = myAttendances.Count;

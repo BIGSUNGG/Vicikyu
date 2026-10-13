@@ -124,6 +124,9 @@ public class ActivityService(
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "활동 시작");
 
+        // 신형 탭 상태행에 활동 예정 기록(구형 탭·실패는 무시 — 부가 정보. 조회 경로 자동생성은 기록 안 함)
+        await sheetSync.ExportScheduledActivityAsync(activity.Id);
+
         return await LoadAdminDtoAsync(db, activity.Id);
     }
 
@@ -161,6 +164,9 @@ public class ActivityService(
             throw new ConflictException("동시에 새 활동이 시작되었습니다. 새로고침 후 확인해 주세요.");
         }
         await auditLog.LogAsync(AdminAction.ActivityCreate, "Activity", activity.Id.ToString(), $"{today:yyyy-MM-dd} 새 세션 활동 시작");
+
+        // 신형 탭 상태행에 활동 예정 기록(구형 탭·실패는 무시 — 부가 정보)
+        await sheetSync.ExportScheduledActivityAsync(activity.Id);
 
         return await LoadAdminDtoAsync(db, activity.Id);
     }

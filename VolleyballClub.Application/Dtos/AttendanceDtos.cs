@@ -14,9 +14,18 @@ public record AttendanceMemberDto(
 
 public record CalendarDayDto(
     DateOnly Date,
-    bool IsAttended,
-    DateTime? CheckedAt,
-    bool IsMissed = false);
+    CalendarDayKind Kind,
+    DateTime? CheckedAt);
+
+/// <summary>캘린더 하루 상태 — 출석/미출석(활동은 있었으나 불참)/활동 예정/활동 없음.</summary>
+public enum CalendarDayKind
+{
+    None = 0,
+    Attended = 1,
+    Missed = 2,
+    Scheduled = 3,
+    NoActivity = 4,
+}
 
 /// <summary>현재 집계 중인 학기 범위 — Name이 null이면 관리자 설정 없이 기본 규칙(3/1~8/31, 9/1~12/31)으로 집계 중.</summary>
 public record SemesterScopeDto(

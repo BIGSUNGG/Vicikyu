@@ -131,7 +131,7 @@ public class SemesterTests
         Assert.Equal(new DateOnly(2026, 9, 1), stats.Semester?.Start); // 고정 시각 10월 → 기본 규칙 2학기
     }
 
-    /// <summary>개최된 활동 중 미출석일만 IsMissed로 노출 — 오늘 출석 중 활동은 결석 아님.</summary>
+    /// <summary>개최된 활동 중 미출석일만 Missed(CalendarDayKind)로 노출 — 오늘 출석 중 활동은 결석 아님.</summary>
     [Fact]
     public async Task Calendar_MarksMissedHeldActivitiesOnly()
     {
@@ -143,13 +143,39 @@ public class SemesterTests
         await SeedOpenActivityAsync(host.Db, "2026-10-01"); // 오늘 출석 중, 미출석 → 표시 안 함
 
         var september = await host.Attendance.GetMyCalendarAsync(member, 2026, 9);
-        Assert.True(september.Days.Single(d => d.Date == new DateOnly(2026, 9, 25)).IsMissed);
+        Assert.True(september.Days.Single(d => d.Date == new DateOnly(2026, 9, 25)).Kind == CalendarDayKind.Missed);
         var attended = september.Days.Single(d => d.Date == new DateOnly(2026, 9, 26));
-        Assert.True(attended.IsAttended);
-        Assert.False(attended.IsMissed);
+        Assert.True(attended.Kind == CalendarDayKind.Attended);
+        Assert.True(attended.Kind != CalendarDayKind.Missed);
 
         var october = await host.Attendance.GetMyCalendarAsync(member, 2026, 10);
-        Assert.DoesNotContain(october.Days, d => d.IsMissed);
+        Assert.DoesNotContain(october.Days, d => d.Kind == CalendarDayKind.Missed);
+    }
+
+    /// <summary>시트의 예정/없음 날징은 캘린더에 상태로 표시되고, 실제 출석·미출석 표시가 우선한다.</summary>
+    [Fact]
+    public async Task Calendar_ShowsScheduledAndNoActivityDays()
+    {
+        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        var member = await host.SeedUserAsync("김민수", "202512001");
+
+        await SeedHeldActivityAsync(host.Db, "2026-10-16"); // 마감 활동, 미출석 — 마크보다 우선
+        await using (var ctx = host.Db.CreateContext())
+        {
+            ctx.SheetDayMarks.AddRange(
+                new SheetDayMark { Date = new DateOnly(2026, 10, 9), Kind = SheetDayKind.NoActivity },
+                new SheetDayMark { Date = new DateOnly(2026, 10, 16), Kind = SheetDayKind.Scheduled }, // 스테일 마크
+                new SheetDayMark { Date = new DateOnly(2026, 10, 30), Kind = SheetDayKind.Scheduled });
+            await ctx.SaveChangesAsync();
+        }
+
+        var october = await host.Attendance.GetMyCalendarAsync(member, 2026, 10);
+
+        var byDate = october.Days.ToDictionary(d => d.Date);
+        Assert.Equal(CalendarDayKind.Missed, byDate[new DateOnly(2026, 10, 16)].Kind); // 활동이 마크에 우선
+        Assert.Equal(CalendarDayKind.NoActivity, byDate[new DateOnly(2026, 10, 9)].Kind);
+        Assert.Equal(CalendarDayKind.Scheduled, byDate[new DateOnly(2026, 10, 30)].Kind);
+        Assert.DoesNotContain(october.Days, d => d.Date == new DateOnly(2026, 10, 15)); // 마크 없는 날은 표시 없음
     }
 
     /// <summary>마감된 활동 행 심기 — userId가 있으면 출석까지.</summary>

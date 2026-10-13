@@ -15,10 +15,12 @@ using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
 
-/// <summary>시트 동기화 스텁 — 마감 내보내기 호출만 기록한다.</summary>
+/// <summary>시트 동기화 스텁 — 마감·예정 내보내기 호출만 기록한다.</summary>
 public sealed class FakeSheetSyncService : ISheetSyncService
 {
     public List<int> ExportedActivityIds { get; } = [];
+
+    public List<int> ScheduledActivityIds { get; } = [];
 
     public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) =>
         Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
@@ -26,6 +28,12 @@ public sealed class FakeSheetSyncService : ISheetSyncService
     public Task<bool> ExportClosedActivityAsync(int activityId, CancellationToken ct = default)
     {
         ExportedActivityIds.Add(activityId);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> ExportScheduledActivityAsync(int activityId, CancellationToken ct = default)
+    {
+        ScheduledActivityIds.Add(activityId);
         return Task.FromResult(true);
     }
 }

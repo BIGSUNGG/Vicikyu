@@ -17,4 +17,8 @@ public interface ISheetSyncService
     /// <summary>활동 마감 직후 단일 활동을 현재 학기 탭에 열로 내보낸다.
     /// 실패는 false로만 알린다(마감 롤백 금지 — 다음 시작 SyncAsync가 복구).</summary>
     Task<bool> ExportClosedActivityAsync(int activityId, CancellationToken ct = default);
+
+    /// <summary>활동 시작 직후 신형 탭 상태행에 활동 예정을 기록한다(구형 탭은 기록 없음 — true).
+    /// 부가 정보이므로 실패를 복구 대상으로 삼지 않는다.</summary>
+    Task<bool> ExportScheduledActivityAsync(int activityId, CancellationToken ct = default);
 }

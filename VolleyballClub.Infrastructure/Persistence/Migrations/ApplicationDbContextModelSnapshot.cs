@@ -401,6 +401,19 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Settings", (string)null);
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetDayMark", b =>
+                {
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Date");
+
+                    b.ToTable("SheetDayMarks");
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetDefinition", b =>
                 {
                     b.Property<int>("Id")

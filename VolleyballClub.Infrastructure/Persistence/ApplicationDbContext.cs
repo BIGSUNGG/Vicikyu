@@ -32,9 +32,12 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<SheetMemberMapping> SheetMemberMappings => Set<SheetMemberMapping>();
 
+    public DbSet<SheetDayMark> SheetDayMarks => Set<SheetDayMark>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.Entity<SheetDayMark>().HasKey(m => m.Date);
     }
 }

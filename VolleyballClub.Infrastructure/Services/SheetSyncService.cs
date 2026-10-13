@@ -66,8 +66,25 @@ public sealed class SheetSyncService(
                     .Where(m => m.TabName == tab.Name)
                     .ToDictionary(m => m.RowLabel, m => m.UserId);
 
-                foreach (var column in format.Parse(tab).Activities)
+                var parsed = format.Parse(tab);
+                foreach (var column in parsed.Activities)
                 {
+                    // 예정/없음 날은 활동이 아닌 캘린더 표시용 마크로만 저장한다(완료는 아래 실제 활동 경로)
+                    if (column.Kind != SheetDayKind.Completed)
+                    {
+                        var mark = await db.SheetDayMarks.FirstOrDefaultAsync(m => m.Date == column.Date, ct);
+                        if (mark is null)
+                        {
+                            db.SheetDayMarks.Add(new SheetDayMark { Date = column.Date, Kind = column.Kind });
+                        }
+                        else
+                        {
+                            mark.Kind = column.Kind;
+                        }
+
+                        continue;
+                    }
+
                     // 멱등: 해당 날짜 활동이 이미 있으면 스킵. 단 시트 유래 활동인데 출석이 0개면
                     // 아직 매핑이 없던 것 — 매핑된 출석을 백필한다(부원 연결 후 다음 동기화에 반영).
                     // ponytail: 같은 날짜 2열(하루 2세션)은 첫 열만 가져온다 — 과거 데이터는 1일 1회 가정
@@ -147,6 +164,17 @@ public sealed class SheetSyncService(
                     importedActivities++;
                     importedAttendances += userIds.Count;
                 }
+
+                // 탭 범위 안에서 시트가 더 이상 예정/없음으로 표시하지 않는 날의 마크를 제거한다
+                // (예정→완료 전환·열 삭제 — 시트가 마크의 원천이므로 전체 상태를 조정)
+                var keepDates = parsed.Activities
+                    .Where(c => c.Kind != SheetDayKind.Completed)
+                    .Select(c => c.Date)
+                    .ToList();
+                var staleMarks = await db.SheetDayMarks
+                    .Where(m => m.Date >= format.From && m.Date <= format.To && !keepDates.Contains(m.Date))
+                    .ToListAsync(ct);
+                db.SheetDayMarks.RemoveRange(staleMarks);
             }
         }
 
@@ -246,5 +274,69 @@ public sealed class SheetSyncService(
         {
             await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.Column, ct);
         }
+
+        // 신형 서식: 상태행(1행)을 활동 완료로 갱신 — 기존 열 덮어쓰기 시 헤더(2행)를 건너뛴 분리 쓰기
+        if (target.StatusColumn is not null)
+        {
+            await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.StatusColumn, ct);
+        }
+
+        // 시트에서 완료로 전환됐으므로 그 날의 예정/없음 마크를 즉시 제거(다음 동기화 전 캘린더 정합성)
+        var dayMark = await db.SheetDayMarks.FirstOrDefaultAsync(m => m.Date == activity.ActivityDate, ct);
+        if (dayMark is not null)
+        {
+            db.SheetDayMarks.Remove(dayMark);
+        }
+    }
+
+    public async Task<bool> ExportScheduledActivityAsync(int activityId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        try
+        {
+            var activity = await db.Activities.AsNoTracking().FirstAsync(a => a.Id == activityId, ct);
+            var format = resolver.ResolveByDate(activity.ActivityDate);
+            if (format is null)
+            {
+                return true; // 기록할 학기 탭 범위가 아님 — 활동 시작은 계속된다
+            }
+
+            var sheet = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Kind == SheetKind.Attendance, ct);
+            if (sheet is null)
+            {
+                return true; // 등록된 출석 시트가 없음 — 마감 내보내기가 정리한다
+            }
+
+            var tabs = await sheetClient.GetTabsAsync(sheet.SpreadsheetId, [format.TabName], ct);
+            if (tabs.Count == 0)
+            {
+                return false;
+            }
+
+            var target = format.BuildScheduledColumn(tabs[0], activity.ActivityDate);
+            if (target is null)
+            {
+                return true; // 구형 탭(상태 행 없음) 또는 이미 완료/없음으로 확정된 열
+            }
+
+            if (target.InsertColumn)
+            {
+                await sheetClient.InsertColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.Column, ct);
+            }
+            else
+            {
+                await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.Column, ct);
+                if (target.StatusColumn is not null)
+                {
+                    await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.StatusColumn, ct);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false; // 예정 기록은 부가 정보 — 복구 대상 아님(마감 내보내기가 최종 상태를 쓴다)
+        }
+
+        return true;
     }
 }
