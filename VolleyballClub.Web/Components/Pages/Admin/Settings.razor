@@ -11,14 +11,6 @@
 <h1 class="page-title"><img class="icon" src="/icons/gear.svg" alt=""> 설정</h1>
 
 <div class="card settings-card">
-    <h2 class="card-title">구글 시트 연동</h2>
-    <div class="field">
-        <label class="form-label">서비스 계정 키 (JSON 본문 또는 파일 경로) — 변경할 때만 입력</label>
-        <textarea class="form-control" rows="3" @bind="serviceAccountKey"
-                  placeholder='{"type": "service_account", …} 또는 C:\path\key.json'></textarea>
-    </div>
-    <button type="button" class="btn-primary btn-block" @onclick="SaveKeyAsync">키 저장</button>
-
     <h2 class="card-title">시트 목록 (종류별)</h2>
     @foreach (var sheet in sheets)
     {
@@ -46,6 +38,14 @@
         </div>
         <button type="button" class="btn-secondary" @onclick="AddSheetAsync">추가</button>
     </div>
+
+    <h2 class="card-title">구글 시트 연동</h2>
+    <div class="field">
+        <label class="form-label">서비스 계정 키 (JSON 본문 또는 파일 경로) — 변경할 때만 입력</label>
+        <textarea class="form-control" rows="3" @bind="serviceAccountKey"
+                  placeholder='{"type": "service_account", …} 또는 C:\path\key.json'></textarea>
+    </div>
+    <button type="button" class="btn-primary btn-block" @onclick="SaveKeyAsync">키 저장</button>
 </div>
 
 @code {

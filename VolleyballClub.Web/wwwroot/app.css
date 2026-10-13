@@ -147,8 +147,8 @@ body {
 	color: var(--vb-muted);
 }
 
-/* 설정 — 구글 시트 카드 안 '시트 목록' 소제목을 위 키 저장 버튼과 띄운다 */
-.settings-card > .btn-primary + .card-title {
+/* 설정 — 구글 시트 카드 안 '구글 시트 연동' 소제목을 위 시트 행들과 띄운다 */
+.settings-card > .btn-row + .card-title {
 	margin-top: 24px;
 }
 
