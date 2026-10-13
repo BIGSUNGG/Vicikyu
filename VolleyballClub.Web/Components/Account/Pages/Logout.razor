@@ -1,15 +1,23 @@
 @page "/Account/Logout"
 
-<PageTitle>로그아웃</PageTitle>
+<PageTitle>로그아웃 · 빅이큐</PageTitle>
 
-<div class="login-wrap">
+<div class="login-top">
+    <div>
+        <div class="tb-title"><img class="icon" src="/icons/volleyball.svg" alt=""> 빅이큐</div>
+        <div class="tb-sub">청강문화산업대학교 배구 동아리 빅이큐 웹사이트</div>
+    </div>
+</div>
+
+<div class="login-mini">
     <div class="login-logo"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
     <h1 class="login-title">로그아웃</h1>
     <p class="login-sub">로그아웃하시겠습니까?</p>
-    <form action="Account/Logout" method="post" class="login-form">
-        <AntiforgeryToken />
-        <input type="hidden" name="returnUrl" value="" />
-        <button type="submit" class="btn-primary btn-block">로그아웃</button>
-        <a href="/" class="btn-ghost btn-block">취소</a>
-    </form>
 </div>
+
+<form action="Account/Logout" method="post" class="login-form">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="" />
+    <button type="submit" class="btn-primary btn-block">로그아웃</button>
+    <a href="/" class="btn-ghost btn-block">취소</a>
+</form>

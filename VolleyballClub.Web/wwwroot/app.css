@@ -430,6 +430,10 @@ body {
 	width: 100%;
 }
 
+.btn-block + .btn-block {
+	margin-top: 12px;
+}
+
 .btn-sm {
 	padding: 8px 14px;
 	font-size: 0.8rem;
