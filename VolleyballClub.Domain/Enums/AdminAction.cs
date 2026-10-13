@@ -33,4 +33,5 @@ public enum AdminAction
     SemesterUpdate = 25,
     SemesterDelete = 26,
     MemberSheetMapping = 27,
+    SheetResync = 28,
 }

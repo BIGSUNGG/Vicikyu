@@ -69,15 +69,6 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         var activities = new List<SheetActivityColumn>();
         foreach (var (date, col) in DateColumns(tab, headerIndex))
         {
-            var kind = SheetDayKind.Completed;
-            if (statusRow is not null)
-            {
-                var status = Cell(statusRow, col - 1); // DateColumns는 1-based 열 번호를 돌려준다
-                kind = status.Contains(StatusNone) ? SheetDayKind.NoActivity
-                    : status.Contains(StatusScheduled) ? SheetDayKind.Scheduled
-                    : SheetDayKind.Completed; // 완료·빈칸 — 빈칸이면 아래 출석 0 규칙으로 스킵
-            }
-
             var attended = new List<string>();
             for (var row = headerIndex + 1; row < tab.Rows.Count; row++)
             {
@@ -90,9 +81,38 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
                 }
             }
 
-            // 완료 열은 출석 1명 이상일 때만 활동으로 가져온다(구형 호환: 전원 불참·공휴일 열 제외).
-            // 예정/없음 열은 캘린더 표시를 위해 항상 담는다.
-            if (kind != SheetDayKind.Completed || attended.Count > 0)
+            // 신형은 상태행이 원천: 명시적 완료/없음/예정을 그대로 읽고, 상태가 빈칸인 날짜 열은
+            // 출석 마크가 있으면 완료로, 없으면 의도 불명이라 가져오지 않는다(미리 만들어진 빈 열 보호).
+            // 구형은 상태 정보가 없으므로 출석 1명 이상인 열만 활동(전원 불참=공휴일 등 제외).
+            SheetDayKind kind;
+            if (statusRow is null)
+            {
+                kind = SheetDayKind.Completed;
+            }
+            else
+            {
+                var status = Cell(statusRow, col - 1); // DateColumns는 1-based 열 번호를 돌려준다
+                if (status.Contains(StatusNone))
+                {
+                    kind = SheetDayKind.NoActivity;
+                }
+                else if (status.Contains(StatusScheduled))
+                {
+                    kind = SheetDayKind.Scheduled;
+                }
+                else if (status.Length > 0 || attended.Count > 0)
+                {
+                    kind = SheetDayKind.Completed; // 명시적 완료, 또는 상태 빈칸 + 출석 마크 존재
+                }
+                else
+                {
+                    continue; // 상태 빈칸 + 출석 0 — 가져오지 않는다
+                }
+            }
+
+            // 신형(빈칸+출석0 열은 위에서 continue됨)은 상태 표시대로 항상 담고,
+            // 구형은 출석 1명 이상인 열만 담는다(전원 불참=공휴일 등 제외).
+            if (statusRow is not null || attended.Count > 0)
             {
                 activities.Add(new SheetActivityColumn(date, attended, kind));
             }
@@ -132,15 +152,22 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells));
     }
 
-    public SheetWriteTarget? BuildScheduledColumn(SheetTab tab, DateOnly activityDate)
+    public SheetWriteTarget? BuildLiveColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels)
     {
         var (headerIndex, statusRow) = Layout(tab);
         if (statusRow is null)
         {
-            return null; // 구형 서식 — 상태 행이 없어 기록할 것이 없다
+            return null; // 구형 서식 — 상태 개념이 없어 진행 중 임시 기록을 하지 않는다(마감 때만 기록)
+        }
+        var dateColumns = DateColumns(tab, headerIndex).ToList();
+        // 진행 중 마크: 출석자만 표시하고 미출석자는 공란(마감 전에는 아직 출석할 수 있으므로 — 예정 열 공란 규칙)
+        var marks = new List<string>();
+        for (var row = headerIndex + 1; row < tab.Rows.Count; row++)
+        {
+            var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
+            marks.Add(label.Length > 0 && attendedRowLabels.Contains(label) ? MarkAttendedNew : "");
         }
 
-        var dateColumns = DateColumns(tab, headerIndex).ToList();
         var exact = dateColumns.FirstOrDefault(c => c.Date == activityDate);
         if (exact.Date == activityDate)
         {
@@ -150,9 +177,8 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
                 return null; // 이미 확정된 상태를 예정으로 되돌리지 않는다
             }
 
-            // 부원 칸은 아직 비워둔다(빈 Cells → 쓰기 no-op), 상태행만 갱신
-            return new SheetWriteTarget(false, exact.Column, new SheetColumn(headerIndex + 2, []),
-                new SheetColumn(1, [StatusScheduled]));
+            return new SheetWriteTarget(false, exact.Column,
+                new SheetColumn(headerIndex + 2, marks), new SheetColumn(1, [StatusScheduled]));
         }
 
         var insertAt = dateColumns.FirstOrDefault(c => c.Date > activityDate).Column;
@@ -161,8 +187,8 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
             insertAt = (dateColumns.Count > 0 ? dateColumns[^1].Column : 1) + 1;
         }
 
-        return new SheetWriteTarget(true, insertAt,
-            new SheetColumn(1, [StatusScheduled, BuildHeaderText(tab, headerIndex, activityDate)]));
+        string[] cells = [StatusScheduled, BuildHeaderText(tab, headerIndex, activityDate), .. marks];
+        return new SheetWriteTarget(true, insertAt, new SheetColumn(1, cells));
     }
 
     private static IEnumerable<(DateOnly Date, int Column)> DateColumns(SheetTab tab, int headerIndex)

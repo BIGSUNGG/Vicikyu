@@ -28,9 +28,10 @@ public interface ISemesterSheetFormat
     /// 신형 서식에서는 상태행 갱신값(활동 완료)이 StatusColumn로 함께 반환된다.</summary>
     SheetWriteTarget BuildColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels);
 
-    /// <summary>활동 시작(예정)을 신형 탭 상태행에 기록할 내용을 만든다.
-    /// 구형 탭(상태 행 없음)이나 이미 완료/없음으로 표시된 열이면 null — 기록할 것이 없다.</summary>
-    SheetWriteTarget? BuildScheduledColumn(SheetTab tab, DateOnly activityDate);
+    /// <summary>활동 시작(예정)·진행 중 현재 출석을 신형 탭에 임시 기록할 내용을 만든다 — 상태행은 '활동 예정'.
+    /// 구형 탭은 상태 행 없이 마크만, 이미 완료/없음으로 확정된 열이면 null(되돌리지 않는다).
+    /// 마감 마크 기록은 BuildColumn을 쓴다.</summary>
+    SheetWriteTarget? BuildLiveColumn(SheetTab tab, DateOnly activityDate, IReadOnlySet<string> attendedRowLabels);
 }
 
 /// <summary>탭 이름/활동 날짜로 학기 전략을 찾는다. 해당하는 것이 없으면 null.</summary>

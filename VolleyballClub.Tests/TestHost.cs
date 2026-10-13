@@ -36,6 +36,9 @@ public sealed class FakeSheetSyncService : ISheetSyncService
         ScheduledActivityIds.Add(activityId);
         return Task.FromResult(true);
     }
+
+    public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) =>
+        Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
 }
 
 /// <summary>시간을 고정하는 TimeProvider — '오늘'과 OTP 시각을 테스트에서 제어한다.</summary>

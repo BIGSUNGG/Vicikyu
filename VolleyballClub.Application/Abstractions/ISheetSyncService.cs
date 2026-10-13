@@ -21,4 +21,8 @@ public interface ISheetSyncService
     /// <summary>활동 시작 직후 신형 탭 상태행에 활동 예정을 기록한다(구형 탭은 기록 없음 — true).
     /// 부가 정보이므로 실패를 복구 대상으로 삼지 않는다.</summary>
     Task<bool> ExportScheduledActivityAsync(int activityId, CancellationToken ct = default);
+
+    /// <summary>관리자 '시트 갱신': 진행 중 활동 현재 출석 임시 기록 + 미내보낸 마감 내보내기 후
+    /// 시트를 원천으로 전체 재반영(출석 병합 — 수기 수정이 서버에 그대로 반영된다).</summary>
+    Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default);
 }

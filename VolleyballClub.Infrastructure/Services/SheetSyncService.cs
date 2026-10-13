@@ -9,9 +9,10 @@ using VolleyballClub.Infrastructure.Persistence;
 namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>시트 ↔ DB 동기화 유스케이스(설계: Design/sheet-formats.md).
-/// 가져오기(시작 시 1회): 등록된 출석 시트 → 탭별 파싱 → 탭별 부원 매핑으로 Attendance 캐싱,
-/// 이미 있는 날짜는 스킵(멱등), 미지정 라벨은 경고.
-/// 내보내기: SheetExportedAt이 null인 마감 활동을 학기 탭에 기록(날짜 일치 열 우선, 없으면 삽입).</summary>
+/// 가져오기: 등록된 출석 시트 → 탭별 파싱 → 탭별 부원 매핑으로 Attendance 캐싱.
+/// 시트가 원천 — 같은 날짜 활동이 있으면 출석을 병합한다(시트 표시 추가/제거 반영, 유지 행은 시각·타입 보존).
+/// 내보내기: SheetExportedAt이 null인 마감 활동을 학기 탭에 기록(날짜 일치 열 우선, 없으면 삽입).
+/// ResyncAsync(관리자 '시트 갱신'): 진행 중 활동 현재 출석 임시 기록 → 미내보낸 마감 내보내기 → 전체 재반영.</summary>
 public sealed class SheetSyncService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ISheetClient sheetClient,
@@ -21,12 +22,58 @@ public sealed class SheetSyncService(
     public async Task<SheetSyncReport> SyncAsync(CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var (importedActivities, importedAttendances, skippedUnmatched, warnings) = await ImportAllAsync(db, ct);
+        var exportedColumns = await ExportPendingAsync(db, warnings, ct);
+        await db.SaveChangesAsync(ct);
+
+        return new SheetSyncReport(importedActivities, importedAttendances, skippedUnmatched, exportedColumns, warnings);
+    }
+
+    public async Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var warnings = new List<string>();
+
+        // 1) 진행 중 활동의 현재 출석을 임시 기록한다(신형 상태행은 '활동 예정' 유지, 마감 시 완료로 재기록)
+        var live = await db.Activities
+            .Where(a => a.Status != ActivityStatus.ActivityClosed)
+            .OrderBy(a => a.ActivityDate)
+            .ToListAsync(ct);
+        foreach (var activity in live)
+        {
+            try
+            {
+                await ExportLiveAsync(db, activity, warnings, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                warnings.Add($"진행 활동 {activity.ActivityDate:yyyy-MM-dd} 시트 임시 기록 실패: {ex.Message}");
+            }
+        }
+
+        // 2) 시트에 아직 기록되지 않은 마감 활동 내보내기
+        var exportedColumns = await ExportPendingAsync(db, warnings, ct);
+
+        // 3) 시트를 원천으로 전체 재반영(수기 수정이 출석에 그대로 반영된다)
+        var (importedActivities, importedAttendances, skippedUnmatched, importWarnings) = await ImportAllAsync(db, ct);
+        warnings.AddRange(importWarnings);
+        await db.SaveChangesAsync(ct);
+
+        return new SheetSyncReport(importedActivities, importedAttendances, skippedUnmatched, exportedColumns, warnings);
+    }
+
+    /// <summary>등록된 전 출석 시트를 읽어 시트 → DB로 재반영한다(시트가 원천).
+    /// 완료 열: 같은 날짜 활동이 있으면 출석 병합(시트에 없는 출석 제거·추가, 유지 행은 시각·타입 보존),
+    /// 없으면 마감 활동으로 생성. 예정/없음 열은 캘린더 마크로만 저장한다.</summary>
+    private async Task<(int ImportedActivities, int ImportedAttendances, int SkippedUnmatched, List<string> Warnings)>
+        ImportAllAsync(ApplicationDbContext db, CancellationToken ct)
+    {
         var sheets = await db.SheetDefinitions
             .Where(s => s.Kind == SheetKind.Attendance)
             .ToListAsync(ct);
         if (sheets.Count == 0)
         {
-            return new SheetSyncReport(0, 0, 0, 0, ["등록된 출석 시트가 없습니다 — 관리자 설정에서 등록하세요."]);
+            return (0, 0, 0, ["등록된 출석 시트가 없습니다 — 관리자 설정에서 등록하세요."]);
         }
 
         var importedActivities = 0;
@@ -69,7 +116,10 @@ public sealed class SheetSyncService(
                 var parsed = format.Parse(tab);
                 foreach (var column in parsed.Activities)
                 {
-                    // 예정/없음 날은 활동이 아닌 캘린더 표시용 마크로만 저장한다(완료는 아래 실제 활동 경로)
+                    // 예정/없음 날은 캘린더 표시용 마크로 저장한다.
+                    // 시트가 원천: 그날에 시트 유래 마감 활동이 남아 있으면 제거한다(완료→없음/예정 되돌림 반영 —
+                    // 남겨두면 캘린더에서 마감 활동 미출석이 마크보다 우선해 활동 없음이 안 보인다).
+                    // 앱에서 만든 활동(OTP 실적)은 지우지 않고 경고만 남긴다.
                     if (column.Kind != SheetDayKind.Completed)
                     {
                         var mark = await db.SheetDayMarks.FirstOrDefaultAsync(m => m.Date == column.Date, ct);
@@ -82,15 +132,31 @@ public sealed class SheetSyncService(
                             mark.Kind = column.Kind;
                         }
 
+                        var dayActivity = await db.Activities
+                            .Include(a => a.Attendances)
+                            .FirstOrDefaultAsync(a => a.ActivityDate == column.Date, ct);
+                        if (dayActivity is not null)
+                        {
+                            if (dayActivity.CreatedByUserId == Activity.SheetImportCreator)
+                            {
+                                db.Activities.Remove(dayActivity);
+                                warnings.Add($"{tab.Name} {column.Date:yyyy-MM-dd}: 없음/예정 표시로 시트 유래 활동을 제거했습니다");
+                            }
+                            else
+                            {
+                                warnings.Add($"{tab.Name} {column.Date:yyyy-MM-dd}: 앱 활동이 있어 없음/예정 표기를 병합하지 않습니다");
+                            }
+                        }
+
                         continue;
                     }
 
-                    // 멱등: 해당 날짜 활동이 이미 있으면 스킵. 단 시트 유래 활동인데 출석이 0개면
-                    // 아직 매핑이 없던 것 — 매핑된 출석을 백필한다(부원 연결 후 다음 동기화에 반영).
-                    // ponytail: 같은 날짜 2열(하루 2세션)은 첫 열만 가져온다 — 과거 데이터는 1일 1회 가정
+                    // ponytail: 같은 날짜 2열(하루 2세션)은 순차 병합되어 마지막 열이 이긴다 — 과거 데이터는 1일 1회 가정
                     var existing = await db.Activities
                         .Include(a => a.Attendances)
                         .FirstOrDefaultAsync(a => a.ActivityDate == column.Date, ct);
+                    // 이 탭에 매핑된 부원 — 시트가 표현할 수 있는 사용자(매핑 없는 부원은 시트가 못 보므로 출석을 지우지 않는다)
+                    var mappedUserIds = labelToUser.Values.ToHashSet();
 
                     var userIds = new List<string>();
                     foreach (var label in column.AttendedRowLabels)
@@ -110,27 +176,44 @@ public sealed class SheetSyncService(
                         }
                     }
 
-                    var now2 = KstClock.NowUtc(timeProvider);
                     if (existing is not null)
                     {
-                        if (existing.CreatedByUserId == Activity.SheetImportCreator
-                            && existing.SheetExportedAt is not null
-                            && existing.Attendances.Count == 0
-                            && userIds.Count > 0)
+                        if (existing.Status != ActivityStatus.ActivityClosed)
                         {
-                            foreach (var userId in userIds)
-                            {
-                                existing.Attendances.Add(new Attendance
-                                {
-                                    UserId = userId,
-                                    AttendanceType = AttendanceType.Sheet,
-                                    CheckedAt = now2,
-                                    CreatedAt = now2,
-                                });
-                            }
+                            // 진행 중 활동 날짜가 시트에서 완료로 표시됨 — 병합은 마감 후에만(활동 중 출석 보호)
+                            warnings.Add($"{tab.Name} {column.Date:yyyy-MM-dd}: 진행 중 활동과 시트 완료 표기가 다릅니다 — 마감 후 반영됩니다");
+                            continue;
+                        }
 
-                            importedAttendances += userIds.Count;
-                            importedActivities++; // 백필된 활동으로 집계(증거 로그용)
+                        // 시트가 원천: 시트 표시와 다른 출석을 병합한다(수기 수정 반영).
+                        // 유지되는 출석은 원래 시각·타입을 보존하고, 추가분만 Sheet 타입으로 넣는다.
+                        // 제거는 이 탭에 매핑된 부원만 — 미매핑 부원은 시트에 행이 없어 표현 불가능하므로 지우지 않는다.
+                        var current = existing.Attendances.ToDictionary(a => a.UserId);
+                        var changed = false;
+                        foreach (var userId in userIds.Where(id => !current.ContainsKey(id)))
+                        {
+                            existing.Attendances.Add(new Attendance
+                            {
+                                UserId = userId,
+                                AttendanceType = AttendanceType.Sheet,
+                                CheckedAt = now,
+                                CreatedAt = now,
+                            });
+                            importedAttendances++;
+                            changed = true;
+                        }
+
+                        foreach (var stale in existing.Attendances
+                                 .Where(a => !userIds.Contains(a.UserId) && mappedUserIds.Contains(a.UserId))
+                                 .ToList())
+                        {
+                            existing.Attendances.Remove(stale);
+                            changed = true;
+                        }
+
+                        if (changed)
+                        {
+                            importedActivities++; // 갱신된 활동으로 집계
                         }
 
                         continue;
@@ -178,10 +261,60 @@ public sealed class SheetSyncService(
             }
         }
 
-        var exportedColumns = await ExportPendingAsync(db, warnings, ct);
-        await db.SaveChangesAsync(ct);
+        return (importedActivities, importedAttendances, skippedUnmatched, warnings);
+    }
 
-        return new SheetSyncReport(importedActivities, importedAttendances, skippedUnmatched, exportedColumns, warnings);
+    /// <summary>진행 중 활동의 현재 출석을 시트에 임시 기록한다(신형 상태행 '활동 예정', 마감 시 완료로 재기록).</summary>
+    private async Task ExportLiveAsync(ApplicationDbContext db, Activity activity, List<string> warnings, CancellationToken ct)
+    {
+        var format = resolver.ResolveByDate(activity.ActivityDate);
+        if (format is null)
+        {
+            return; // 기록할 학기 탭 범위가 아님
+        }
+
+        var sheet = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Kind == SheetKind.Attendance, ct);
+        if (sheet is null)
+        {
+            return;
+        }
+
+        var tabs = await sheetClient.GetTabsAsync(sheet.SpreadsheetId, [format.TabName], ct);
+        if (tabs.Count == 0)
+        {
+            throw new InvalidOperationException($"탭 '{format.TabName}'을(를) 읽을 수 없습니다.");
+        }
+
+        var attendedUserIds = await db.Attendances
+            .Where(a => a.ActivityId == activity.Id)
+            .Select(a => a.UserId)
+            .ToHashSetAsync(ct);
+        var mappings = await db.SheetMemberMappings
+            .Where(m => m.SheetDefinitionId == sheet.Id && m.TabName == format.TabName)
+            .ToListAsync(ct);
+        var attendedLabels = mappings.Where(m => attendedUserIds.Contains(m.UserId))
+            .Select(m => m.RowLabel)
+            .ToHashSet();
+
+        var target = format.BuildLiveColumn(tabs[0], activity.ActivityDate, attendedLabels);
+        if (target is null)
+        {
+            return; // 이미 완료/없음으로 확정된 열 — 되돌리지 않는다
+        }
+
+        if (target.InsertColumn)
+        {
+            await sheetClient.InsertColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.Column, ct);
+        }
+        else
+        {
+            await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.Column, ct);
+        }
+
+        if (target.StatusColumn is not null)
+        {
+            await sheetClient.WriteColumnAsync(sheet.SpreadsheetId, format.TabName, target.ColumnIndex, target.StatusColumn, ct);
+        }
     }
 
     public async Task<bool> ExportClosedActivityAsync(int activityId, CancellationToken ct = default)
@@ -313,7 +446,8 @@ public sealed class SheetSyncService(
                 return false;
             }
 
-            var target = format.BuildScheduledColumn(tabs[0], activity.ActivityDate);
+            // 활동 시작 직후 — 아직 출석자가 없으므로 마크 없이 상태행 '활동 예정'만 기록
+            var target = format.BuildLiveColumn(tabs[0], activity.ActivityDate, new HashSet<string>());
             if (target is null)
             {
                 return true; // 구형 탭(상태 행 없음) 또는 이미 완료/없음으로 확정된 열

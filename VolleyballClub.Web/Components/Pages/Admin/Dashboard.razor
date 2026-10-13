@@ -3,6 +3,8 @@
 
 @inject IActivityService Activities
 @inject ITeamService Teams
+@inject ISheetSyncService SheetSync
+@inject IAuditLogService Audit
 @inject ISnackbar Snackbar
 
 <PageTitle>관리자 · 배구부</PageTitle>
@@ -80,7 +82,19 @@
         <a href="/admin/semesters" class="btn-ghost">학기 관리</a>
         <a href="/admin/settings" class="btn-ghost">설정</a>
         <a href="/admin/audit" class="btn-ghost">감사 로그</a>
+        <button type="button" class="btn-ghost" disabled="@resyncing" @onclick="ResyncAsync">@(resyncing ? "갱신 중…" : "시트 갱신")</button>
     </div>
+    @if (resyncReport is not null)
+    {
+        <div class="day-detail" style="margin-top:10px">
+            <div class="dd-date">갱신 결과</div>
+            <div class="dd-info">활동 @(resyncReport.ImportedActivities)건 · 출석 @(resyncReport.ImportedAttendances)건 · 시트 기록 @(resyncReport.ExportedColumns)건</div>
+            @foreach (var w in resyncReport.Warnings.Take(10))
+            {
+                <div class="dd-info miss">@w</div>
+            }
+        </div>
+    }
 </div>
 </div>
 
@@ -142,6 +156,31 @@
 }
 
 @code {
+    private bool resyncing;
+
+    private SheetSyncReport? resyncReport;
+
+    private async Task ResyncAsync()
+    {
+        resyncing = true;
+        try
+        {
+            resyncReport = await SheetSync.ResyncAsync();
+            Snackbar.Add("시트 갱신 완료", Severity.Success);
+            await Audit.LogAsync(AdminAction.SheetResync, "Sheet", "resync",
+                $"활동 {resyncReport.ImportedActivities}·출석 {resyncReport.ImportedAttendances}·시트 기록 {resyncReport.ExportedColumns}");
+            StateHasChanged();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            resyncing = false;
+        }
+    }
+
     private AdminTodayDto? today;
     private List<TeamResultDto> teams = [];
     private bool showCloseConfirm;
