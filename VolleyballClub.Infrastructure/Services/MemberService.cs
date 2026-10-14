@@ -224,7 +224,7 @@ public class MemberService(
         }
 
         var role = request.Role == "ADMIN" ? "ADMIN" : "MEMBER";
-        await userManager.AddToRoleAsync(user, role);
+        EnsureSuccess(await userManager.AddToRoleAsync(user, role));
         await auditLog.LogAsync(AdminAction.MemberCreate, "User", user.Id, $"{user.Name}({studentNumber}) {role} 추가");
 
         return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, MemberStatus.Active, 0, false, user.Color);
@@ -272,7 +272,7 @@ public class MemberService(
         {
             user.Status = status;
             // 보안 스탬프를 갱신해 기존 로그인 세션/재검증 흐름과 일치시킨다
-            await userManager.UpdateSecurityStampAsync(user);
+            EnsureSuccess(await userManager.UpdateSecurityStampAsync(user));
             await auditLog.LogAsync(status == MemberStatus.Active ? AdminAction.MemberEnable : AdminAction.MemberDisable,
                 "User", user.Id,
                 $"{user.Name} 상태 변경 → {StatusLabel(status)}");
@@ -289,8 +289,9 @@ public class MemberService(
             var currentRoles = await userManager.GetRolesAsync(user);
             if (!currentRoles.Contains(newRole))
             {
-                await userManager.RemoveFromRolesAsync(user, currentRoles);
-                await userManager.AddToRoleAsync(user, newRole);
+                EnsureSuccess(await userManager.RemoveFromRolesAsync(user, currentRoles));
+                EnsureSuccess(await userManager.AddToRoleAsync(user, newRole));
+                EnsureSuccess(await userManager.UpdateSecurityStampAsync(user));
             }
         }
 
@@ -329,6 +330,11 @@ public class MemberService(
 
         await auditLog.LogAsync(AdminAction.MemberUpdate, "User", user.Id, $"{user.Name} 정보 수정");
         return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, request.Role ?? "MEMBER", user.Status, 0, false, user.Color);
+    }
+
+    private static void EnsureSuccess(IdentityResult result)
+    {
+        if (!result.Succeeded) throw new RuleViolationException(string.Join(" ", result.Errors.Select(e => e.Description)));
     }
 
     public async Task<ProfileDto> GetProfileAsync(string userId)

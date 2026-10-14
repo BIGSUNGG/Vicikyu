@@ -14,9 +14,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.12" />
     <PackageReference Include="MudBlazor" Version="9.11.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\VolleyballClub.Client\VolleyballClub.Client.csproj" />
     <ProjectReference Include="..\VolleyballClub.Application\VolleyballClub.Application.csproj" />
     <ProjectReference Include="..\VolleyballClub.Infrastructure\VolleyballClub.Infrastructure.csproj" />
   </ItemGroup>

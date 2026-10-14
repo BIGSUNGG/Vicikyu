@@ -1,20 +1,28 @@
-using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Routing;
+using VolleyballClub.Client.Components;
+using VolleyballClub.Domain.Enums;
+using VolleyballClub.Infrastructure.Identity;
+using VolleyballClub.Web.Api;
+using VolleyballClub.Web.Verification;
 using Microsoft.AspNetCore.Identity;
 using MudBlazor.Services;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Infrastructure;
 using VolleyballClub.Infrastructure.Persistence;
 using VolleyballClub.Web.Components;
-using VolleyballClub.Web.Components.Account;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveWebAssemblyComponents();
 
 builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddScoped<IdentityRedirectManager>();
-builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+builder.Services.AddAuthorization();
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 
 builder.Services.AddAuthentication(options =>
     {
@@ -25,12 +33,31 @@ builder.Services.AddAuthentication(options =>
 
 // EF Core(SQLite) + Identity + 애플리케이션 서비스 등록
 builder.Services.AddInfrastructure(builder.Configuration);
+if (builder.Environment.IsEnvironment(VerificationEnvironment.Name))
+    VerificationEnvironment.Configure(builder);
 
 builder.Services.AddMudServices();
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
+    options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
+    options.Events.OnValidatePrincipal = async context =>
+    {
+        var signIn = context.HttpContext.RequestServices.GetRequiredService<SignInManager<ApplicationUser>>();
+        var user = await signIn.ValidateSecurityStampAsync(context.Principal);
+        var roles = user is null ? [] : await signIn.UserManager.GetRolesAsync(user);
+        var claimedRoles = context.Principal!.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value);
+        if (user is null || user.Status != MemberStatus.Active || !roles.Order().SequenceEqual(claimedRoles.Order()))
+        {
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
+        }
+    };
+});
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(VerificationEnvironment.Name))
 {
     app.UseMigrationsEndPoint();
 
@@ -39,6 +66,7 @@ if (app.Environment.IsDevelopment())
 
     // 시트 출석부 동기화(시작 시 1회) — 실패해도 기동은 계속된다(DB 캐시는 이전 상태 유지)
     // TODO(배포 전): 프로덕션 환경에서도 동일하게 실행되어야 한다 — 이 블록을 IsDevelopment 밖으로 이동
+    if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("Sheets:SyncOnStartup", true))
     try
     {
         using var syncScope = app.Services.CreateScope();
@@ -61,13 +89,22 @@ else
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseWhen(context => !context.Request.Path.StartsWithSegments("/api"), branch =>
+    branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
+app.UseAuthentication();
+app.UseMiddleware<ApiMiddleware>();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(Routes).Assembly)
+    .AllowAnonymous();
 
-app.MapAdditionalIdentityEndpoints();
+app.MapAuthApi();
+app.MapBusinessApi();
 
 app.Run();
+
+public partial class Program { }

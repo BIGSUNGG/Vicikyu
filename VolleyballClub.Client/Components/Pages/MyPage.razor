@@ -1,0 +1,302 @@
+@page "/my"
+@attribute [Authorize]
+
+@inject MemberClient Members
+@inject AttendanceClient Attendance
+@inject ISnackbar Snackbar
+
+<PageTitle>MY · 빅이큐</PageTitle>
+
+<header class="hero-band">
+    <div class="hf-title">@(profile?.Name ?? "")</div>
+    <div class="hf-chips">
+        <span class="hf-chip">@(profile?.StudentNumber) · @(profile?.Department)</span>
+        <span class="hf-chip">@(profile?.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+        <span class="hf-chip">가입일 @Domain.KstClock.ToKstDateString(profile?.JoinedAt ?? DateTime.MinValue)</span>
+    </div>
+</header>
+
+<div class="my-grid">
+    @if (semesterStats is not null)
+    {
+        <div class="card">
+            <div class="ring-wrap">
+            <div class="ring" style="--ring-p:@semesterStats.AttendanceRatePercent%">
+                <div class="ring-in">
+                    <div class="ring-num">@semesterStats.AttendanceRatePercent%</div>
+                    <div class="ring-label">출석률</div>
+                </div>
+            </div>
+            <div class="ring-side">
+                <div class="ring-stat">
+                    <div class="rs-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
+                    <div>
+                        <div class="rs-label">현재 순위</div>
+                        <div class="rs-value">@(semesterStats.Rank)위 / @(semesterStats.TotalActiveMembers)명</div>
+                    </div>
+                </div>
+                <div class="ring-stat">
+                    <div class="rs-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
+                    <div>
+                        <div class="rs-label">@SemesterLabel 출석</div>
+                        <div class="rs-value">@(semesterStats.MyAttendances)회 (@(semesterStats.SemesterActivities)회 중)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+    <div class="card">
+        <div class="cal-nav">
+            <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
+            <span class="cal-title">@(calendar.Year)년 @(calendar.Month)월</span>
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(1)">▶</button>
+    </div>
+
+    <table class="calendar">
+        <tr>
+            <th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+        </tr>
+        @for (var week = 0; week < weeks.Count; week++)
+        {
+            <tr>
+                @for (var day = 0; day < 7; day++)
+                {
+                    var cell = weeks[week][day];
+                    <td>
+                        @if (cell is not null)
+                        {
+                            var selected = selectedDay?.Date == cell.Date;
+                            var semEdge = cell.Date == calendar.Semester?.Start ? "시작"
+                                : cell.Date == calendar.Semester?.End ? "종료" : null;
+                            <button type="button"
+                                    class="day-cell @(cell.Kind == CalendarDayKind.Attended ? "attended" : "") @(cell.Kind == CalendarDayKind.Missed ? "missed" : "") @(cell.Kind == CalendarDayKind.Scheduled ? "scheduled" : "") @(cell.Kind == CalendarDayKind.NoActivity ? "noact" : "") @(selected ? "selected" : "")"
+                                    @onclick="() => SelectDay(cell)">
+                                @cell.Date.Day
+                                @if (cell.Kind == CalendarDayKind.Attended)
+                                {
+                                    <span class="mark"><img class="icon" src="/icons/mark.svg" alt=""></span>
+                                }
+                                else if (cell.Kind == CalendarDayKind.Missed)
+                                {
+                                    <span class="mark miss">✕</span>
+                                }
+                                else if (cell.Kind == CalendarDayKind.Scheduled)
+                                {
+                                    <span class="mark sched">예정</span>
+                                }
+                                else if (cell.Kind == CalendarDayKind.NoActivity)
+                                {
+                                    <span class="mark noact">없음</span>
+                                }
+                                @if (semEdge is not null)
+                                {
+                                    <span class="mark sem">@semEdge</span>
+                                }
+                            </button>
+                        }
+                    </td>
+                }
+            </tr>
+        }
+    </table>
+
+    @if (selectedDay is { } sel)
+    {
+        <div class="day-detail">
+            <div class="dd-date">@sel.Date.ToString("yyyy년 M월 d일 dddd")</div>
+            @if (sel.Kind == CalendarDayKind.Attended)
+            {
+                <div class="dd-info">
+                    <img class="icon" src="/icons/check.svg" alt=""> 출석 — @Domain.KstClock.ToKstTimeString(sel.CheckedAt ?? DateTime.MinValue)
+                </div>
+            }
+            else if (sel.Kind == CalendarDayKind.Missed)
+            {
+                <div class="dd-info miss">✕ 미출석 — 활동이 있었지만 출석하지 않았습니다</div>
+            }
+            else if (sel.Kind == CalendarDayKind.Scheduled)
+            {
+                <div class="dd-info sched">활동 예정 — 이 날은 활동이 예정되어 있습니다</div>
+            }
+            else if (sel.Kind == CalendarDayKind.NoActivity)
+            {
+                <div class="dd-info noact">활동 없음 — 이 날은 활동이 없습니다</div>
+            }
+            else
+            {
+                <div class="dd-info">기록 없음</div>
+            }
+        </div>
+    }
+
+    <div class="btn-row" style="margin-top:14px">
+        <div class="card" style="margin:0;text-align:center;padding:12px 8px">
+            <div class="card-title" style="margin-bottom:4px">이번 달</div>
+            <div class="card-value" style="font-size:1.2rem">@(calendar.MonthCount)회</div>
+        </div>
+        <div class="card" style="margin:0;text-align:center;padding:12px 8px">
+            <div class="card-title" style="margin-bottom:4px">@SemesterLabel</div>
+            <div class="card-value" style="font-size:1.2rem">@(calendar.SemesterCount)회</div>
+        </div>
+    </div>
+    <div style="text-align:center;margin-top:10px">
+        <span class="member-meta">전체 @(calendar.TotalCount)회</span>
+    </div>
+</div>
+</div>
+
+<div class="btn-row">
+    <a href="/Account/Logout" class="btn-ghost">로그아웃</a>
+    <button type="button" class="btn-secondary" @onclick="OpenSettings"><img class="icon" src="/icons/gear.svg" alt=""> 설정</button>
+</div>
+
+@if (showSettings)
+{
+    <div class="confirm-overlay" @onclick="() => showSettings = false">
+        <div class="confirm-box" style="max-height:85vh;overflow-y:auto" @onclick:stopPropagation>
+            <h3>설정</h3>
+
+            <label class="form-label">내 색</label>
+            <div class="color-swatches">
+                @foreach (var color in Domain.MemberColors.Palette)
+                {
+                    <button type="button" class="color-swatch @(selectedColor == color ? "selected" : "")"
+                            style="--mc:@color" aria-label="색상 @color" @onclick="() => selectedColor = color"></button>
+                }
+            </div>
+            <button type="button" class="btn-primary btn-block" style="margin-top:12px" @onclick="SaveColorAsync">색 저장</button>
+
+            <div style="height:18px"></div>
+            <label class="form-label">비밀번호 변경</label>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="현재 비밀번호" @bind="pw.Current" />
+            </div>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="새 비밀번호(4자 이상)" @bind="pw.New" />
+            </div>
+            <div class="field">
+                <input type="password" class="form-control" placeholder="새 비밀번호 확인" @bind="pw.Confirm" />
+            </div>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="() => showSettings = false">닫기</button>
+                <button type="button" class="btn-primary" @onclick="ChangePasswordAsync">비밀번호 변경</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ProfileDto? profile;
+    private MySemesterStatsDto? semesterStats;
+    private MyCalendarDto calendar = new(0, 0, [], 0, 0, 0);
+    private CalendarDayDto? selectedDay;
+    private List<CalendarDayDto?[]> weeks = [];
+    private int year = Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Year;
+    private int month = Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Month;
+    private bool showSettings;
+    private string selectedColor = "";
+    private PasswordForm pw = new();
+
+    private sealed class PasswordForm
+    {
+        public string Current { get; set; } = "";
+
+        public string New { get; set; } = "";
+
+        public string Confirm { get; set; } = "";
+    }
+
+    private string SemesterLabel => calendar.Semester?.Name ?? "이번 학기";
+
+    private void OpenSettings()
+    {
+        selectedColor = profile?.Color ?? Domain.MemberColors.Palette[0];
+        pw = new PasswordForm();
+        showSettings = true;
+    }
+
+    private async Task SaveColorAsync()
+    {
+        try
+        {
+            await Members.UpdateMyColorAsync(selectedColor);
+            profile = await Members.GetProfileAsync();
+            Snackbar.Add("색이 저장되었습니다", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        if (pw.New != pw.Confirm)
+        {
+            Snackbar.Add("새 비밀번호가 일치하지 않습니다", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            await Members.ChangeMyPasswordAsync(new PasswordChangeRequest(pw.Current, pw.New));
+            pw = new PasswordForm();
+            Snackbar.Add("비밀번호가 변경되었습니다", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        profile = await Members.GetProfileAsync();
+        semesterStats = await Attendance.GetMySemesterStatsAsync();
+        (year, month) = (Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Year, Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Month);
+        await LoadCalendarAsync();
+    }
+
+    private async Task LoadCalendarAsync()
+    {
+        calendar = await Attendance.GetMyCalendarAsync(year, month);
+        selectedDay = null;
+        weeks = BuildWeeks(year, month, calendar.Days);
+    }
+
+    private static List<CalendarDayDto?[]> BuildWeeks(int year, int month, List<CalendarDayDto> attendedDays)
+    {
+        var first = new DateOnly(year, month, 1);
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var byDate = attendedDays.ToDictionary(d => d.Date);
+        var cells = new List<CalendarDayDto?>();
+        for (var i = 0; i < (int)first.DayOfWeek; i++)
+        {
+            cells.Add(null);
+        }
+
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            var date = new DateOnly(year, month, day);
+            cells.Add(byDate.TryGetValue(date, out var dto) ? dto : new CalendarDayDto(date, CalendarDayKind.None, null));
+        }
+
+        while (cells.Count % 7 != 0)
+        {
+            cells.Add(null);
+        }
+
+        return cells.Chunk(7).Select(chunk => chunk.Cast<CalendarDayDto?>().ToArray()).ToList();
+    }
+
+    private async Task ShiftMonth(int delta)
+    {
+        var date = new DateTime(year, month, 1).AddMonths(delta);
+        (year, month) = (date.Year, date.Month);
+        await LoadCalendarAsync();
+    }
+
+    private void SelectDay(CalendarDayDto day) => selectedDay = day;
+}

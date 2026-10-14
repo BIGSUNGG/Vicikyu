@@ -4,6 +4,7 @@ WORKDIR /src
 COPY VolleyballClub.Domain/*.csproj VolleyballClub.Domain/
 COPY VolleyballClub.Application/*.csproj VolleyballClub.Application/
 COPY VolleyballClub.Infrastructure/*.csproj VolleyballClub.Infrastructure/
+COPY VolleyballClub.Client/*.csproj VolleyballClub.Client/
 COPY VolleyballClub.Web/*.csproj VolleyballClub.Web/
 RUN dotnet restore VolleyballClub.Web/VolleyballClub.Web.csproj
 

@@ -20,7 +20,7 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-        // Blazor Interactive Server에서 DbContext를 회로에 오래 들고 있지 않도록 팩토리 사용(호출마다 단기 컨텍스트)
+        // 서비스 호출마다 단기 컨텍스트를 사용한다.
         services.AddDbContextFactory<ApplicationDbContext>(options => options.UseSqlite(connectionString));
 
         services.AddIdentityCore<ApplicationUser>(options =>
@@ -51,6 +51,7 @@ public static class DependencyInjection
         {
             services.AddSingleton<ISemesterSheetFormat>(format);
         }
+        services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ISettingService, SettingService>();
         services.AddScoped<IAuditLogService, AuditLogService>();

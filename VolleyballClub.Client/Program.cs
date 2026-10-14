@@ -1,0 +1,25 @@
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor.Services;
+using VolleyballClub.Client.Services;
+
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+builder.Services.AddAuthorizationCore();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<ApiHttp>();
+builder.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
+builder.Services.AddMudServices();
+builder.Services.AddScoped<ActivityClient>();
+builder.Services.AddScoped<AttendanceClient>();
+builder.Services.AddScoped<TeamClient>();
+builder.Services.AddScoped<MemberClient>();
+builder.Services.AddScoped<FeeClient>();
+builder.Services.AddScoped<SemesterClient>();
+builder.Services.AddScoped<SheetAdminClient>();
+builder.Services.AddScoped<SheetMemberMappingClient>();
+builder.Services.AddScoped<AuditLogClient>();
+builder.Services.AddScoped<SettingClient>();
+builder.Services.AddScoped<SheetSyncClient>();
+builder.Services.AddScoped<CurrentUserClient>();
+await builder.Build().RunAsync();

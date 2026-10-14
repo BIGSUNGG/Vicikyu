@@ -17,54 +17,50 @@
 
 | 구분 | 기술 |
 | --- | --- |
-| 프레임워크 | ASP.NET Core Blazor Web App (**Interactive Server**, .NET 10) |
+| 프레임워크 | ASP.NET Core Blazor Web App (**Interactive WebAssembly**, .NET 10; 사전 렌더링 없음) |
 | UI | MudBlazor 9 (Snackbar 포함), 커스텀 모바일 앱 스타일 CSS |
-| 데이터 | EF Core 10 + Npgsql / PostgreSQL 18 |
-| 인증 | ASP.NET Core Identity (학번 + 비밀번호, Role 기반 Authorization) |
+| 데이터 | EF Core 10 + SQLite (서버 전용) |
+| 인증 | ASP.NET Core Identity 쿠키 + 같은 출처 인증 API, CSRF 방어·서버 역할 검증 |
 | 테스트 | xUnit (SQLite in-memory) |
 
 ## 솔루션 구조
 
 ```text
 VolleyballClub.sln
-├─ VolleyballClub.Web             # Blazor UI · Composition Root(Program.cs)
-│  └─ Components/
-│     ├─ Layout/  Pages/  Account/
-│     ├─ Attendance/  Teams/  Fees/
+├─ VolleyballClub.Web             # WASM 호스트 · HTTP API · Composition Root
+├─ VolleyballClub.Client          # 전체 화면·인증 UI · 도메인별 HTTP 클라이언트
+│  └─ Components/                 # Layout/Pages/Account/Attendance/Teams
 ├─ VolleyballClub.Application     # 공개 계약: 서비스 인터페이스 · DTO · 예외
 ├─ VolleyballClub.Domain          # 엔티티 · 열거형 · 학기/KST 규칙 (의존성 없음)
 ├─ VolleyballClub.Infrastructure  # EF Core DbContext · 서비스 구현 · Identity · Seed
-└─ VolleyballClub.Tests           # xUnit 비즈니스 로직 테스트
+└─ VolleyballClub.Tests           # xUnit 업무 규칙·HTTP 인증/API 통합 테스트
 ```
 
-의존 방향: `Web → Application + Infrastructure(조립)`, `Infrastructure → Application + Domain`,
-`Application → Domain`, `Domain → (없음)`.
+의존 방향: `Web → Client + Application + Infrastructure(조립)`, `Client → Application → Domain`,
+`Infrastructure → Application + Domain`, `Domain → (없음)`. Client는 Infrastructure·EF·Identity 저장소를 참조하지 않는다.
 
 ## 실행 방법
 
 ### 필요 사항
 
 - .NET SDK 10 (`dotnet --list-sdks` 로 확인)
-- PostgreSQL 14+ (로컬 서비스 실행 중)
+- 브라우저에서 .NET WASM 실행 지원
+- SQLite 파일 쓰기 권한 (별도의 DB 서버 불필요)
 
 ### 1) DB 준비
 
-데이터베이스를 생성한다(이미 있으면 생략):
+Development 첫 기동에 기존 SQLite 마이그레이션과 개발 시드가 자동 적용된다. 기존 데이터 파일은 유지한다.
 
-```bash
-psql -h localhost -U postgres -c "CREATE DATABASE volleyballclub;"
-```
-
-### 2) 연결 문자열 설정 (user-secrets — 소스코드에 커밋되지 않음)
+### 2) 연결 문자열 설정 (필요 시 user-secrets)
 
 ```bash
 cd VolleyballClub.Web
 dotnet user-secrets init   # 처음 1회 (템플릿이 이미 지정했다면 생략)
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" \
-  "Host=localhost;Port=5432;Database=volleyballclub;Username=postgres;Password=<비밀번호>"
+  "Data Source=VolleyballClub.db"
 ```
 
-> ConnectionString은 appsettings.json에 넣지 않는다. 시크릿은 user-secrets/환경변수만 사용한다.
+> 기본 SQLite 경로는 서버 구성에서 제공한다. Google 자격증명 등 비밀정보는 서버의 user-secrets/환경변수/설정 저장소에만 두고 Client나 공개 정적 자산에 넣지 않는다.
 
 ### 3) 마이그레이션 적용
 
@@ -148,11 +144,13 @@ dotnet test
 
 ## 배포 방식 개요
 
-1. 서버에 .NET 10 Runtime(ASP.NET Core 포함) + PostgreSQL 설치
+1. 서버에 .NET 10 Runtime(ASP.NET Core 포함)과 SQLite 파일 쓰기 경로 준비
 2. `dotnet publish VolleyballClub.Web -c Release -o ./publish`
 3. ConnectionString을 환경변수로 주입: `ConnectionStrings__DefaultConnection=...`
 4. `ASPNETCORE_ENVIRONMENT=Production` 으로 실행(프로덕션에선 시드 자동 실행 없음 — 초기 관리자는 직접 생성)
 5. 리버스 프록시(Nginx/IIS) 뒤에 두고 HTTPS 종단 처리 권장
 
-향후 확장 여지: 소셜 로그인(Kakao/Google/Microsoft — 인증 구성이 Web/Account에 분리되어 있음),
+WASM 전환·같은 출처 API·데이터 볼륨 유지·격리 회귀 검증은 [DOCKER.md](DOCKER.md)와 [전환 문서](docs/blazor-wasm-migration.md)를 참고한다. 이 전환에서 운영 배포는 수행하지 않았다.
+
+향후 확장 여지(이번 전환 범위 밖): 소셜 로그인,
 CSV/Excel 부원 명단·출석 기록 내보내기, Google Sheets 동기화, 알림.

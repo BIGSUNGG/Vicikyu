@@ -11,30 +11,22 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["_content/MudBlazor/mudblazor.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["VolleyballClub.Web.styles.css"]" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <link rel="apple-touch-icon" href="favicon.png" />
     <link rel="manifest" href="manifest.json" />
     <ImportMap />
-    <HeadOutlet @rendermode="PageRenderMode" />
+    <HeadOutlet @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
 </head>
 
 <body>
-    <Routes @rendermode="PageRenderMode" />
+    <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
     <div id="blazor-error-ui" data-nosnippet>
         오류가 발생했습니다.
         <a href="." class="reload">새로고침</a>
     </div>
-    <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["_content/MudBlazor/mudblazor.min.js"]"></script>
 </body>
 
 </html>
-
-@code {
-    [CascadingParameter]
-    private HttpContext HttpContext { get; set; } = default!;
-
-    private IComponentRenderMode? PageRenderMode =>
-        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
-}

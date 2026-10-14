@@ -1,39 +1,18 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Exceptions;
 
 namespace VolleyballClub.Infrastructure.Services;
 
-/// <summary>
-/// Blazor 인증 상태에서 현재 사용자 정보를 제공하고, 관리자 서비스의 서버 레벨 권한을 검증한다.
-/// 화면(AuthorizeView)과 무관하게 서비스 계층에서 반드시 검증된다.
-/// </summary>
-public sealed class CurrentUserService(AuthenticationStateProvider authenticationStateProvider) : ICurrentUserService
+/// <summary>HTTP 인증 주체를 사용한다. 서비스 권한 검증은 화면 표시와 별개다.</summary>
+public sealed class CurrentUserService(IHttpContextAccessor accessor) : ICurrentUserService
 {
-    public async Task<string?> GetUserIdAsync()
-    {
-        var state = await authenticationStateProvider.GetAuthenticationStateAsync();
-        return state.User.FindFirstValue(ClaimTypes.NameIdentifier);
-    }
-
-    public async Task<bool> IsAdminAsync()
-    {
-        var state = await authenticationStateProvider.GetAuthenticationStateAsync();
-        return state.User.IsInRole("ADMIN");
-    }
-
-    public async Task<string> RequireUserIdAsync()
-    {
-        var userId = await GetUserIdAsync();
-        return userId ?? throw new ForbiddenException("로그인이 필요합니다.");
-    }
-
+    public Task<string?> GetUserIdAsync() => Task.FromResult(accessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier));
+    public Task<bool> IsAdminAsync() => Task.FromResult(accessor.HttpContext?.User.IsInRole("ADMIN") == true);
+    public async Task<string> RequireUserIdAsync() => await GetUserIdAsync() ?? throw new ForbiddenException("로그인이 필요합니다.");
     public async Task RequireAdminAsync()
     {
-        if (!await IsAdminAsync())
-        {
-            throw new ForbiddenException();
-        }
+        if (!await IsAdminAsync()) throw new ForbiddenException();
     }
 }

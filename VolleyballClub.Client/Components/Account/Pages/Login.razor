@@ -1,0 +1,88 @@
+@page "/Account/Login"
+
+@layout AuthLayout
+
+@using System.ComponentModel.DataAnnotations
+@inject ApiHttp Api
+@inject NavigationManager NavigationManager
+
+<PageTitle>로그인 · 빅이큐</PageTitle>
+
+<div class="login-top">
+    <div>
+        <div class="tb-title"><img class="icon" src="/icons/volleyball.svg" alt=""> 빅이큐</div>
+        <div class="tb-sub">배구 동아리 빅이큐</div>
+    </div>
+</div>
+
+<div class="login-mini">
+    <div class="login-logo"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
+    <h1 class="login-title">빅이큐</h1>
+    <p class="login-sub">학번과 비밀번호로 로그인하세요</p>
+</div>
+
+<StatusMessage Message="@errorMessage" />
+<EditForm EditContext="editContext" OnSubmit="LoginUser" class="login-form">
+    <DataAnnotationsValidator />
+    <div class="form-list">
+        <div class="field">
+            <label for="student-number" class="form-label">학번</label>
+            <InputText @bind-Value="Input.StudentNumber" id="student-number" class="form-control" autocomplete="username" aria-required="true" placeholder="202512345" />
+            <ValidationMessage For="() => Input.StudentNumber" class="text-danger" />
+        </div>
+        <div class="field">
+            <label for="password" class="form-label">비밀번호</label>
+            <InputText type="password" @bind-Value="Input.Password" id="password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="비밀번호" />
+            <ValidationMessage For="() => Input.Password" class="text-danger" />
+        </div>
+    </div>
+    <div style="height:14px"></div>
+    <button type="submit" class="btn-primary btn-block">로그인</button>
+</EditForm>
+<p class="empty" style="text-align:center;margin-top:16px">계정 문의는 회장에게</p>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+    }
+
+    public async Task LoginUser()
+    {
+        if (!editContext.Validate())
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.PostAsync("api/auth/login", new LoginRequest(Input.StudentNumber.Trim(), Input.Password));
+            await Api.RefreshIdentityAsync();
+            NavigationManager.NavigateTo(SafeReturnUrl(ReturnUrl));
+        }
+        catch (AppException ex) { errorMessage = "Error: " + ex.Message; }
+    }
+
+    private static string SafeReturnUrl(string? value) =>
+        value is { Length: > 0 } && value.StartsWith('/') && !value.StartsWith("//") && !value.Contains('\\') && !value.Any(char.IsControl)
+            ? value : "/";
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "학번을 입력하세요.")]
+        public string StudentNumber { get; set; } = "";
+
+        [Required(ErrorMessage = "비밀번호를 입력하세요.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

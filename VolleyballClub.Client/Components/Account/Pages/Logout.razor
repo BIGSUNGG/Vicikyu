@@ -1,0 +1,35 @@
+@page "/Account/Logout"
+
+@layout AuthLayout
+@inject ApiHttp Api
+@inject NavigationManager Nav
+
+<PageTitle>로그아웃 · 빅이큐</PageTitle>
+
+<div class="login-top">
+    <div>
+        <div class="tb-title"><img class="icon" src="/icons/volleyball.svg" alt=""> 빅이큐</div>
+        <div class="tb-sub">배구 동아리 빅이큐</div>
+    </div>
+</div>
+
+<div class="login-mini">
+    <div class="login-logo"><img class="icon" src="/icons/volleyball.svg" alt=""></div>
+    <h1 class="login-title">로그아웃</h1>
+    <p class="login-sub">로그아웃하시겠습니까?</p>
+</div>
+
+<StatusMessage Message="@errorMessage" />
+<div class="login-form">
+    <button type="button" @onclick="LogoutAsync" class="btn-primary btn-block">로그아웃</button>
+    <a href="/" class="btn-ghost btn-block">취소</a>
+</div>
+
+@code {
+    private string? errorMessage;
+    private async Task LogoutAsync()
+    {
+        try { await Api.PostAsync("api/auth/logout"); await Api.RefreshIdentityAsync(); Nav.NavigateTo("/Account/Login"); }
+        catch (AppException ex) { errorMessage = "Error: " + ex.Message; }
+    }
+}
