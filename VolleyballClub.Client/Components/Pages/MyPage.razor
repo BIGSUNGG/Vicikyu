@@ -4,22 +4,58 @@
 @inject MemberClient Members
 @inject AttendanceClient Attendance
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<MyPage> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>MY · 빅이큐</PageTitle>
 
 <header class="hero-band">
-    <div class="hf-title">@(profile?.Name ?? "")</div>
+    <div class="hf-title">@(isLoading ? "MY" : profile?.Name ?? "MY")</div>
     <div class="hf-chips">
-        <span class="hf-chip">@(profile?.StudentNumber) · @(profile?.Department)</span>
-        <span class="hf-chip">@(profile?.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
-        <span class="hf-chip">가입일 @Domain.KstClock.ToKstDateString(profile?.JoinedAt ?? DateTime.MinValue)</span>
+        @if (isLoading)
+        {
+            <span class="hf-chip" role="status">정보를 불러오는 중…</span>
+        }
+        else if (profile is not null)
+        {
+            <span class="hf-chip">@profile.StudentNumber · @profile.Department</span>
+            <span class="hf-chip">@(profile.Role == "ADMIN" ? "회장/관리자" : "부원")</span>
+            <span class="hf-chip">가입일 @Domain.KstClock.ToKstDateString(profile.JoinedAt)</span>
+        }
     </div>
 </header>
 
-<div class="my-grid">
-    @if (semesterStats is not null)
+@if (loadError is not null)
+{
+    <div class="card" role="alert">
+        <p>@loadError</p>
+        <button type="button" class="btn-primary" @onclick="LoadAsync">다시 불러오기</button>
+    </div>
+}
+else
+{
+<div class="my-grid" aria-busy="@(isLoading ? "true" : "false")">
+    @if (isLoading || semesterStats is not null)
     {
         <div class="card">
+            @if (isLoading)
+            {
+                <div class="ring-wrap" aria-hidden="true">
+                    <div class="my-ring-placeholder"></div>
+                    <div class="ring-side">
+                        <div class="ring-stat">
+                            <div class="rs-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
+                            <div><div class="rs-label">현재 순위</div><div class="rs-value"><span class="my-placeholder">&nbsp;</span></div></div>
+                        </div>
+                        <div class="ring-stat">
+                            <div class="rs-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
+                            <div><div class="rs-label">학기 출석</div><div class="rs-value"><span class="my-placeholder">&nbsp;</span></div></div>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (semesterStats is not null)
+            {
             <div class="ring-wrap">
             <div class="ring" style="--ring-p:@semesterStats.AttendanceRatePercent%">
                 <div class="ring-in">
@@ -44,14 +80,15 @@
                 </div>
             </div>
         </div>
+            }
     </div>
 }
 
     <div class="card">
         <div class="cal-nav">
-            <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(-1)">◀</button>
-            <span class="cal-title">@(calendar.Year)년 @(calendar.Month)월</span>
-        <button type="button" class="btn-ghost btn-sm" style="width:auto" @onclick="() => ShiftMonth(1)">▶</button>
+            <button type="button" class="btn-ghost btn-sm" style="width:auto" disabled="@isLoading" @onclick="() => ShiftMonth(-1)">◀</button>
+            <span class="cal-title">@(isLoading ? year : calendar.Year)년 @(isLoading ? month : calendar.Month)월</span>
+        <button type="button" class="btn-ghost btn-sm" style="width:auto" disabled="@isLoading" @onclick="() => ShiftMonth(1)">▶</button>
     </div>
 
     <table class="calendar">
@@ -70,9 +107,15 @@
                             var selected = selectedDay?.Date == cell.Date;
                             var semEdge = cell.Date == calendar.Semester?.Start ? "시작"
                                 : cell.Date == calendar.Semester?.End ? "종료" : null;
-                            <button type="button"
+                            <button type="button" disabled="@isLoading" aria-hidden="@(isLoading ? "true" : "false")"
                                     class="day-cell @(cell.Kind == CalendarDayKind.Attended ? "attended" : "") @(cell.Kind == CalendarDayKind.Missed ? "missed" : "") @(cell.Kind == CalendarDayKind.Scheduled ? "scheduled" : "") @(cell.Kind == CalendarDayKind.NoActivity ? "noact" : "") @(selected ? "selected" : "")"
                                     @onclick="() => SelectDay(cell)">
+                                @if (isLoading)
+                                {
+                                    <span class="my-placeholder" aria-hidden="true">&nbsp;</span>
+                                }
+                                else
+                                {
                                 @cell.Date.Day
                                 @if (cell.Kind == CalendarDayKind.Attended)
                                 {
@@ -93,6 +136,7 @@
                                 @if (semEdge is not null)
                                 {
                                     <span class="mark sem">@semEdge</span>
+                                }
                                 }
                             </button>
                         }
@@ -134,22 +178,23 @@
     <div class="btn-row" style="margin-top:14px">
         <div class="card" style="margin:0;text-align:center;padding:12px 8px">
             <div class="card-title" style="margin-bottom:4px">이번 달</div>
-            <div class="card-value" style="font-size:1.2rem">@(calendar.MonthCount)회</div>
+            <div class="card-value" style="font-size:1.2rem">@if (isLoading) { <span class="my-placeholder" aria-hidden="true">&nbsp;</span> } else { @(calendar.MonthCount)<text>회</text> }</div>
         </div>
         <div class="card" style="margin:0;text-align:center;padding:12px 8px">
             <div class="card-title" style="margin-bottom:4px">@SemesterLabel</div>
-            <div class="card-value" style="font-size:1.2rem">@(calendar.SemesterCount)회</div>
+            <div class="card-value" style="font-size:1.2rem">@if (isLoading) { <span class="my-placeholder" aria-hidden="true">&nbsp;</span> } else { @(calendar.SemesterCount)<text>회</text> }</div>
         </div>
     </div>
     <div style="text-align:center;margin-top:10px">
-        <span class="member-meta">전체 @(calendar.TotalCount)회</span>
+        <span class="member-meta">전체 @if (isLoading) { <span class="my-placeholder" aria-hidden="true">&nbsp;</span> } else { @(calendar.TotalCount)<text>회</text> }</span>
     </div>
 </div>
 </div>
+}
 
 <div class="btn-row">
     <a href="/Account/Logout" class="btn-ghost">로그아웃</a>
-    <button type="button" class="btn-secondary" @onclick="OpenSettings"><img class="icon" src="/icons/gear.svg" alt=""> 설정</button>
+    <button type="button" class="btn-secondary" disabled="@(isLoading || loadError is not null)" @onclick="OpenSettings"><img class="icon" src="/icons/gear.svg" alt=""> 설정</button>
 </div>
 
 @if (showSettings)
@@ -188,6 +233,8 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private string? loadError;
     private ProfileDto? profile;
     private MySemesterStatsDto? semesterStats;
     private MyCalendarDto calendar = new(0, 0, [], 0, 0, 0);
@@ -251,12 +298,40 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        profile = await Members.GetProfileAsync();
-        semesterStats = await Attendance.GetMySemesterStatsAsync();
-        (year, month) = (Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Year, Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).Month);
-        await LoadCalendarAsync();
+        isLoading = true;
+        loadError = null;
+        var today = Domain.KstClock.Today(TimeProvider.System);
+        (year, month) = (today.Year, today.Month);
+        weeks = BuildWeeks(year, month, []);
+        try
+        {
+            var profileTask = Members.GetProfileAsync();
+            var statsTask = Attendance.GetMySemesterStatsAsync();
+            var calendarTask = Attendance.GetMyCalendarAsync(year, month);
+            await Task.WhenAll(profileTask, statsTask, calendarTask);
+            profile = await profileTask;
+            semesterStats = await statsTask;
+            calendar = await calendarTask;
+            selectedDay = null;
+            weeks = BuildWeeks(year, month, calendar.Days);
+        }
+        catch (AppException ex)
+        {
+            loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "MY 정보 조회 실패");
+            loadError = "정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
     }
 
     private async Task LoadCalendarAsync()

@@ -6,7 +6,9 @@ const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const root = path.resolve(__dirname, "..");
 const evidenceDir = path.join(root, "artifacts", "wasm-browser");
+const highPingDir = path.join(root, "artifacts", "high-ping-navigation");
 fs.mkdirSync(evidenceDir, { recursive: true });
+fs.mkdirSync(highPingDir, { recursive: true });
 const { chromium } = require(
 	process.env.PLAYWRIGHT_MODULE ||
 		path.join(root, ".diag", "pw", "node_modules", "playwright"),
@@ -25,6 +27,14 @@ const evidence = {
 	flows: [],
 	screenshots: [],
 	measurements: [],
+	navigation: {
+		baseline: {
+			file: "artifacts/high-ping-navigation/baseline.json",
+			calendarTopShiftPx: 159,
+			blankExposureMs: 1892,
+		},
+		conditions: [],
+	},
 	wasmResponses: 0,
 };
 let browser;
@@ -248,6 +258,486 @@ async function measure(page, label) {
 	evidence.screenshots.push(filename);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const round = (value) =>
+	value == null || Number.isNaN(value) ? null : Math.round(value * 10) / 10;
+
+async function waitForHomeReady(page) {
+	await page.locator(".tile.lilac").waitFor();
+	await page.getByText("회비", { exact: true }).waitFor();
+}
+
+function isMyDataPath(pathname) {
+	return ["/api/my/profile", "/api/my/stats", "/api/my/calendar"].includes(
+		pathname,
+	);
+}
+
+async function installMyDataRoute(
+	page,
+	{ delayMs = 0, failProfileOnce = false },
+) {
+	const records = [];
+	let profileFailed = false;
+	const handler = async (route) => {
+		const request = route.request();
+		let url;
+		try {
+			url = new URL(request.url());
+		} catch {
+			throw new Error("Invalid browser request URL in navigation evidence.");
+		}
+		if (!isMyDataPath(url.pathname)) {
+			await route.continue();
+			return;
+		}
+		const started = performance.now();
+		const record = {
+			path: `${url.pathname}${url.search}`,
+			method: request.method(),
+			startNodeMs: round(started),
+		};
+		records.push(record);
+		if (delayMs > 0) await sleep(delayMs);
+		if (
+			failProfileOnce &&
+			url.pathname === "/api/my/profile" &&
+			!profileFailed
+		) {
+			profileFailed = true;
+			record.injectedStatus = 500;
+			record.responseNodeMs = round(performance.now());
+			await route.fulfill({
+				status: 500,
+				contentType: "application/json",
+				body: JSON.stringify({ message: "프로필을 불러오지 못했습니다." }),
+			});
+			return;
+		}
+		const response = await route.fetch();
+		record.status = response.status();
+		record.responseNodeMs = round(performance.now());
+		await route.fulfill({ response });
+	};
+	const patterns = [
+		"**/api/my/profile",
+		"**/api/my/stats",
+		"**/api/my/calendar**",
+	];
+	for (const pattern of patterns) await page.route(pattern, handler);
+	return {
+		records,
+		dispose: async () => {
+			for (const pattern of patterns) await page.unroute(pattern, handler);
+		},
+	};
+}
+
+async function installMyStateCollector(page) {
+	await page.evaluate(() => {
+		window.__captureMyState = () => {
+			const text = document.body.innerText;
+			const doc = document.scrollingElement;
+			const rect = (selector) => {
+				const element = document.querySelector(selector);
+				if (!element) return null;
+				const r = element.getBoundingClientRect();
+				return { top: r.top, left: r.left, width: r.width, height: r.height };
+			};
+			const visible = (element) =>
+				!!element && getComputedStyle(element).display !== "none";
+			const navItems = [...document.querySelectorAll("nav a.nav-item")].map(
+				(a) => ({
+					text: a.textContent.trim(),
+					href: a.getAttribute("href"),
+					visible: visible(a),
+					pointerEvents: getComputedStyle(a).pointerEvents,
+				}),
+			);
+			const settings = [...document.querySelectorAll("button")].find((button) =>
+				button.textContent.includes("설정"),
+			);
+			const calButtons = [...document.querySelectorAll(".cal-nav button")];
+			return {
+				ms: Math.round((performance.now() - window.__myNavStartedAt) * 10) / 10,
+				path: location.pathname,
+				title:
+					document.querySelector(".hf-title, .hb-title")?.textContent.trim() ??
+					null,
+				chips: [...document.querySelectorAll(".hf-chip")].map((x) =>
+					x.textContent.trim(),
+				),
+				busy:
+					document.querySelector(".my-grid")?.getAttribute("aria-busy") ?? null,
+				status:
+					document.querySelector('[role="status"]')?.textContent.trim() ?? null,
+				alert:
+					document.querySelector('[role="alert"]')?.textContent.trim() ?? null,
+				calendar:
+					document.querySelector(".cal-title")?.textContent.trim() ?? null,
+				calendarTop: rect(".calendar")?.top ?? null,
+				myGrid: rect(".my-grid"),
+				ringWrap: rect(".ring-wrap"),
+				viewport: { width: innerWidth, height: innerHeight },
+				contentHeight: doc?.scrollHeight ?? null,
+				placeholderCount: document.querySelectorAll(
+					".my-placeholder, .my-ring-placeholder",
+				).length,
+				settingsDisabled: settings?.disabled ?? null,
+				calendarButtonsDisabled: calButtons.map((button) => button.disabled),
+				navUsable:
+					navItems.filter((item) => item.visible).length > 0 &&
+					navItems
+						.filter((item) => item.visible)
+						.every((item) => item.pointerEvents !== "none"),
+				navItems,
+				hasBlazorError:
+					visible(document.querySelector("#blazor-error-ui")) &&
+					!document.querySelector("#blazor-error-ui")?.hidden,
+				containsZeroDate: text.includes("0년 0월"),
+				containsDefaultDate: text.includes("가입일 0001"),
+				containsZeroCount: /(?:^|[^\d])0회(?:$|[^\d])/.test(text),
+				containsBlankProfileChip: [
+					...document.querySelectorAll(".hf-chip"),
+				].some((x) => x.textContent.trim() === "·"),
+			};
+		};
+		window.__myNavStartedAt = performance.now();
+		window.__myNavFrames = [];
+		window.__myNavObserverDone = false;
+		const snap = () => {
+			window.__myNavFrames.push(window.__captureMyState());
+			const state = window.__myNavFrames.at(-1);
+			if (
+				performance.now() - window.__myNavStartedAt < 5000 &&
+				!(state.path === "/my" && state.busy === "false")
+			) {
+				requestAnimationFrame(snap);
+			} else {
+				window.__myNavObserverDone = true;
+			}
+		};
+		requestAnimationFrame(snap);
+	});
+}
+
+async function captureMyState(page) {
+	return page.evaluate(() => window.__captureMyState());
+}
+
+async function myResourceTimings(page) {
+	return page.evaluate(() => {
+		const records = [];
+		const start = window.__myNavStartedAt;
+		for (const entry of performance.getEntriesByType("resource")) {
+			let url;
+			try {
+				url = new URL(entry.name);
+			} catch {
+				throw new Error("Invalid resource URL in navigation evidence.");
+			}
+			if (
+				!["/api/my/profile", "/api/my/stats", "/api/my/calendar"].includes(
+					url.pathname,
+				)
+			)
+				continue;
+			records.push({
+				path: `${url.pathname}${url.search}`,
+				startMs: Math.round((entry.startTime - start) * 10) / 10,
+				responseStartMs: Math.round((entry.responseStart - start) * 10) / 10,
+				endMs: Math.round((entry.responseEnd - start) * 10) / 10,
+				durationMs: Math.round(entry.duration * 10) / 10,
+			});
+		}
+		return records;
+	});
+}
+
+function firstRecord(records, pathname) {
+	return records.find((record) => record.path.split("?")[0] === pathname);
+}
+
+async function fixtureCalendarMonth(page) {
+	const today = await api(page, "GET", "/api/my/activity");
+	const [year, month] = today.activityDate.split("-").map(Number);
+	return { year, month };
+}
+
+async function assertKnownFixtureDtos(page, target) {
+	const { year, month } = await fixtureCalendarMonth(page);
+	const profile = await api(page, "GET", "/api/my/profile");
+	const stats = await api(page, "GET", "/api/my/stats");
+	const calendar = await api(
+		page,
+		"GET",
+		`/api/my/calendar?year=${year}&month=${month}`,
+	);
+	assert.deepEqual(
+		{
+			name: profile.name,
+			studentNumber: profile.studentNumber,
+			department: profile.department,
+			role: profile.role,
+			totalAttendance: profile.totalAttendance,
+		},
+		{
+			name: "김민수",
+			studentNumber: "202512001",
+			department: "컴퓨터공학과",
+			role: "MEMBER",
+			totalAttendance: 1,
+		},
+		"seeded MY profile DTO",
+	);
+	assert.deepEqual(
+		{
+			semesterActivities: stats.semesterActivities,
+			myAttendances: stats.myAttendances,
+			attendanceRatePercent: stats.attendanceRatePercent,
+			rank: stats.rank,
+			totalActiveMembers: stats.totalActiveMembers,
+		},
+		{
+			semesterActivities: 1,
+			myAttendances: 1,
+			attendanceRatePercent: 100,
+			rank: 1,
+			totalActiveMembers: 16,
+		},
+		"seeded MY stats DTO",
+	);
+	assert.deepEqual(
+		{
+			year: calendar.year,
+			month: calendar.month,
+			monthCount: calendar.monthCount,
+			semesterCount: calendar.semesterCount,
+			totalCount: calendar.totalCount,
+		},
+		{ year, month, monthCount: 1, semesterCount: 1, totalCount: 1 },
+		"seeded MY calendar DTO",
+	);
+	target.finalDtos = { profile, stats, calendar };
+}
+
+async function verifyWarmHomeToMy(page, viewport, delayMs) {
+	await page.setViewportSize(viewport);
+	await goto(page, "/");
+	await waitForHomeReady(page);
+	const { year, month } = await fixtureCalendarMonth(page);
+	const route = await installMyDataRoute(page, { delayMs });
+	const label = `${viewport.width}x${viewport.height}-${delayMs}ms`;
+	const condition = {
+		mode: "warm Home -> MY",
+		viewport,
+		injectedRequestDelayMs: delayMs,
+	};
+	evidence.navigation.conditions.push(condition);
+	try {
+		await page.evaluate(() => performance.clearResourceTimings());
+		await installMyStateCollector(page);
+		await page.locator('nav a[href="/my"]:visible').first().click();
+		await page.waitForURL(base + "/my");
+		await page.locator(".my-grid").waitFor();
+		const pendingScreenshot = `pending-${label}.png`;
+		await page.screenshot({
+			path: path.join(highPingDir, pendingScreenshot),
+			fullPage: true,
+		});
+		await page.locator('.my-grid[aria-busy="false"]').waitFor();
+		const ready = await captureMyState(page);
+		const loadedScreenshot = `loaded-${label}.png`;
+		await page.screenshot({
+			path: path.join(highPingDir, loadedScreenshot),
+			fullPage: true,
+		});
+		const frames = await page.evaluate(() => window.__myNavFrames ?? []);
+		condition.frames = frames.filter(
+			(_, index) => index % 5 === 0 || index === frames.length - 1,
+		);
+		condition.resources = await myResourceTimings(page);
+		condition.routeRecords = route.records;
+		condition.screenshots = [pendingScreenshot, loadedScreenshot];
+		const pending = frames.find(
+			(frame) => frame.path === "/my" && frame.busy === "true",
+		);
+		assert.ok(pending, `MY pending skeleton observed (${label})`);
+		assert.equal(
+			pending.status,
+			"정보를 불러오는 중…",
+			`pending status (${label})`,
+		);
+		assert.equal(
+			pending.settingsDisabled,
+			true,
+			`settings disabled while pending (${label})`,
+		);
+		assert.ok(
+			pending.calendarButtonsDisabled.length === 2 &&
+				pending.calendarButtonsDisabled.every(Boolean),
+			`calendar controls disabled while pending (${label})`,
+		);
+		assert.equal(
+			pending.navUsable,
+			true,
+			`nav remains usable while pending (${label})`,
+		);
+		for (const frame of frames.filter((x) => x.path === "/my")) {
+			assert.equal(frame.containsZeroDate, false, `no 0년 0월 (${label})`);
+			assert.equal(frame.containsDefaultDate, false, `no 0001 date (${label})`);
+			assert.equal(frame.containsZeroCount, false, `no fake 0회 (${label})`);
+			assert.equal(
+				frame.containsBlankProfileChip,
+				false,
+				`no blank profile chip (${label})`,
+			);
+		}
+		assert.equal(ready.busy, "false", `MY ready marker (${label})`);
+		assert.equal(ready.hasBlazorError, false, `no Blazor overlay (${label})`);
+		assert.equal(ready.alert, null, `no load alert (${label})`);
+		assert.equal(ready.title, "김민수", `ready profile name (${label})`);
+		assert.ok(
+			ready.chips.includes("202512001 · 컴퓨터공학과"),
+			`ready profile chip (${label})`,
+		);
+		assert.ok(ready.chips.includes("부원"), `ready role chip (${label})`);
+		assert.ok(
+			ready.chips.includes("가입일 2026.03.02"),
+			`ready joined chip (${label})`,
+		);
+		assert.equal(
+			ready.calendar,
+			`${year}년 ${month}월`,
+			`ready calendar title (${label})`,
+		);
+		const movement = Math.abs(ready.calendarTop - pending.calendarTop);
+		condition.calendarTopMovementPx = round(movement);
+		assert.ok(
+			movement <= 4,
+			`calendarTop shifted ${round(movement)}px (baseline 159px, ${label})`,
+		);
+		const required = ["/api/my/profile", "/api/my/stats", "/api/my/calendar"];
+		for (const pathname of required)
+			assert.ok(
+				firstRecord(route.records, pathname),
+				`request observed ${pathname} (${label})`,
+			);
+		const starts = required.map(
+			(pathname) => firstRecord(route.records, pathname).startNodeMs,
+		);
+		const startSpread = Math.max(...starts) - Math.min(...starts);
+		condition.requestStartSpreadMs = round(startSpread);
+		assert.ok(
+			startSpread <= 250,
+			`MY requests did not overlap (${round(startSpread)}ms, ${label})`,
+		);
+		if (delayMs >= 600) {
+			const profile = firstRecord(route.records, "/api/my/profile");
+			assert.ok(
+				firstRecord(route.records, "/api/my/stats").startNodeMs <
+					profile.responseNodeMs &&
+					firstRecord(route.records, "/api/my/calendar").startNodeMs <
+						profile.responseNodeMs,
+				`stats/calendar did not start before delayed profile response (${label})`,
+			);
+		}
+	} finally {
+		await route.dispose();
+	}
+	await assertKnownFixtureDtos(page, condition);
+}
+
+async function verifyProfileFaultRetry(page) {
+	await goto(page, "/");
+	await waitForHomeReady(page);
+	const route = await installMyDataRoute(page, { failProfileOnce: true });
+	const condition = {
+		mode: "MY profile 500 then retry",
+		viewport: page.viewportSize(),
+	};
+	evidence.navigation.conditions.push(condition);
+	try {
+		await page.evaluate(() => performance.clearResourceTimings());
+		await installMyStateCollector(page);
+		await page.locator('nav a[href="/my"]:visible').first().click();
+		await page.waitForURL(base + "/my");
+		const alert = page.locator('[role="alert"]');
+		await alert.waitFor();
+		const failed = await captureMyState(page);
+		condition.failedState = failed;
+		condition.routeRecordsBeforeRetry = [...route.records];
+		const failedScreenshot = "profile500-alert.png";
+		await page.screenshot({
+			path: path.join(highPingDir, failedScreenshot),
+			fullPage: true,
+		});
+		assert.ok(
+			failed.alert.includes("프로필을 불러오지 못했습니다."),
+			"explicit profile load alert",
+		);
+		assert.equal(
+			failed.hasBlazorError,
+			false,
+			"no error overlay for profile 500",
+		);
+		assert.equal(
+			failed.containsZeroDate,
+			false,
+			"no 0년 0월 after profile 500",
+		);
+		assert.equal(
+			failed.containsDefaultDate,
+			false,
+			"no 0001 after profile 500",
+		);
+		assert.equal(
+			failed.containsZeroCount,
+			false,
+			"no fake 0회 after profile 500",
+		);
+		await alert
+			.getByRole("button", { name: "다시 불러오기", exact: true })
+			.click();
+		await page.locator('.my-grid[aria-busy="false"]').waitFor();
+		const ready = await captureMyState(page);
+		condition.readyState = ready;
+		condition.resources = await myResourceTimings(page);
+		condition.routeRecords = route.records;
+		const retryScreenshot = "profile500-retry-loaded.png";
+		await page.screenshot({
+			path: path.join(highPingDir, retryScreenshot),
+			fullPage: true,
+		});
+		condition.screenshots = [failedScreenshot, retryScreenshot];
+		assert.equal(ready.alert, null, "alert cleared after retry");
+		assert.equal(ready.title, "김민수", "retry loaded profile");
+		assert.equal(ready.calendar, "2026년 10월", "retry loaded calendar");
+	} finally {
+		await route.dispose();
+	}
+	await assertKnownFixtureDtos(page, condition);
+}
+
+async function verifyHighPingNavigation() {
+	const mobile = await createPage({ width: 393, height: 852 });
+	const desktop = await createPage({ width: 1280, height: 900 });
+	try {
+		for (const page of [mobile, desktop]) {
+			await login(page, "202512001", "Member1234!");
+			await waitForHomeReady(page);
+		}
+		for (const page of [mobile, desktop]) {
+			for (const delayMs of [0, 600])
+				await verifyWarmHomeToMy(page, page.viewportSize(), delayMs);
+		}
+		await verifyProfileFaultRetry(mobile);
+	} finally {
+		await mobile.context().close();
+		await desktop.context().close();
+	}
+}
+
 (async () => {
 	try {
 		docker("image", "inspect", "vicikyu-wasm-audit", "--format", "{{.Id}}");
@@ -315,6 +805,7 @@ async function measure(page, label) {
 				: { channel: "msedge" }),
 		});
 		evidence.browser = browser.version();
+		await verifyHighPingNavigation();
 		const admin = await createPage();
 		const member = await createPage({ width: 393, height: 852 });
 		const anonymous = await createPage();
@@ -618,6 +1109,10 @@ async function measure(page, label) {
 		process.exitCode = 1;
 	} finally {
 		evidence.errors = errors;
+		fs.writeFileSync(
+			path.join(highPingDir, "current.json"),
+			JSON.stringify(evidence.navigation, null, 2),
+		);
 		fs.writeFileSync(
 			path.join(evidenceDir, "results.json"),
 			JSON.stringify(evidence, null, 2),

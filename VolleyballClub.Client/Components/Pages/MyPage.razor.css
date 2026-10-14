@@ -1,0 +1,15 @@
+.my-placeholder {
+	display: inline-block;
+	min-width: 3em;
+	border-radius: 5px;
+	background: var(--vb-border);
+	color: transparent;
+}
+
+.my-ring-placeholder {
+	width: 112px;
+	height: 112px;
+	border-radius: 50%;
+	background: var(--vb-border);
+	flex: none;
+}
