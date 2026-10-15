@@ -154,6 +154,90 @@ public sealed class HttpApiTests
         Assert.Equal(2, handler.TokenRequests);
     }
 
+    [Fact]
+    public async Task Bulk_Http_Requires_Admin_Csrf_And_Preview_Is_Read_Only()
+    {
+        await using var host = await ApiHost.StartAsync();
+        using var admin = host.Client();
+        using var member = host.Client();
+        using var anonymous = host.Client();
+        var bulk = new MemberBulkRequest([new("http-new", "합성 부원", "", "test-only")]);
+        await Token(anonymous);
+        await Status(anonymous.PostAsJsonAsync("/api/admin/members/bulk", bulk), HttpStatusCode.Unauthorized);
+        await Login(member, "member"); await Token(member);
+        await Status(member.PostAsJsonAsync("/api/admin/members/bulk", bulk), HttpStatusCode.Forbidden);
+        await Login(admin, "admin"); await Token(admin);
+        var before = (await Read<MemberPageDto>(admin.PostAsJsonAsync("/api/admin/members/search", new MemberPageRequest()))).TotalCount;
+        MultipartFormDataContent Upload(string role = "MEMBER", string password = "test-only", string name = "synthetic.xlsx")
+        {
+            var form = new MultipartFormDataContent();
+            form.Add(new StreamContent(MemberWorkbookTests.Workbook(MemberWorkbookTests.ValidRow)), "file", name);
+            form.Add(new StringContent(role), "role");
+            form.Add(new StringContent(password), "password");
+            return form;
+        }
+        using (var form = Upload()) await Status(member.PostAsync("/api/admin/members/import", form), HttpStatusCode.Forbidden);
+        using (var form = Upload("ROOT")) await Status(admin.PostAsync("/api/admin/members/import", form), HttpStatusCode.BadRequest);
+        using (var form = Upload(password: "123")) await Status(admin.PostAsync("/api/admin/members/import", form), HttpStatusCode.BadRequest);
+        using (var form = Upload(password: "    ")) await Status(admin.PostAsync("/api/admin/members/import", form), HttpStatusCode.BadRequest);
+        var blankPassword = await Read<MemberBulkResult>(admin.PostAsJsonAsync("/api/admin/members/bulk", new MemberBulkRequest([bulk.Rows[0] with { Password = "    " }])));
+        Assert.Empty(blankPassword.Created); Assert.Contains(blankPassword.Errors, e => e.Row == 1);
+        using (var form = Upload(name: "synthetic.xls")) await Status(admin.PostAsync("/api/admin/members/import", form), HttpStatusCode.BadRequest);
+        using (var form = Upload())
+        {
+            var rows = await Read<List<MemberCreateRequest>>(admin.PostAsync("/api/admin/members/import", form));
+            Assert.Single(rows); Assert.Equal("209912345", rows[0].StudentNumber);
+        }
+        Assert.Equal(before, (await Read<MemberPageDto>(admin.PostAsJsonAsync("/api/admin/members/search", new MemberPageRequest()))).TotalCount);
+        var invalid = await Read<MemberBulkResult>(admin.PostAsJsonAsync("/api/admin/members/bulk", new MemberBulkRequest([bulk.Rows[0], bulk.Rows[0] with { StudentNumber = "admin" }])));
+        Assert.Empty(invalid.Created); Assert.Contains(invalid.Errors, e => e.Row == 2);
+        admin.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        using (var form = Upload()) await Status(admin.PostAsync("/api/admin/members/import", form), HttpStatusCode.BadRequest);
+        await Status(admin.PostAsJsonAsync("/api/admin/members/bulk", bulk), HttpStatusCode.BadRequest);
+        await Token(admin);
+        using (var failureScope = host.Services.CreateScope())
+        {
+            var failureDb = failureScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await failureDb.Database.ExecuteSqlRawAsync("CREATE TRIGGER fail_http_bulk BEFORE INSERT ON AuditLogs WHEN (SELECT COUNT(*) FROM AuditLogs) = 1 BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END;");
+            var failed = await Read<MemberBulkResult>(admin.PostAsJsonAsync("/api/admin/members/bulk", new MemberBulkRequest([bulk.Rows[0], bulk.Rows[0] with { StudentNumber = "http-second" }])));
+            Assert.Empty(failed.Created); Assert.Contains(failed.Errors, e => e.Row == 2);
+            Assert.Equal(before, await failureDb.Users.CountAsync());
+            Assert.Equal(before, await failureDb.UserRoles.CountAsync());
+            Assert.Equal(0, await failureDb.AuditLogs.CountAsync());
+            await failureDb.Database.ExecuteSqlRawAsync("DROP TRIGGER fail_http_bulk;");
+        }
+        var result = await Read<MemberBulkResult>(admin.PostAsJsonAsync("/api/admin/members/bulk", bulk));
+        Assert.Empty(result.Errors); Assert.Single(result.Created);
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(before + 1, await db.Users.CountAsync());
+        Assert.Equal(1, await db.UserRoles.CountAsync(r => r.UserId == result.Created[0].UserId));
+        Assert.Equal(1, await db.AuditLogs.CountAsync(a => a.TargetId == result.Created[0].UserId));
+        using var newMember = host.Client();
+        await Token(newMember);
+        await Status(newMember.PostAsJsonAsync("/api/auth/login", new LoginRequest("http-new", "test-only")), HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Concurrent_Bulk_Duplicate_Race_Commits_Only_One_Whole_List()
+    {
+        await using var host = await ApiHost.StartAsync();
+        using var first = host.Client(); using var second = host.Client();
+        await Login(first, "admin"); await Token(first);
+        await Login(second, "admin"); await Token(second);
+        MemberBulkRequest Request(string unique) => new([new(unique, "합성 부원", "", "test-only"), new("shared", "합성 부원", "", "test-only")]);
+        var results = await Task.WhenAll(
+            Read<MemberBulkResult>(first.PostAsJsonAsync("/api/admin/members/bulk", Request("first-only"))),
+            Read<MemberBulkResult>(second.PostAsJsonAsync("/api/admin/members/bulk", Request("second-only"))));
+        Assert.Single(results, r => r.Created.Count == 2 && r.Errors.Count == 0);
+        Assert.Single(results, r => r.Created.Count == 0 && r.Errors.Count > 0);
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(4, await db.Users.CountAsync());
+        Assert.Equal(4, await db.UserRoles.CountAsync());
+        Assert.Equal(2, await db.AuditLogs.CountAsync());
+    }
+
     private sealed class PasswordChangeHandler : HttpMessageHandler
     {
         private bool changed;

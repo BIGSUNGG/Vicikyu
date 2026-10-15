@@ -12,6 +12,8 @@ public interface IMemberService
 
     Task<MemberListDto> AddAsync(MemberCreateRequest request);
 
+    Task<MemberBulkResult> AddBulkAsync(MemberBulkRequest request);
+
     Task<MemberListDto> UpdateAsync(string userId, MemberUpdateRequest request);
 
     Task<ProfileDto> GetProfileAsync(string userId);

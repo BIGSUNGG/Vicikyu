@@ -5,6 +5,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const verifyLoadingUx = require("./verify-loading-ux.cjs");
+const verifyMemberBulk = require("./verify-member-bulk-add.cjs");
+const workbookPath = process.env.MEMBER_WORKBOOK_PATH;
+if (!workbookPath || !fs.existsSync(workbookPath)) throw new Error("MEMBER_WORKBOOK_PATH must point to the supplied 46-record XLSX (read-only input).");
+let sensitiveRosterActive = false;
 const root = path.resolve(__dirname, "..");
 const evidenceDir = path.join(root, "artifacts", "wasm-browser");
 const highPingDir = path.join(root, "artifacts", "high-ping-navigation");
@@ -131,7 +135,7 @@ async function api(page, method, resource, body, expected = 200) {
 	assert.equal(
 		result.status,
 		expected,
-		`${method} ${resource}: ${JSON.stringify(result.data)}`,
+		`${method} ${resource}: unexpected HTTP status`,
 	);
 	return result.data;
 }
@@ -816,18 +820,8 @@ async function verifyHighPingNavigation() {
 		await api(anonymous, "GET", "/api/my/profile", undefined, 401);
 		await login(admin, "admin", adminPassword);
 		await goto(admin, "/admin/members");
-		await admin
-			.getByRole("button", { name: "+ 부원 추가", exact: true })
-			.click();
-		const addForm = admin.locator("form");
-		await addForm.locator('input[placeholder="202512345"]').fill("202699999");
-		await addForm.locator('input[placeholder="김민수"]').fill("WASM 검증 부원");
-		await addForm.locator('input[placeholder="컴퓨터공학과"]').fill("검증학과");
-		await addForm.locator('input[type="password"]').fill(memberPassword);
-		const added = await action(admin, "/api/admin/members", "POST", () =>
-			addForm.getByRole("button", { name: "추가", exact: true }).click(),
-		);
-		evidence.flows.push("admin member create through WASM form");
+        const added = await verifyMemberBulk.synthetic({ page: admin, api, action, evidence, evidenceDir, memberPassword });
+        evidence.flows.push("unified editable bulk preview / append / defaults / validation / single manual commit");
 		await login(member, "202699999", memberPassword);
 		await api(member, "GET", "/api/admin/teams", undefined, 403);
 		await goto(member, "/admin");
@@ -1091,6 +1085,9 @@ async function verifyHighPingNavigation() {
 		evidence.flows.push(
 			"password change / previous session revoked / re-login / logout UI",
 		);
+        sensitiveRosterActive = true;
+        await verifyMemberBulk.actual({ page: admin, api, action, evidence, workbookPath, goto });
+        evidence.flows.push("actual 46-record XLSX / isolated seed collisions / atomic commit / duplicate rejection");
 		assert.ok(
 			evidence.wasmResponses > 0,
 			"No real WASM binary responses observed",
@@ -1107,8 +1104,10 @@ async function verifyHighPingNavigation() {
 		if (browser) {
 			for (const [index, context] of browser.contexts().entries()) {
 				for (const page of context.pages()) {
-					if (!page.isClosed()) {
-						await page.screenshot({
+                    if (!page.isClosed() && sensitiveRosterActive) {
+                        evidence.failurePages.push({ url: page.url().replace(base, ""), text: "Redacted: actual-workbook verification; no personal data captured." });
+                    } else if (!page.isClosed()) {
+                        await page.screenshot({
 							path: path.join(evidenceDir, `failure-${index}.png`),
 							fullPage: true,
 						});

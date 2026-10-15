@@ -40,7 +40,7 @@ public sealed class ApiHttp(HttpClient http)
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body = null)
     {
         using var request = new HttpRequestMessage(method, path);
-        if (body is not null) request.Content = JsonContent.Create(body, body.GetType());
+        if (body is not null) request.Content = body as HttpContent ?? JsonContent.Create(body, body.GetType());
         if (method != HttpMethod.Get) request.Headers.Add("X-CSRF-TOKEN", await GetTokenAsync());
         using var response = await http.SendAsync(request);
         if (response.StatusCode == HttpStatusCode.Unauthorized)

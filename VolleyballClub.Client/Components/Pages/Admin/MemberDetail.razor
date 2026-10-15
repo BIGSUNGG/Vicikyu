@@ -11,7 +11,7 @@
 
 <PageTitle>부원 정보 · 빅이큐</PageTitle>
 
-<AdminNav Icon="/icons/users.svg" Title="@(member is null || memberLoading ? "부원 정보" : $"부원 정보 — {member.Name}")" Sub="@(memberLoading ? "정보를 불러오는 중…" : member is null ? "부원 정보 조회 실패" : $"{member.StudentNumber} · {StatusLabel(member.Status)}")" Active="members" />
+<AdminNav Icon="/icons/users.svg" Title="부원 정보" Sub="@(memberLoading ? "정보를 불러오는 중…" : member is null ? "부원 정보 조회 실패" : $"{member.StudentNumber} · {StatusLabel(member.Status)}")" Active="members" />
 
 <nav class="segment member-detail-tabs" aria-busy="@(memberLoading ? "true" : "false")" data-load-state="@MemberLoadState">
     <a class="seg-btn @(section == Section.Edit ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Edit)" href="javascript:void(0)">부원 수정</a>

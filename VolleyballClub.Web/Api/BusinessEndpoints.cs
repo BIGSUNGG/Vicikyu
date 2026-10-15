@@ -38,6 +38,9 @@ public static class BusinessEndpoints
         admin.MapPost("/teams/confirm", async (ITeamService s) => { await s.ConfirmAsync(); return Results.NoContent(); });
         admin.MapPost("/teams/guests", async (ITeamService s, TextRequest request) => { await s.AddGuestAsync(request.Value); return Results.NoContent(); });
         admin.MapDelete("/teams/guests/{guestId}", async (ITeamService s, int guestId) => { await s.RemoveGuestAsync(guestId); return Results.NoContent(); });
+        admin.MapPost("/members/import", MemberImportEndpoint.Preview)
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(2 * MemberBulkValidation.MaxFileBytes));
+        admin.MapPost("/members/bulk", async (IMemberService s, MemberBulkRequest request) => Results.Json(await s.AddBulkAsync(request)));
         admin.MapPost("/members/search", async (IMemberService s, MemberPageRequest request) => { return Results.Json(await s.GetPageAsync(request)); });
         admin.MapGet("/members/{userId}", async (IMemberService s, string userId) => { return Results.Json(await s.GetAsync(userId)); });
         admin.MapPost("/members", async (IMemberService s, MemberCreateRequest request) => { return Results.Json(await s.AddAsync(request)); });

@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<ITeamService, TeamService>();
         services.AddScoped<IMemberService, MemberService>();
+        services.AddSingleton<IMemberWorkbookReader, MemberWorkbookReader>();
         services.AddScoped<IFeeService, FeeService>();
         services.AddScoped<ISemesterService, SemesterService>();
 

@@ -1,0 +1,151 @@
+@inject MemberClient MemberSvc
+@inject ISnackbar Snackbar
+
+<div class="card member-bulk-add">
+    <button type="button" class="btn-secondary btn-block" disabled="@busy" @onclick="Toggle">
+        @(open ? "추가 취소" : "+ 부원 추가")
+    </button>
+    @if (open)
+    {
+        var errors = Errors.ToArray();
+        <div class="reveal" style="margin-top:14px" aria-busy="@(busy ? "true" : "false")">
+            <h2 class="card-title">부원 일괄 추가</h2>
+            <p class="member-meta">기본값은 새 행에만 적용됩니다. 업로드·편집 중에는 저장되지 않습니다. 최대 500행, XLSX 1MB.</p>
+            <a class="btn-secondary" href="/templates/member-list.xlsx" download="빅이큐 부원 목록 템플릿.xlsx">템플릿 다운로드</a>
+            <fieldset disabled="@busy" class="bulk-fields">
+                <div class="field">
+                    <label class="form-label" for="member-default-role">기본 역할</label>
+                    <select class="form-control" id="member-default-role" @bind="defaultRole">
+                        <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="form-label" for="member-default-password">기본 초기 비밀번호(4자 이상)</label>
+                    <input class="form-control" id="member-default-password" type="password" autocomplete="new-password" @bind="defaultPassword" @bind:event="oninput" maxlength="4096" />
+                </div>
+                <div class="field">
+                    <label class="form-label" for="member-workbook">XLSX 업로드</label>
+                    <InputFile @key="uploadKey" id="member-workbook" accept=".xlsx" OnChange="ImportAsync" disabled="@(!DefaultsReady || busy)" />
+                    @if (!DefaultsReady) { <p class="member-meta">기본 역할과 초기 비밀번호를 먼저 설정해 주세요.</p> }
+                </div>
+                <button type="button" class="btn-secondary" disabled="@(rows.Count >= MemberBulkValidation.MaxRows)" @onclick="AddRow">+ 행 추가</button>
+                <p class="member-meta" role="status">미리보기 @rows.Count 행</p>
+                @foreach (var row in rows)
+                {
+                    var index = rows.IndexOf(row) + 1;
+                    var prefix = $"member-row-{row.Id}";
+                    <div class="card bulk-row" @key="row.Id" data-row="@index">
+                        <h3 class="card-title">@index 행</h3>
+                        <div class="field">
+                            <label class="form-label" for="@(prefix + "-student")">학번</label>
+                            <input class="form-control" id="@(prefix + "-student")" data-field="student" @bind="row.StudentNumber" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                        </div>
+                        <div class="field">
+                            <label class="form-label" for="@(prefix + "-name")">이름</label>
+                            <input class="form-control" id="@(prefix + "-name")" data-field="name" @bind="row.Name" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                        </div>
+                        <div class="field">
+                            <label class="form-label" for="@(prefix + "-department")">학과</label>
+                            <input class="form-control" id="@(prefix + "-department")" data-field="department" @bind="row.Department" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                        </div>
+                        <div class="field">
+                            <label class="form-label" for="@(prefix + "-role")">역할</label>
+                            <select class="form-control" id="@(prefix + "-role")" data-field="role" @bind="row.Role" @bind:after="ClearServerErrors">
+                                <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="form-label" for="@(prefix + "-password")">초기 비밀번호</label>
+                            <input class="form-control" id="@(prefix + "-password")" data-field="password" type="password" autocomplete="new-password" @bind="row.Password" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                        </div>
+                        @foreach (var error in errors.Where(e => e.Row == index))
+                        { <p role="alert">@error.Message</p> }
+                        <button type="button" class="btn-secondary" aria-label="@(index + " 행 삭제")" @onclick="() => Delete(row)">행 삭제</button>
+                    </div>
+                }
+                @foreach (var error in errors.Where(e => e.Row == 0)) { <p role="alert">@error.Message</p> }
+                @if (message is not null) { <p role="alert">@message</p> }
+                <button type="button" class="btn-primary btn-block" @onclick="SubmitAsync">@(busy ? "처리 중…" : "일괄 추가")</button>
+            </fieldset>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnAdded { get; set; }
+    private bool open;
+    private bool busy;
+    private int uploadKey;
+    private string defaultRole = "MEMBER";
+    private string defaultPassword = "";
+    private string? message;
+    private List<Row> rows = [];
+    private IReadOnlyList<MemberRowError> serverErrors = [];
+    private bool DefaultsReady => MemberBulkValidation.ValidDefaults(defaultRole, defaultPassword);
+    private IReadOnlyList<MemberCreateRequest> Requests => rows.Select(r => r.Request()).ToArray();
+    private IEnumerable<MemberRowError> Errors => MemberBulkValidation.Validate(Requests).Concat(serverErrors).Distinct();
+
+    private void Toggle()
+    {
+        open = !open;
+        rows.Clear(); defaultPassword = ""; defaultRole = "MEMBER"; ClearServerErrors();
+    }
+    private void ClearServerErrors() { serverErrors = []; message = null; }
+    private void AddRow() { rows.Add(new(new("", "", "", defaultPassword, defaultRole))); ClearServerErrors(); }
+    private void Delete(Row row) { rows.Remove(row); ClearServerErrors(); }
+
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        if (busy || !DefaultsReady) return;
+        var role = defaultRole;
+        var password = defaultPassword;
+        busy = true; ClearServerErrors();
+        try
+        {
+            var file = e.File;
+            if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) || file.Size > MemberBulkValidation.MaxFileBytes)
+                throw new AppException("1MB 이하의 XLSX 파일을 선택해 주세요.");
+            await using var stream = file.OpenReadStream(MemberBulkValidation.MaxFileBytes);
+            var imported = await MemberSvc.ImportAsync(stream, file.Name, role, password);
+            if (rows.Count + imported.Count > MemberBulkValidation.MaxRows) throw new AppException("미리보기는 최대 500행입니다.");
+            rows.AddRange(imported.Select(r => new Row(r)));
+            if (imported.Count == 0) message = "업로드한 파일에 부원 행이 없습니다.";
+        }
+        catch (AppException ex) { message = ex.Message; }
+        catch (HttpRequestException) { message = "업로드하지 못했습니다. 연결을 확인하고 다시 시도해 주세요."; }
+        finally { busy = false; uploadKey++; }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (busy) return;
+        ClearServerErrors();
+        if (MemberBulkValidation.Validate(Requests).Count > 0) return;
+        busy = true;
+        try
+        {
+            var result = await MemberSvc.AddBulkAsync(new(Requests));
+            serverErrors = result.Errors;
+            if (result.Errors.Count == 0)
+            {
+                Snackbar.Add($"부원 {result.Created.Count}명 추가 완료", Severity.Success);
+                Toggle();
+                await OnAdded.InvokeAsync();
+            }
+        }
+        catch (AppException ex) { message = ex.Message; }
+        catch (HttpRequestException) { message = "응답을 확인하지 못했습니다. 부원 목록을 확인한 후 다시 시도해 주세요."; }
+        finally { busy = false; }
+    }
+
+    private sealed class Row(MemberCreateRequest request)
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public string StudentNumber { get; set; } = request.StudentNumber;
+        public string Name { get; set; } = request.Name;
+        public string Department { get; set; } = request.Department;
+        public string Role { get; set; } = request.Role;
+        public string Password { get; set; } = request.Password;
+        public MemberCreateRequest Request() => new(StudentNumber, Name, Department, Password, Role);
+    }
+}

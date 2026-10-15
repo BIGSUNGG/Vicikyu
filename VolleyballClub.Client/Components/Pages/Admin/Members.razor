@@ -155,42 +155,7 @@
     </div>
 </div>
 
-<div class="card">
-    <button type="button" class="btn-secondary btn-block" @onclick="() => showAddForm = !showAddForm">
-        @(showAddForm ? "추가 취소" : "+ 부원 추가")
-    </button>
-
-    @if (showAddForm)
-    {
-        <EditForm Model="createForm" OnValidSubmit="AddMemberAsync" class="reveal" style="margin-top:14px">
-            <DataAnnotationsValidator />
-            <div class="field">
-                <label class="form-label">학번</label>
-                <InputText @bind-Value="createForm.StudentNumber" class="form-control" placeholder="202512345" />
-            </div>
-            <div class="field">
-                <label class="form-label">이름</label>
-                <InputText @bind-Value="createForm.Name" class="form-control" placeholder="김민수" />
-            </div>
-            <div class="field">
-                <label class="form-label">학과</label>
-                <InputText @bind-Value="createForm.Department" class="form-control" placeholder="컴퓨터공학과" />
-            </div>
-            <div class="field">
-                <label class="form-label">초기 비밀번호(4자 이상)</label>
-                <InputText type="password" @bind-Value="createForm.Password" class="form-control" />
-            </div>
-            <div class="field">
-                <label class="form-label">역할</label>
-                <select class="form-control" value="@createForm.Role" @onchange='e => createForm.Role = e.Value?.ToString() ?? "MEMBER"'>
-                    <option value="MEMBER">부원</option>
-                    <option value="ADMIN">관리자</option>
-                </select>
-            </div>
-            <button type="submit" class="btn-primary btn-block">추가</button>
-        </EditForm>
-    }
-</div>
+<MemberBulkAdd OnAdded="ReloadAsync" />
 
 @code {
     private bool isLoading = true;
@@ -206,9 +171,7 @@
     private MemberSortField sort = MemberSortField.SemesterAttendance;
     private bool ascending;
     private int pageNumber = 1;
-    private bool showAddForm;
     private bool showFilters;
-    private MemberCreateForm createForm = new();
 
     private int TotalPages => page is null
         ? 1
@@ -321,27 +284,6 @@
         await ReadAsync();
     }
 
-    private async Task AddMemberAsync()
-    {
-        try
-        {
-            await MemberSvc.AddAsync(new MemberCreateRequest(
-                createForm.StudentNumber.Trim(),
-                createForm.Name.Trim(),
-                createForm.Department.Trim(),
-                createForm.Password,
-                createForm.Role));
-            Snackbar.Add($"{createForm.Name} 추가 완료", Severity.Success);
-            createForm = new MemberCreateForm();
-            showAddForm = false;
-            await ReloadAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
     private static string StatusLabel(MemberStatus status) => status switch
     {
         MemberStatus.Withdrawn => "탈퇴",
@@ -349,20 +291,4 @@
         _ => "활동",
     };
 
-    private class MemberCreateForm
-    {
-        [Required(ErrorMessage = "학번을 입력하세요.")]
-        public string StudentNumber { get; set; } = "";
-
-        [Required(ErrorMessage = "이름을 입력하세요.")]
-        public string Name { get; set; } = "";
-
-        public string Department { get; set; } = "";
-
-        [Required(ErrorMessage = "초기 비밀번호를 입력하세요.")]
-        [MinLength(4, ErrorMessage = "비밀번호는 4자 이상이어야 합니다.")]
-        public string Password { get; set; } = "";
-
-        public string Role { get; set; } = "MEMBER";
-    }
 }

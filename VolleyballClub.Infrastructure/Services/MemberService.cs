@@ -5,6 +5,7 @@ using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain;
 using VolleyballClub.Domain.Enums;
+using VolleyballClub.Domain.Entities;
 using VolleyballClub.Infrastructure.Identity;
 using VolleyballClub.Infrastructure.Persistence;
 
@@ -16,7 +17,8 @@ public class MemberService(
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
     ISheetFormatResolver formatResolver,
-    TimeProvider timeProvider) : IMemberService
+    TimeProvider timeProvider,
+    ApplicationDbContext identityDb) : IMemberService
 {
     public async Task<MemberPageDto> GetPageAsync(MemberPageRequest request)
     {
@@ -178,56 +180,92 @@ public class MemberService(
     public async Task<MemberListDto> AddAsync(MemberCreateRequest request)
     {
         await currentUser.RequireAdminAsync();
-
-        var studentNumber = request.StudentNumber.Trim();
-        if (string.IsNullOrEmpty(studentNumber) || string.IsNullOrEmpty(request.Name.Trim()))
-        {
-            throw new RuleViolationException("학번과 이름은 필수입니다.");
-        }
-
-        if (request.Password.Length < 4)
-        {
-            throw new RuleViolationException("비밀번호는 4자 이상이어야 합니다.");
-        }
-
-        if (await userManager.FindByNameAsync(studentNumber) is not null)
-        {
+        if (!string.IsNullOrWhiteSpace(request.StudentNumber) && await userManager.FindByNameAsync(request.StudentNumber.Trim()) is not null)
             throw new ConflictException("이미 등록된 학번입니다.");
-        }
+        var result = await AddBulkAsync(new([request]));
+        if (result.Errors.Count > 0) throw new RuleViolationException(string.Join(" ", result.Errors.Select(e => e.Message)));
+        return result.Created.Single();
+    }
 
-        var now = KstClock.NowUtc(timeProvider);
-
-        // 현재 색 사용량 기준으로 가장 적게 쓰인 색 중 랜덤 배정(골고루 분산)
-        var colorUsage = await userManager.Users
-            .Where(u => u.Color != null)
-            .GroupBy(u => u.Color!)
-            .Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Count);
-
-        var user = new ApplicationUser
+    public async Task<MemberBulkResult> AddBulkAsync(MemberBulkRequest request)
+    {
+        await currentUser.RequireAdminAsync();
+        var errors = MemberBulkValidation.Validate(request.Rows);
+        if (errors.Count > 0) return new([], errors);
+        var rows = request.Rows;
+        for (var i = 0; i < rows.Count; i++)
         {
-            UserName = studentNumber,
-            StudentNumber = studentNumber,
-            Name = request.Name.Trim(),
-            Department = request.Department.Trim(),
-            Status = MemberStatus.Active,
-            Color = MemberColors.PickBalanced(colorUsage),
-            JoinedAt = now,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-
-        var result = await userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
-        {
-            throw new RuleViolationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+            var r = rows[i];
+            var student = r.StudentNumber.Trim();
+            var normalized = userManager.NormalizeName(student);
+            if (await identityDb.Users.AnyAsync(u => u.StudentNumber == student || u.NormalizedUserName == normalized))
+                errors.Add(new(i + 1, "이미 등록된 학번입니다."));
+            var candidate = new ApplicationUser { UserName = student, StudentNumber = student };
+            foreach (var validator in userManager.UserValidators)
+            {
+                var result = await validator.ValidateAsync(userManager, candidate);
+                if (!result.Succeeded) errors.Add(new(i + 1, string.Join(" ", result.Errors.Select(e => e.Description))));
+            }
+            foreach (var validator in userManager.PasswordValidators)
+            {
+                var result = await validator.ValidateAsync(userManager, candidate, r.Password);
+                if (!result.Succeeded) errors.Add(new(i + 1, "비밀번호가 계정 정책에 맞지 않습니다."));
+            }
         }
+        if (errors.Count > 0) return new([], errors);
 
-        var role = request.Role == "ADMIN" ? "ADMIN" : "MEMBER";
-        EnsureSuccess(await userManager.AddToRoleAsync(user, role));
-        await auditLog.LogAsync(AdminAction.MemberCreate, "User", user.Id, $"{user.Name}({studentNumber}) {role} 추가");
-
-        return new MemberListDto(user.Id, user.Name, user.StudentNumber, user.Department, role, MemberStatus.Active, 0, false, user.Color);
+        // Identity's scoped store and these audit entries use this exact context/transaction.
+        await using var transaction = await identityDb.Database.BeginTransactionAsync();
+        var rowNumber = 0;
+        try
+        {
+            var colors = await identityDb.Users.Where(u => u.Color != null).GroupBy(u => u.Color!)
+                .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count);
+            var adminId = await currentUser.RequireUserIdAsync();
+            var now = KstClock.NowUtc(timeProvider);
+            List<MemberListDto> created = [];
+            foreach (var r in rows)
+            {
+                rowNumber++;
+                var student = r.StudentNumber.Trim();
+                var user = new ApplicationUser
+                {
+                    UserName = student, StudentNumber = student, Name = r.Name.Trim(), Department = r.Department.Trim(),
+                    Status = MemberStatus.Active, Color = MemberColors.PickBalanced(colors),
+                    JoinedAt = now, CreatedAt = now, UpdatedAt = now
+                };
+                var result = await userManager.CreateAsync(user, r.Password);
+                if (!result.Succeeded)
+                {
+                    await transaction.RollbackAsync();
+                    identityDb.ChangeTracker.Clear();
+                    return new([], [new(rowNumber, "계정을 만들 수 없습니다. 학번 중복 또는 계정 정책을 확인해 주세요.")]);
+                }
+                EnsureSuccess(await userManager.AddToRoleAsync(user, r.Role));
+                identityDb.AuditLogs.Add(new AuditLog
+                {
+                    AdminUserId = adminId, Action = AdminAction.MemberCreate, TargetType = "User", TargetId = user.Id,
+                    Details = $"{user.Name}({student}) {r.Role} 추가", CreatedAt = now
+                });
+                await identityDb.SaveChangesAsync();
+                colors[user.Color!] = colors.GetValueOrDefault(user.Color!) + 1;
+                created.Add(new(user.Id, user.Name, student, user.Department, r.Role, user.Status, 0, false, user.Color));
+            }
+            await transaction.CommitAsync();
+            return new(created, []);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync();
+            identityDb.ChangeTracker.Clear();
+            return new([], [new(rowNumber, "저장하지 못했습니다. 학번 중복 여부를 확인하고 다시 시도해 주세요. 전체 등록이 취소되었습니다.")]);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            identityDb.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<MemberListDto> UpdateAsync(string userId, MemberUpdateRequest request)

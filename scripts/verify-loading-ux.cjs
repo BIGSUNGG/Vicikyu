@@ -140,7 +140,8 @@ module.exports = async function verifyLoadingUx({
 		{
 			id: "home",
 			route: "/",
-			marker: ".home-tiles",
+			// The initial-error state hides tiles; the header retains the same load state.
+			marker: ".hero-band[data-load-state]",
 			anchor: ".home-tiles",
 			payload: [
 				".home-tiles .t-value:not(:has(.loading-placeholder)), .home-title-value:not(:has(.loading-placeholder))",
@@ -1083,8 +1084,15 @@ module.exports = async function verifyLoadingUx({
 				"최신응답",
 				"A-B-A draft uses new generation",
 			);
+			assert.equal(
+				(await page.locator(".hb-title").innerText()).trim(),
+				"부원 정보",
+			);
 			assert.ok(
-				(await page.locator(".hb-title").innerText()).includes("최신응답"),
+				(await page.locator(".member-edit .card-title").innerText()).includes(
+					"최신응답",
+				),
+				"A-B-A member heading uses new generation",
 			);
 			row.frames = await frames(page);
 			validateTrace(row.frames, row.id, 1);
@@ -1309,7 +1317,9 @@ module.exports = async function verifyLoadingUx({
 				expected.name,
 			);
 			assert.ok(
-				(await page.locator(".hb-title").innerText()).includes(expected.name),
+				(await page.locator(".member-edit .card-title").innerText()).includes(
+					expected.name,
+				),
 				"late write-followup read cannot replace B with A",
 			);
 			row.requests = route.records;

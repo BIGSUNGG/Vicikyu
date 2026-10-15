@@ -188,13 +188,14 @@ public sealed class ServiceHost : IAsyncDisposable
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);
-        Member = new MemberService(Db.Factory, CreateUserManager(), Current, Audit, FormatResolver, Time);
+        var memberDb = Db.CreateContext();
+        Member = new MemberService(Db.Factory, CreateUserManager(memberDb), Current, Audit, FormatResolver, Time, memberDb);
         Users = CreateUserManager();
     }
 
-    private UserManager<ApplicationUser> CreateUserManager()
+    private UserManager<ApplicationUser> CreateUserManager(ApplicationDbContext? context = null)
     {
-        var db = Db.CreateContext();
+        var db = context ?? Db.CreateContext();
         return new UserManager<ApplicationUser>(
             new UserStore<ApplicationUser>(db),
             Options.Create(new IdentityOptions
