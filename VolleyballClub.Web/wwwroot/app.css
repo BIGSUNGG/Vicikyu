@@ -2066,3 +2066,141 @@ button.court-head {
 		bottom: 0;
 	}
 }
+
+/* 데이터가 준비될 때까지 실제 값 대신 기존 행·타일의 공간을 유지한다. */
+.loading-placeholder {
+	display: inline-block;
+	min-width: 3em;
+	border-radius: 5px;
+	background: var(--vb-border);
+	color: transparent;
+}
+
+.home-attendance,
+.teams-data {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.home-tiles[data-load-state="loading"] > .tile,
+.loading-timeline > .tl-item {
+	animation: none;
+}
+
+.records-results {
+	position: relative;
+	display: flow-root;
+}
+
+.records-skeleton,
+.records-values {
+	display: flow-root;
+}
+
+.records-skeleton[data-retained="true"] {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.records-values[aria-hidden="true"] {
+	visibility: hidden;
+}
+
+.admin-load-region {
+	position: relative;
+	display: flow-root;
+}
+
+.admin-load-skeleton,
+.admin-load-values {
+	display: flow-root;
+}
+
+.admin-load-skeleton[data-retained="true"] {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.admin-load-values[aria-hidden="true"],
+.settings-sheet-value[aria-hidden="true"] {
+	visibility: hidden;
+}
+
+.admin-load-status {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.admin-load-skeleton .member-row,
+.admin-load-skeleton .card-row {
+	animation: none;
+}
+
+.settings-load-region {
+	display: contents;
+}
+
+.settings-load-region > [role="alert"] {
+	grid-column: 1 / -1;
+}
+
+.settings-sheet-row {
+	position: relative;
+}
+
+.settings-sheet-skeleton {
+	width: 100%;
+}
+
+.settings-sheet-skeleton[data-retained="true"] {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.home-title,
+.home-attendance,
+.home-tiles[data-load-state="loading"][data-retained="true"] > .tile,
+.home-teams[data-load-state="loading"][data-retained="true"] > .court {
+	position: relative;
+}
+
+.home-title-value[aria-hidden="true"],
+.home-team-summary[aria-hidden="true"],
+.home-attendance > div:first-child[aria-hidden="true"],
+.home-tiles[data-load-state="loading"][data-retained="true"] > .tile > *,
+.home-teams[data-load-state="loading"][data-retained="true"] > .court > *,
+.home-teams[data-load-state="loading"][data-retained="true"] > .court .chips {
+	visibility: hidden;
+}
+
+.home-title-skeleton {
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.home-attendance-skeleton[data-retained="true"] {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.home-tiles[data-load-state="loading"][data-retained="true"] > .tile::after,
+.home-teams[data-load-state="loading"][data-retained="true"] > .court::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 18px;
+	width: 3em;
+	height: 1em;
+	border-radius: 5px;
+	background: var(--vb-border);
+}

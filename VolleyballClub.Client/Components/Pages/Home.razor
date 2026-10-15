@@ -6,36 +6,61 @@
 @inject TeamClient Teams
 @inject FeeClient Fees
 @inject CurrentUserClient Me
+@inject Microsoft.Extensions.Logging.ILogger<Home> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>홈 · 빅이큐</PageTitle>
 
-<header class="hero-band">
-    @if (MyTeam is not null)
-    {
-        <div class="hb-title">@MyTeam.Name</div>
-    }
-    else if (today is not null && today.Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated)
-    {
-        <div class="hb-title">활동 중</div>
-    }
-    else
-    {
-        <div class="hb-title">일정 없음</div>
-    }
+<header class="hero-band" data-load-state="@LoadState">
+    <div class="hb-title home-title" aria-busy="@(isLoading ? "true" : "false")">
+        <span class="home-title-value" aria-hidden="@(IsReadLoading && hasLoaded ? "true" : "false")">
+        @if (!hasLoaded)
+        {
+            @if (isLoading) { <span class="loading-placeholder" aria-hidden="true">&nbsp;</span> } else { <text>홈</text> }
+        }
+        else if (MyTeam is not null)
+        {
+            @MyTeam.Name
+        }
+        else if (today is not null && today.Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated)
+        {
+            <text>활동 중</text>
+        }
+        else
+        {
+            <text>일정 없음</text>
+        }
+        </span>
+        @if (IsReadLoading && hasLoaded)
+        {
+            <span class="loading-placeholder home-title-skeleton" aria-hidden="true">&nbsp;</span>
+        }
+    </div>
     <div class="hf-chips">
         <span class="hf-chip"><img class="icon" src="/icons/calendar.svg" alt=""> @DateString</span>
-        @if (today is not null)
+        @if (isLoading)
+        {
+            <span class="hf-chip" role="status">@(IsReadLoading ? "정보를 불러오는 중…" : "정보를 갱신하는 중…")</span>
+        }
+        else if (hasLoaded && today is not null)
         {
             <span class="hf-chip">@today.StatusText</span>
         }
     </div>
 </header>
 
-<div class="tile-grid">
+@if (isLoading || hasLoaded)
+{
+<div class="tile-grid home-tiles" aria-busy="@(isLoading ? "true" : "false")" aria-hidden="@(IsReadLoading && hasLoaded ? "true" : "false")" data-retained="@(hasLoaded ? "true" : "false")" data-load-state="@LoadState">
     <div class="tile sky">
         <div class="t-icon"><img class="icon" src="/icons/calendar.svg" alt=""></div>
         <div class="t-label">오늘 운동</div>
-        @if (today is not null)
+        @if (!hasLoaded)
+        {
+            <div class="t-value"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+            <div class="t-meta"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+        }
+        else if (today is not null)
         {
             <div class="t-value">@today.ActivityDate.ToString("M월 d일")</div>
             <div class="t-meta">@today.ActivityDate.ToString("dddd") · @today.StatusText</div>
@@ -49,7 +74,12 @@
     <div class="tile mint">
         <div class="t-icon"><img class="icon" src="/icons/check.svg" alt=""></div>
         <div class="t-label">오늘 출석</div>
-        @if (today?.IsAttended == true)
+        @if (!hasLoaded)
+        {
+            <div class="t-value"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+            <div class="t-meta"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+        }
+        else if (today?.IsAttended == true)
         {
             <div class="t-value">완료</div>
             <div class="t-meta">@Domain.KstClock.ToKstTimeString(today.CheckedAt!.Value) 출석</div>
@@ -65,38 +95,82 @@
             <div class="t-meta">@(today is null ? "오늘 활동 없음" : "출석 기록 없음")</div>
         }
     </div>
-    @if (semesterStats is not null)
+    @if (!hasLoaded || semesterStats is not null)
     {
         <div class="tile sun">
             <div class="t-icon"><img class="icon" src="/icons/trophy.svg" alt=""></div>
-            <div class="t-label">@(semesterStats.Semester?.Name ?? "이번 학기")</div>
-            <div class="t-value">@(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</div>
-            <div class="t-meta">출석률 @(semesterStats.AttendanceRatePercent)% (@(semesterStats.SemesterActivities)회 중)</div>
+            @if (!hasLoaded)
+            {
+                <div class="t-label"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+                <div class="t-value"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+                <div class="t-meta"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+            }
+            else if (semesterStats is not null)
+            {
+                <div class="t-label">@(semesterStats.Semester?.Name ?? "이번 학기")</div>
+                <div class="t-value">@(semesterStats.MyAttendances)회 · @(semesterStats.Rank)위</div>
+                <div class="t-meta">출석률 @(semesterStats.AttendanceRatePercent)% (@(semesterStats.SemesterActivities)회 중)</div>
+            }
         </div>
     }
-    @if (feeStatus is not null)
+    @if (!hasLoaded || feeStatus is not null)
     {
         <div class="tile lilac">
             <div class="t-icon"><img class="icon" src="/icons/fee.svg" alt=""></div>
             <div class="t-label">회비</div>
-            <div class="t-value">@(feeStatus.IsPaid ? "납부 완료" : "미납")</div>
-            <div class="t-meta">@feeStatus.PeriodName</div>
+            @if (!hasLoaded)
+            {
+                <div class="t-value"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+                <div class="t-meta"><span class="loading-placeholder" aria-hidden="true">&nbsp;</span></div>
+            }
+            else if (feeStatus is not null)
+            {
+                <div class="t-value">@(feeStatus.IsPaid ? "납부 완료" : "미납")</div>
+                <div class="t-meta">@feeStatus.PeriodName</div>
+            }
         </div>
     }
 </div>
 
-<AttendanceStatusCard Today="today" OnChanged="LoadAsync" />
+}
 
-@if (teams.Count > 0)
+<div class="home-attendance" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+    <div hidden="@(!hasLoaded)" aria-hidden="@(IsReadLoading && hasLoaded ? "true" : "false")">
+        <AttendanceStatusCard Today="today" OnChanged="LoadAsync" />
+    </div>
+    @if (IsReadLoading)
+    {
+        <div class="card home-attendance-skeleton" data-retained="@(hasLoaded ? "true" : "false")" aria-hidden="true"><p class="empty"><span class="loading-placeholder">&nbsp;</span></p></div>
+    }
+    @if (loadError is not null)
+    {
+        <div class="card" role="alert">
+            <p>@loadError</p>
+            <button type="button" class="btn-primary" @onclick="RetryAsync">다시 불러오기</button>
+        </div>
+    }
+</div>
+
+@if (isLoading && !hasLoaded)
+{
+    <div class="sec" aria-hidden="true"><span class="sec-title">지금 팀</span></div>
+    <div class="court-grid home-teams" aria-busy="true" data-load-state="loading" aria-hidden="true">
+        @for (var i = 0; i < 2; i++)
+        {
+            <div class="court"><div class="court-head"><span class="loading-placeholder">&nbsp;</span></div></div>
+        }
+    </div>
+}
+else if (hasLoaded && teams.Count > 0)
 {
     <div class="sec">
         <span class="sec-title">지금 팀</span>
-        <span class="sec-right">
+        <span class="sec-right home-team-summary" aria-hidden="@(IsReadLoading ? "true" : "false")">
             <span class="sec-more">@(teams.Sum(t => t.Members.Count))명 · @(teams.Count)팀</span>
             <button type="button" class="sec-expand" @onclick="OpenTeamBoard" aria-label="팀 편성표 전체화면">⤢</button>
         </span>
     </div>
-    <div class="court-grid">
+    <div class="court-grid home-teams" aria-busy="@(isLoading ? "true" : "false")" aria-hidden="@(IsReadLoading ? "true" : "false")" data-retained="true" data-load-state="@LoadState">
         @foreach (var team in teams)
         {
             var isMine = team.Members.Any(m => !m.IsGuest && m.UserId == myUserId);
@@ -154,6 +228,13 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private bool hideLoadedValues;
+    private bool IsReadLoading => isLoading && (!hasLoaded || hideLoadedValues);
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? (IsReadLoading ? "loading" : "refreshing") : loadError is not null ? "error" : "ready";
     private MyTodayDto? today;
     private List<TeamResultDto> teams = [];
     private MySemesterStatsDto? semesterStats;
@@ -180,26 +261,73 @@
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync()
+    private Task RetryAsync() => LoadAsync(hidePreviousValues: true);
+
+    private Task LoadAsync() => LoadAsync(hidePreviousValues: false);
+
+    private async Task LoadAsync(bool hidePreviousValues)
     {
-        myUserId = await Me.RequireUserIdAsync();
+        var generation = ++loadGeneration;
+        hideLoadedValues = hidePreviousValues;
+        isLoading = true;
+        loadError = null;
         try
         {
-            today = await Activities.GetMyTodayAsync();
+            var userTask = Me.RequireUserIdAsync();
+            var todayTask = GetTodayAsync();
+            var teamsTask = Teams.GetTodayTeamsAsync();
+            var statsTask = Attendance.GetMySemesterStatsAsync();
+            var feeTask = GetFeeStatusAsync();
+            await Task.WhenAll(userTask, todayTask, teamsTask, statsTask, feeTask);
+            if (generation != loadGeneration) return;
+            var loadedUserId = await userTask;
+            var loadedToday = await todayTask;
+            var loadedTeams = await teamsTask ?? throw new InvalidOperationException("팀 목록 응답이 없습니다.");
+            var loadedStats = await statsTask ?? throw new InvalidOperationException("학기 통계 응답이 없습니다.");
+            var loadedFee = await feeTask;
+            myUserId = loadedUserId;
+            today = loadedToday;
+            teams = loadedTeams;
+            semesterStats = loadedStats;
+            feeStatus = loadedFee;
+            hasLoaded = true;
+        }
+        catch (AppException ex)
+        {
+            if (generation == loadGeneration) loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "홈 정보 조회 실패");
+            if (generation == loadGeneration) loadError = "정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                hideLoadedValues = false;
+            }
+        }
+    }
+
+    private async Task<MyTodayDto?> GetTodayAsync()
+    {
+        try
+        {
+            return await Activities.GetMyTodayAsync() ?? throw new InvalidOperationException("오늘 활동 응답이 없습니다.");
         }
         catch (NotFoundException)
         {
-            today = null;
+            return null;
         }
+    }
 
-        teams = await Teams.GetTodayTeamsAsync();
-        semesterStats = await Attendance.GetMySemesterStatsAsync();
-
+    private async Task<FeeStatusDto?> GetFeeStatusAsync()
+    {
         var period = await Fees.GetCurrentPeriodAsync();
-        if (period is not null)
-        {
-            var myStatuses = await Fees.GetMyStatusesAsync();
-            feeStatus = myStatuses.FirstOrDefault(s => s.PeriodId == period.Id);
-        }
+        if (period is null) return null;
+        var statuses = await Fees.GetMyStatusesAsync() ?? throw new InvalidOperationException("회비 내역 응답이 없습니다.");
+        return statuses.FirstOrDefault(s => s.PeriodId == period.Id);
     }
 }

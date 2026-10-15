@@ -5,15 +5,35 @@
 @inject TeamClient Teams
 @inject SheetSyncClient SheetSync
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Dashboard> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>관리자 · 빅이큐</PageTitle>
 
 <AdminNav Icon="/icons/gear.svg" Title="관리자" Sub="@Domain.KstClock.Today(TimeProvider.System).ToDateTime(TimeOnly.MinValue).ToString("yyyy년 M월 d일 dddd")"
-          Active="dashboard" Badge="@(today?.StatusText)"
-          BadgeClass="@(StatusBadgeClass)" />
+          Active="dashboard" Badge="@(isLoading ? "\u00a0" : today?.StatusText)"
+          BadgeClass="@(isLoading ? "loading-placeholder" : StatusBadgeClass)" />
 
-<div class="admin-grid">
-@if (today is not null)
+<div class="admin-grid dashboard-data" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+@if (isLoading)
+{
+    <div class="card" aria-hidden="true">
+        <h2 class="card-title"><span class="loading-placeholder">&nbsp;</span></h2>
+        @for (var row = 0; row < 3; row++)
+        {
+            <p><span class="loading-placeholder" style="min-width:70%">&nbsp;</span></p>
+        }
+    </div>
+    <span class="admin-load-status" role="status">활동 정보를 불러오는 중…</span>
+}
+else if (loadError is not null)
+{
+    <div class="card" role="alert">
+        <p>@loadError</p>
+        <button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button>
+    </div>
+}
+@if (!isLoading && loadError is null && today is not null)
 {
     <div class="card">
         <h2 class="card-title">오늘 운동 · @today.ActivityDate.ToString("yyyy.MM.dd")</h2>
@@ -177,6 +197,11 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private bool resyncing;
 
     private SheetSyncReport? resyncReport;
@@ -223,18 +248,47 @@
         _ => "badge-gray",
     };
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override Task OnInitializedAsync() => ReadAsync();
 
-    private async Task LoadAsync()
+    private Task ReadAsync() => LoadAsync(showSkeleton: true);
+
+    private Task LoadAsync() => LoadAsync(showSkeleton: false);
+
+    private async Task LoadAsync(bool showSkeleton)
     {
+        var generation = ++loadGeneration;
+        isLoading = showSkeleton || today is null || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
         try
         {
-            today = await Activities.GetOrCreateTodayAsync();
-            teams = await Teams.GetTodayTeamsForAdminAsync();
+            // 기존 생성→팀 조회 순서를 유지하되 한 조회의 결과는 함께 반영한다.
+            var loadedToday = await Activities.GetOrCreateTodayAsync() ?? throw new InvalidOperationException("오늘 활동 응답이 없습니다.");
+            var loadedTeams = await Teams.GetTodayTeamsForAdminAsync() ?? throw new InvalidOperationException("팀 목록 응답이 없습니다.");
+            if (generation != loadGeneration) return;
+            today = loadedToday;
+            teams = loadedTeams;
         }
         catch (AppException ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+            if (!showSkeleton) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "관리자 활동 정보 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "활동 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) Snackbar.Add(loadError, Severity.Error);
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
         }
     }
 

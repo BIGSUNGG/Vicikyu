@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+const verifyLoadingUx = require("./verify-loading-ux.cjs");
 const root = path.resolve(__dirname, "..");
 const evidenceDir = path.join(root, "artifacts", "wasm-browser");
 const highPingDir = path.join(root, "artifacts", "high-ping-navigation");
@@ -20,6 +21,7 @@ const adminPassword = `Verify-${crypto.randomUUID()}!`;
 const memberPassword = `Member-${crypto.randomUUID()}!`;
 const errors = [];
 const evidence = {
+	runStartedAt: new Date().toISOString(),
 	environment: "isolated Docker / Chromium desktop engine",
 	realIPhone: false,
 	externalSheets: "test doubles",
@@ -85,14 +87,14 @@ for (const signal of ["SIGINT", "SIGTERM"])
 	});
 const deadline = setTimeout(
 	() => {
-		console.error("Verification exceeded 12 minutes.");
+		console.error("Verification exceeded 30 minutes.");
 		try {
 			cleanup();
 		} finally {
 			process.exit(1);
 		}
 	},
-	12 * 60 * 1000,
+	30 * 60 * 1000,
 );
 
 async function api(page, method, resource, body, expected = 200) {
@@ -263,6 +265,7 @@ const round = (value) =>
 	value == null || Number.isNaN(value) ? null : Math.round(value * 10) / 10;
 
 async function waitForHomeReady(page) {
+	await page.locator('.home-tiles[data-load-state="ready"]').waitFor();
 	await page.locator(".tile.lilac").waitFor();
 	await page.getByText("회비", { exact: true }).waitFor();
 }
@@ -993,6 +996,18 @@ async function verifyHighPingNavigation() {
 		);
 		await member.getByRole("button", { name: "닫기", exact: true }).click();
 		evidence.flows.push("personal settings color UI persistence");
+		await verifyLoadingUx({
+			createPage,
+			login,
+			api,
+			goto,
+			base,
+			adminPassword,
+			memberId: added.userId,
+			memberStudentNumber: "202699999",
+			evidence,
+			evidenceDir,
+		});
 		const routes = [
 			"/",
 			"/my",

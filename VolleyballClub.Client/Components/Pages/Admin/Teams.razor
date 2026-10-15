@@ -5,11 +5,31 @@
 @inject AttendanceClient AttendanceSvc
 @inject ActivityClient Activities
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Teams> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>팀 뽑기 · 빅이큐</PageTitle>
 
 <AdminNav Icon="/icons/dice.svg" Title="팀 뽑기" Sub="출석 인원 기준 랜덤 편성" Active="teams" />
 
+<div class="teams-data" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+@if (isLoading)
+{
+    <span class="admin-load-status" role="status">팀 정보를 불러오는 중…</span>
+    <div class="card" aria-hidden="true">
+        <h2 class="card-title"><span class="loading-placeholder">&nbsp;</span></h2>
+        @for (var row = 0; row < 3; row++)
+        {
+            <div class="member-row"><span class="loading-placeholder" style="min-width:70%">&nbsp;</span></div>
+        }
+    </div>
+}
+else if (loadError is not null)
+{
+    <div class="card" role="alert"><p>@loadError</p><button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button></div>
+}
+else
+{
 @if (drawnTeams is { Count: > 0 })
 {
     <div class="card">
@@ -240,7 +260,14 @@ else
     </div>
 }
 
+}
+</div>
+
 @code {
+    private bool isLoading = true;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : loadError is not null ? "error" : "ready";
     private ParticipantListDto participants = new([], 0);
     private HashSet<string> selectedUserIds = [];
     private HashSet<int> selectedGuestIds = [];
@@ -258,20 +285,52 @@ else
     private string newGuestName = "";
     private string? sizeError;
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadParticipantsAsync();
+    protected override Task OnInitializedAsync() => ReadAsync();
 
-        // 이미 편성되어 있으면 현재 팀을 표시
-        drawnTeams = await TeamSvc.GetTodayTeamsForAdminAsync();
-        await LoadStatusAsync();
-        if (drawnTeams.Count > 0)
+    private async Task ReadAsync()
+    {
+        var generation = ++loadGeneration;
+        isLoading = true;
+        loadError = null;
+        try
         {
-            SyncSelectionFromTeams();
+            var participantsTask = TeamSvc.GetParticipantsAsync();
+            var teamsTask = TeamSvc.GetTodayTeamsForAdminAsync();
+            var statusTask = ReadInitialStatusAsync();
+            await Task.WhenAll(participantsTask, teamsTask, statusTask);
+            if (generation != loadGeneration) return;
+            participants = await participantsTask;
+            drawnTeams = await teamsTask;
+            activityStatus = await statusTask;
+            selectedUserIds = participants.Participants.Where(p => !p.IsGuest).Select(p => p.UserId!).ToHashSet();
+            selectedGuestIds = participants.Participants.Where(p => p.IsGuest).Select(p => p.GuestId!.Value).ToHashSet();
+            if (drawnTeams.Count > 0) SyncSelectionFromTeams();
+            else SetTeamCount(teamCount);
         }
-        else
+        catch (AppException ex)
         {
-            SetTeamCount(teamCount);
+            if (generation == loadGeneration) loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "팀 정보 조회 실패");
+            if (generation == loadGeneration) loadError = "팀 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (generation == loadGeneration) isLoading = false;
+        }
+    }
+
+    private async Task<ActivityStatus> ReadInitialStatusAsync()
+    {
+        try
+        {
+            return (await Activities.GetTodayForAdminAsync()).Status;
+        }
+        catch (NotFoundException)
+        {
+            return ActivityStatus.Ready;
         }
     }
 

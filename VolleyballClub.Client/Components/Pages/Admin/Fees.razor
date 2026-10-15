@@ -3,14 +3,20 @@
 
 @inject FeeClient FeeSvc
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Fees> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>회비 관리 · 빅이큐</PageTitle>
 
-<AdminNav Icon="/icons/money.svg" Title="회비 관리" Sub="@($"납부 {paidCount} / {statuses.Count}명")" Active="fees" />
+<AdminNav Icon="/icons/money.svg" Title="회비 관리" Sub="@(isLoading ? "회비 정보를 불러오는 중…" : loadError is not null ? "회비 조회 실패" : $"납부 {paidCount} / {statuses.Count}명")" Active="fees" />
 
-<div class="card">
+<div class="card fees-periods" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
     <h2 class="card-title">회비 기간</h2>
     <div class="filter-group">
+        @if (isLoading && !hasLoaded)
+        {
+            <span class="filter-btn loading-placeholder" aria-hidden="true">&nbsp;</span>
+        }
         @foreach (var period in periods)
         {
             <button type="button" class="filter-btn @(selectedPeriodId == period.Id ? "active" : "")"
@@ -49,8 +55,27 @@
     }
 </div>
 
-@if (selectedPeriod is not null)
+<div class="admin-load-region fees-results" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+@if (isLoading)
 {
+    <span class="admin-load-status" role="status">회비 내역을 불러오는 중…</span>
+    <div class="admin-load-skeleton" data-retained="@(selectedPeriod is not null ? "true" : "false")" aria-hidden="true">
+        <div class="card">
+            <h2 class="card-title"><span class="loading-placeholder">&nbsp;</span></h2>
+            @for (var row = 0; row < (hasLoaded ? Math.Max(1, visibleStatuses.Count) : 3); row++)
+            {
+                <div class="member-row"><span class="loading-placeholder" style="min-width:70%">&nbsp;</span></div>
+            }
+        </div>
+    </div>
+}
+@if (loadError is not null)
+{
+    <div class="card" role="alert"><p>@loadError</p><button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button></div>
+}
+else if (selectedPeriod is not null)
+{
+    <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
     <div class="card">
         <div class="card-row">
             <h2 class="card-title" style="margin:0">@selectedPeriod.Name — @(selectedPeriod.FeeAmount.ToString("N0"))원</h2>
@@ -128,7 +153,9 @@
             }
         </div>
     </div>
+    </div>
 }
+</div>
 
 @if (showDeleteConfirm)
 {
@@ -146,6 +173,12 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private List<FeePeriodDto> periods = [];
     private int? selectedPeriodId;
     private FeePeriodDto? selectedPeriod;
@@ -185,28 +218,59 @@
         }
     }
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override Task OnInitializedAsync() => ReadAsync();
 
-    private async Task LoadAsync()
+    private Task ReadAsync() => LoadAsync(showSkeleton: true);
+
+    private Task LoadAsync() => LoadAsync(showSkeleton: false);
+
+    private async Task LoadAsync(bool showSkeleton)
     {
+        var generation = ++loadGeneration;
+        var requestedId = selectedPeriodId;
+        isLoading = showSkeleton || !hasLoaded || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
         try
         {
-            periods = await FeeSvc.GetPeriodsAsync();
-            if (selectedPeriodId is null)
-            {
-                var current = await FeeSvc.GetCurrentPeriodAsync();
-                selectedPeriodId = current?.Id ?? periods.FirstOrDefault()?.Id;
-            }
-
-            selectedPeriod = periods.FirstOrDefault(p => p.Id == selectedPeriodId);
-            if (selectedPeriodId is { } id)
-            {
-                statuses = await FeeSvc.GetPeriodStatusesAsync(id);
-            }
+            // 기간 선택 때도 기존처럼 목록을 새로 읽어 외부 변경의 최신성을 유지한다.
+            var periodsTask = FeeSvc.GetPeriodsAsync();
+            var currentTask = requestedId is null ? FeeSvc.GetCurrentPeriodAsync() : Task.FromResult<FeePeriodDto?>(null);
+            await Task.WhenAll(periodsTask, currentTask);
+            var loadedPeriods = await periodsTask ?? throw new InvalidOperationException("회비 기간 목록 응답이 없습니다.");
+            var loadedId = requestedId ?? (await currentTask)?.Id ?? loadedPeriods.FirstOrDefault()?.Id;
+            var loadedPeriod = loadedPeriods.FirstOrDefault(p => p.Id == loadedId);
+            if (loadedId is not null && loadedPeriod is null) throw new InvalidOperationException("선택한 회비 기간 정보가 없습니다.");
+            var loadedStatuses = loadedId is { } id
+                ? await FeeSvc.GetPeriodStatusesAsync(id) ?? throw new InvalidOperationException("회비 내역 응답이 없습니다.")
+                : [];
+            if (generation != loadGeneration) return;
+            periods = loadedPeriods;
+            selectedPeriodId = loadedId;
+            selectedPeriod = loadedPeriod;
+            statuses = loadedStatuses;
+            hasLoaded = true;
         }
         catch (AppException ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+            if (!showSkeleton) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "회비 정보 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "회비 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) Snackbar.Add(loadError, Severity.Error);
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
         }
     }
 
@@ -214,7 +278,7 @@
     {
         selectedPeriodId = periodId;
         showEditPeriod = false;
-        await LoadAsync();
+        await ReadAsync();
     }
 
     private void ToggleCreatePeriod()

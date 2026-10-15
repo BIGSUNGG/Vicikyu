@@ -3,28 +3,70 @@
 
 @inject AttendanceClient AttendanceSvc
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Attendance> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>출석 관리 · 빅이큐</PageTitle>
 
 <AdminNav Icon="/icons/clipboard.svg" Title="출석 관리" Sub="직접 출석 · 취소 (토글)" Active="attendance"
-          Badge="@($"출석 {attendedCount}명")" BadgeClass="badge-green" />
+          Badge="@(isLoading ? "\u00a0" : hasLoaded ? $"출석 {attendedCount}명" : null)"
+          BadgeClass="@(isLoading ? "badge-green loading-placeholder" : "badge-green")" />
 
-<div class="card">
+<div class="card attendance-card" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
     <div class="field">
         <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" @bind:after="OnSearchSet" />
     </div>
-    <p class="member-meta">오늘 출석 @(attendedCount)명 / 전체 @(members.Count)명</p>
-
-    @if (searched)
-    {
-        <div class="section-divider">검색 결과</div>
-    }
-    else
-    {
-        <div class="section-divider">오늘 출석 @(attendedCount)명</div>
-    }
-
-    <AttendanceMemberList Members="visibleMembers" OnToggled="ToggleAsync" />
+    <div class="admin-load-region">
+        @if (isLoading)
+        {
+            <span class="admin-load-status" role="status">출석 정보를 불러오는 중…</span>
+            <div class="admin-load-skeleton" data-retained="@(hasLoaded ? "true" : "false")" aria-hidden="true">
+                <p class="member-meta">오늘 출석 <span class="loading-placeholder">&nbsp;</span> / 전체 <span class="loading-placeholder">&nbsp;</span></p>
+                <div class="section-divider"><span class="loading-placeholder">&nbsp;</span></div>
+                @if (hasLoaded && visibleMembers.Count == 0)
+                {
+                    <p class="empty"><span class="loading-placeholder">&nbsp;</span></p>
+                }
+                else
+                {
+                    <div class="card-list split-2">
+                        @for (var i = 0; i < (hasLoaded ? visibleMembers.Count : 3); i++)
+                        {
+                            <div class="member-row">
+                                <span class="loading-placeholder" style="width:46px;height:26px;border-radius:999px">&nbsp;</span>
+                                <div>
+                                    <div class="member-name"><span class="loading-placeholder">&nbsp;</span></div>
+                                    <div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (loadError is not null)
+        {
+            <div role="alert">
+                <p>@loadError</p>
+                <button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button>
+            </div>
+        }
+        else if (hasLoaded)
+        {
+            <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
+                <p class="member-meta">오늘 출석 @(attendedCount)명 / 전체 @(members.Count)명</p>
+                @if (searched)
+                {
+                    <div class="section-divider">검색 결과</div>
+                }
+                else
+                {
+                    <div class="section-divider">오늘 출석 @(attendedCount)명</div>
+                }
+                <AttendanceMemberList Members="visibleMembers" OnToggled="ToggleAsync" />
+            </div>
+        }
+    </div>
 </div>
 
 @if (confirmTarget is not null)
@@ -42,6 +84,12 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private List<AttendanceMemberDto> members = [];
     private string search = "";
     private bool searched;
@@ -53,18 +101,48 @@
             || m.StudentNumber.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToList()
         : members;
 
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override Task OnInitializedAsync() => ReadAsync();
 
-    private async Task LoadAsync()
+    private Task ReadAsync() => LoadAsync(showSkeleton: true);
+
+    private Task LoadAsync() => LoadAsync(showSkeleton: false);
+
+    private async Task LoadAsync(bool showSkeleton)
     {
+        var generation = ++loadGeneration;
+        isLoading = showSkeleton || !hasLoaded || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
         try
         {
-            members = await AttendanceSvc.GetTodayMembersAsync();
-            attendedCount = members.Count(m => m.IsAttended);
+            var loaded = await AttendanceSvc.GetTodayMembersAsync()
+                ?? throw new InvalidOperationException("출석 목록 응답이 없습니다.");
+            var loadedCount = loaded.Count(m => m.IsAttended);
+            if (generation != loadGeneration) return;
+            members = loaded;
+            attendedCount = loadedCount;
+            hasLoaded = true;
         }
         catch (AppException ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+            if (!showSkeleton) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "출석 정보 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "출석 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) Snackbar.Add(loadError, Severity.Error);
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
         }
     }
 

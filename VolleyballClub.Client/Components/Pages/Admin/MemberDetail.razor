@@ -6,20 +6,38 @@
 @inject SheetMemberMappingClient MappingSvc
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<MemberDetail> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>부원 정보 · 빅이큐</PageTitle>
 
-<AdminNav Icon="/icons/users.svg" Title="@($"부원 정보 — {member?.Name ?? ""}")" Sub="@($"{member?.StudentNumber} · {StatusLabel(member?.Status ?? MemberStatus.Active)}")" Active="members" />
+<AdminNav Icon="/icons/users.svg" Title="@(member is null || memberLoading ? "부원 정보" : $"부원 정보 — {member.Name}")" Sub="@(memberLoading ? "정보를 불러오는 중…" : member is null ? "부원 정보 조회 실패" : $"{member.StudentNumber} · {StatusLabel(member.Status)}")" Active="members" />
 
-<nav class="segment">
-    <a class="seg-btn @(section == Section.Edit ? "active" : "")" @onclick="() => OpenSectionAsync(Section.Edit)" href="javascript:void(0)">부원 수정</a>
-    <a class="seg-btn @(section == Section.Sheet ? "active" : "")" @onclick="() => OpenSectionAsync(Section.Sheet)" href="javascript:void(0)">시트 연결</a>
-    <a class="seg-btn @(section == Section.Attendance ? "active" : "")" @onclick="() => OpenSectionAsync(Section.Attendance)" href="javascript:void(0)">출석 기록</a>
+<nav class="segment member-detail-tabs" aria-busy="@(memberLoading ? "true" : "false")" data-load-state="@MemberLoadState">
+    <a class="seg-btn @(section == Section.Edit ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Edit)" href="javascript:void(0)">부원 수정</a>
+    <a class="seg-btn @(section == Section.Sheet ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Sheet)" href="javascript:void(0)">시트 연결</a>
+    <a class="seg-btn @(section == Section.Attendance ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Attendance)" href="javascript:void(0)">출석 기록</a>
 </nav>
 
-@if (section == Section.Edit && member is not null)
+@if (memberLoading)
 {
-    <div class="card reveal">
+    <span class="admin-load-status" role="status">부원 정보를 불러오는 중…</span>
+    <div class="card member-initial" aria-hidden="true">
+        <h2 class="card-title"><span class="loading-placeholder">&nbsp;</span></h2>
+        @for (var row = 0; row < 6; row++)
+        {
+            <div class="field"><span class="form-label"><span class="loading-placeholder">&nbsp;</span></span><div class="form-control"><span class="loading-placeholder">&nbsp;</span></div></div>
+        }
+    </div>
+}
+else if (memberError is not null)
+{
+    <div class="card" role="alert"><p>@memberError</p><button type="button" class="btn-primary" @onclick="RetryMemberAsync">다시 불러오기</button></div>
+}
+
+@if (section == Section.Edit && member is not null && !memberLoading && memberError is null)
+{
+    <div class="card member-edit">
         <h2 class="card-title">부원 수정 — @member.Name</h2>
         <EditForm Model="editForm" OnValidSubmit="SaveEditAsync">
             <DataAnnotationsValidator />
@@ -80,21 +98,31 @@
     </div>
 }
 
-@if (section == Section.Sheet)
+@if (section == Section.Sheet && member is not null && !memberLoading)
 {
-    <div class="card reveal">
-        <h2 class="card-title">시트 연결 — @member?.Name</h2>
-        @if (tabMappings is null)
+    <div class="card member-mappings" aria-busy="@(mappingLoading ? "true" : "false")" data-load-state="@MappingLoadState">
+        <h2 class="card-title">시트 연결 — @member.Name</h2>
+        @if (mappingLoading)
         {
-            <p class="member-meta">시트에서 부원 행을 불러오는 중…</p>
+            <span class="admin-load-status" role="status">시트에서 부원 행을 불러오는 중…</span>
+            <div aria-hidden="true">
+                @for (var row = 0; row < 3; row++)
+                {
+                    <div class="field"><span class="form-label"><span class="loading-placeholder">&nbsp;</span></span><div class="form-control"><span class="loading-placeholder">&nbsp;</span></div></div>
+                }
+            </div>
         }
-        else if (tabMappings.Count == 0)
+        else if (mappingError is not null)
+        {
+            <div role="alert"><p>@mappingError</p><button type="button" class="btn-primary" @onclick="LoadMappingsAsync">다시 불러오기</button></div>
+        }
+        else if (tabMappings is { Count: 0 })
         {
             <p class="member-meta">등록된 출석 시트가 없습니다 — 설정에서 먼저 등록하세요.</p>
         }
         else
         {
-            @foreach (var tab in tabMappings)
+            @foreach (var tab in tabMappings ?? [])
             {
                 <div class="field">
                     <label class="form-label">@tab.SheetName · @tab.TabName 탭</label>
@@ -113,10 +141,29 @@
     </div>
 }
 
-@if (section == Section.Attendance && attendance is not null)
+@if (section == Section.Attendance && member is not null && !memberLoading)
 {
-    <div class="card reveal">
-        <h2 class="card-title">출석 기록 — @attendance.Name</h2>
+    <div class="card member-attendance" aria-busy="@(attendanceLoading ? "true" : "false")" data-load-state="@AttendanceLoadState">
+        <h2 class="card-title">출석 기록 — @member.Name</h2>
+        <div class="admin-load-region">
+        @if (attendanceLoading)
+        {
+            <span class="admin-load-status" role="status">출석 기록을 불러오는 중…</span>
+            <div class="admin-load-skeleton" data-retained="@(attendance is not null ? "true" : "false")" aria-hidden="true">
+                <p class="member-meta"><span class="loading-placeholder" style="min-width:12em">&nbsp;</span></p>
+                @for (var row = 0; row < (attendance is null ? 3 : Math.Max(1, attendance.Records.Count)); row++)
+                {
+                    <div class="member-row"><div><div class="member-name"><span class="loading-placeholder">&nbsp;</span></div><div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div></div></div>
+                }
+            </div>
+        }
+        @if (attendanceError is not null)
+        {
+            <div role="alert"><p>@attendanceError</p><button type="button" class="btn-primary" @onclick="ReadAttendanceAsync">다시 불러오기</button></div>
+        }
+        else if (attendance is not null)
+        {
+        <div class="admin-load-values" aria-hidden="@(attendanceLoading ? "true" : "false")">
         <p class="member-meta">
             이번 달 @(attendance.MonthCount)회 · 이번 학기 @(attendance.SemesterCount)회@(!string.IsNullOrEmpty(attendance.Semester.Name) ? $" ({attendance.Semester.Name})" : "") · 총 @(attendance.TotalCount)회
         </p>
@@ -159,6 +206,9 @@
                     </div>
                 </div>
             }
+        </div>
+        </div>
+        }
         </div>
     </div>
 }
@@ -203,6 +253,19 @@
         Attendance,
     }
 
+    private int routeEpoch;
+    private int memberGeneration;
+    private int mappingGeneration;
+    private int attendanceGeneration;
+    private bool memberLoading = true;
+    private bool mappingLoading;
+    private bool attendanceLoading;
+    private string? memberError;
+    private string? mappingError;
+    private string? attendanceError;
+    private string MemberLoadState => memberLoading ? "loading" : memberError is not null ? "error" : "ready";
+    private string MappingLoadState => mappingLoading ? "loading" : mappingError is not null ? "error" : "ready";
+    private string AttendanceLoadState => attendanceLoading ? "loading" : attendanceError is not null ? "error" : "ready";
     private Section section = Section.Edit;
     private MemberListDto? member;
     private MemberEditForm editForm = new();
@@ -214,72 +277,102 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        var requestedUserId = UserId;
+        var epoch = ++routeEpoch;
+        mappingGeneration++;
+        attendanceGeneration++;
         member = null;
         tabMappings = null;
         attendance = null;
+        mappingLoading = false;
+        attendanceLoading = false;
+        mappingError = null;
+        attendanceError = null;
         section = Section.Edit;
         confirmStatus = null;
         confirmRemove = null;
         addActivityId = 0;
+        await LoadMemberAsync(epoch, UserId);
+    }
+
+    private Task RetryMemberAsync() => LoadMemberAsync(routeEpoch, UserId);
+
+    private async Task LoadMemberAsync(int epoch, string requestedUserId)
+    {
+        var generation = ++memberGeneration;
+        memberLoading = true;
+        memberError = null;
         try
         {
-            var loaded = await MemberSvc.GetAsync(requestedUserId);
-            if (requestedUserId != UserId) return;
+            var loaded = await MemberSvc.GetAsync(requestedUserId)
+                ?? throw new InvalidOperationException("부원 정보 응답이 없습니다.");
+            var loadedForm = new MemberEditForm
+            {
+                StudentNumber = loaded.StudentNumber,
+                Name = loaded.Name,
+                Department = loaded.Department,
+                Role = loaded.Role,
+                Color = loaded.Color ?? Domain.MemberColors.Palette[0],
+            };
+            if (epoch != routeEpoch || generation != memberGeneration) return;
             member = loaded;
+            editForm = loadedForm;
         }
         catch (NotFoundException)
         {
-            if (requestedUserId != UserId) return;
-            Snackbar.Add("부원을 찾을 수 없습니다.", Severity.Error);
+            if (epoch != routeEpoch || generation != memberGeneration) return;
+            memberError = "부원을 찾을 수 없습니다.";
+            Snackbar.Add(memberError, Severity.Error);
             Nav.NavigateTo("/admin/members");
-            return;
         }
         catch (AppException ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (epoch == routeEpoch && generation == memberGeneration) memberError = ex.Message;
         }
-
-        if (member is null || requestedUserId != UserId) return;
-        editForm = new MemberEditForm
+        catch (Exception ex)
         {
-            StudentNumber = member?.StudentNumber ?? "",
-            Name = member?.Name ?? "",
-            Department = member?.Department ?? "",
-            Role = member?.Role ?? "MEMBER",
-            Color = member?.Color ?? Domain.MemberColors.Palette[0],
-        };
+            Logger.LogWarning(ex, "부원 정보 조회 실패");
+            if (epoch == routeEpoch && generation == memberGeneration) memberError = "부원 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (epoch == routeEpoch && generation == memberGeneration) memberLoading = false;
+        }
     }
 
     private async Task OpenSectionAsync(Section target)
     {
+        if (memberLoading || member is null || memberError is not null) return;
         section = target;
-        if (target == Section.Sheet && tabMappings is null)
-        {
-            await LoadMappingsAsync();
-        }
-
-        if (target == Section.Attendance)
-        {
-            await LoadAttendanceAsync();
-        }
+        if (target == Section.Sheet && tabMappings is null) await LoadMappingsAsync();
+        if (target == Section.Attendance) await ReadAttendanceAsync();
     }
 
     private async Task LoadMappingsAsync()
     {
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
+        var generation = ++mappingGeneration;
+        mappingLoading = true;
+        mappingError = null;
         try
         {
-            tabMappings = await MappingSvc.GetForMemberAsync(UserId);
+            var loaded = await MappingSvc.GetForMemberAsync(requestedUserId)
+                ?? throw new InvalidOperationException("시트 연결 응답이 없습니다.");
+            if (epoch != routeEpoch || generation != mappingGeneration) return;
+            tabMappings = loaded;
         }
         catch (AppException ex)
         {
-            tabMappings = [];
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (epoch == routeEpoch && generation == mappingGeneration) mappingError = ex.Message;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            tabMappings = [];
-            Snackbar.Add("시트를 읽지 못했습니다 — 키·공유 상태를 확인하세요.", Severity.Error);
+            Logger.LogWarning(ex, "부원 시트 연결 조회 실패");
+            if (epoch == routeEpoch && generation == mappingGeneration) mappingError = "시트를 읽지 못했습니다. 연결·키·공유 상태를 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (epoch == routeEpoch && generation == mappingGeneration) mappingLoading = false;
         }
     }
 
@@ -311,16 +404,42 @@
         }
     }
 
-    private async Task LoadAttendanceAsync()
+    private Task ReadAttendanceAsync() => LoadAttendanceAsync(showSkeleton: true);
+
+    private Task LoadAttendanceAsync() => LoadAttendanceAsync(showSkeleton: false);
+
+    private async Task LoadAttendanceAsync(bool showSkeleton)
     {
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
+        var generation = ++attendanceGeneration;
+        attendanceLoading = showSkeleton || attendance is null || attendanceLoading;
+        attendanceError = null;
         try
         {
-            attendance = await AttendanceSvc.GetAdminRecordsAsync(UserId);
-            addActivityId = attendance.AddableActivities.FirstOrDefault(a => !a.AlreadyAttended)?.ActivityId ?? 0;
+            var loaded = await AttendanceSvc.GetAdminRecordsAsync(requestedUserId)
+                ?? throw new InvalidOperationException("부원 출석 기록 응답이 없습니다.");
+            var loadedActivityId = loaded.AddableActivities.FirstOrDefault(a => !a.AlreadyAttended)?.ActivityId ?? 0;
+            if (epoch != routeEpoch || generation != attendanceGeneration) return;
+            attendance = loaded;
+            addActivityId = loadedActivityId;
         }
         catch (AppException ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            if (epoch != routeEpoch || generation != attendanceGeneration) return;
+            attendanceError = ex.Message;
+            if (!showSkeleton) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "부원 출석 기록 조회 실패");
+            if (epoch != routeEpoch || generation != attendanceGeneration) return;
+            attendanceError = "출석 기록을 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) Snackbar.Add(attendanceError, Severity.Error);
+        }
+        finally
+        {
+            if (epoch == routeEpoch && generation == attendanceGeneration) attendanceLoading = false;
         }
     }
 
@@ -359,8 +478,32 @@
         }
     }
 
+    private async Task RefreshMemberAfterWriteAsync(int epoch, string requestedUserId)
+    {
+        if (epoch != routeEpoch) return;
+        var generation = ++memberGeneration;
+        try
+        {
+            var loaded = await MemberSvc.GetAsync(requestedUserId)
+                ?? throw new InvalidOperationException("부원 정보 응답이 없습니다.");
+            if (epoch == routeEpoch && generation == memberGeneration) member = loaded;
+        }
+        catch (AppException)
+        {
+            if (epoch == routeEpoch && generation == memberGeneration) throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "저장 후 부원 정보 조회 실패");
+            if (epoch == routeEpoch && generation == memberGeneration)
+                throw new AppException("저장 후 정보를 불러오지 못했습니다. 다시 확인해 주세요.");
+        }
+    }
+
     private async Task SaveEditAsync()
     {
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
         try
         {
             await MemberSvc.UpdateAsync(UserId, new MemberUpdateRequest(
@@ -371,7 +514,7 @@
                 Color: editForm.Color,
                 NewPassword: string.IsNullOrWhiteSpace(editForm.NewPassword) ? null : editForm.NewPassword));
             Snackbar.Add("수정 완료", Severity.Success);
-            member = await MemberSvc.GetAsync(UserId);
+            await RefreshMemberAfterWriteAsync(epoch, requestedUserId);
         }
         catch (AppException ex)
         {
@@ -386,6 +529,8 @@
             return;
         }
 
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
         var (_, status) = confirmStatus.Value;
         confirmStatus = null;
         try
@@ -395,7 +540,7 @@
                 member?.Department ?? "",
                 Status: status));
             Snackbar.Add($"상태 변경 완료 — {StatusLabel(status)}", Severity.Success);
-            member = await MemberSvc.GetAsync(UserId);
+            await RefreshMemberAfterWriteAsync(epoch, requestedUserId);
         }
         catch (AppException ex)
         {

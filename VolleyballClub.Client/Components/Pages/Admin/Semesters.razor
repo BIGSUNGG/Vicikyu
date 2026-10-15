@@ -3,16 +3,55 @@
 
 @inject SemesterClient SemesterSvc
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Semesters> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>학기 관리 · 빅이큐</PageTitle>
 
-<AdminNav Icon="/icons/clipboard.svg" Title="학기 관리" Sub="@($"현재 {currentName}")" Active="" />
+<AdminNav Icon="/icons/clipboard.svg" Title="학기 관리"
+          Sub="@(isLoading ? "현재 학기 확인 중…" : hasLoaded ? $"현재 {currentName}" : "현재 학기 조회 실패")" Active="" />
 
-<div class="card">
+<div class="card semesters-card">
     <h2 class="card-title">학기 목록</h2>
     <p style="font-size:0.85rem;color:var(--text-sub)">출석 통계·학기 랭킹은 '현재' 학기 기간을 기준으로 집계됩니다.</p>
 
-    <div class="card-list">
+    <div class="admin-load-region semesters-list" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+        @if (isLoading)
+        {
+            <span class="admin-load-status" role="status">학기를 불러오는 중…</span>
+            <div class="admin-load-skeleton" data-retained="@(hasLoaded ? "true" : "false")" aria-hidden="true">
+                @if (hasLoaded && semesters.Count == 0)
+                {
+                    <p class="member-meta"><span class="loading-placeholder">&nbsp;</span></p>
+                }
+                else
+                {
+                    <div class="card-list">
+                        @for (var i = 0; i < (hasLoaded ? semesters.Count : 3); i++)
+                        {
+                            <div class="card-row" style="padding:8px 0">
+                                <div>
+                                    <div style="font-weight:700"><span class="loading-placeholder">&nbsp;</span></div>
+                                    <div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div>
+                                </div>
+                                <span class="filter-btn"><span class="loading-placeholder">&nbsp;</span></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (loadError is not null)
+        {
+            <div role="alert">
+                <p>@loadError</p>
+                <button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button>
+            </div>
+        }
+        else if (hasLoaded)
+        {
+        <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
+        <div class="card-list">
         @foreach (var semester in semesters)
         {
             <div class="card-row" style="padding:8px 0">
@@ -33,6 +72,9 @@
         @if (semesters.Count == 0)
         {
             <p class="member-meta">등록된 학기가 없습니다 — 학기를 추가하면 통계가 그 기간을 따릅니다.</p>
+        }
+        </div>
+        </div>
         }
     </div>
 
@@ -110,6 +152,12 @@
 }
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private List<SemesterDto> semesters = [];
     private int? selectedId;
     private SemesterDto? selected;
@@ -120,17 +168,9 @@
 
     private string currentName => semesters.FirstOrDefault(s => s.IsCurrent)?.Name ?? "없음(기본 규칙)";
 
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            semesters = await SemesterSvc.GetSemestersAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
+    protected override Task OnInitializedAsync() => ReadAsync();
+
+    private Task ReadAsync() => ReloadAsync(showSkeleton: true);
 
     private void ToggleCreate()
     {
@@ -216,12 +256,46 @@
         }
     }
 
-    private async Task ReloadAsync()
+    private Task ReloadAsync() => ReloadAsync(showSkeleton: false);
+
+    private async Task ReloadAsync(bool showSkeleton)
     {
-        semesters = await SemesterSvc.GetSemestersAsync();
-        if (selectedId is { } id)
+        var generation = ++loadGeneration;
+        isLoading = showSkeleton || !hasLoaded || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
+        try
         {
-            selected = semesters.FirstOrDefault(s => s.Id == id);
+            var loaded = await SemesterSvc.GetSemestersAsync()
+                ?? throw new InvalidOperationException("학기 목록 응답이 없습니다.");
+            if (generation != loadGeneration) return;
+            semesters = loaded;
+            if (selectedId is { } id)
+            {
+                selected = semesters.FirstOrDefault(s => s.Id == id);
+            }
+            hasLoaded = true;
+        }
+        catch (AppException ex)
+        {
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+            if (!showSkeleton) throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "학기 목록 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "학기를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) throw new AppException(loadError);
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
         }
     }
 

@@ -2,12 +2,53 @@
 @attribute [Authorize(Roles = "ADMIN")]
 
 @inject AuditLogClient Audit
+@inject Microsoft.Extensions.Logging.ILogger<AuditLogs> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>감사 로그 · 빅이큐</PageTitle>
 
 <h1 class="page-title"><img class="icon" src="/icons/scroll.svg" alt=""> 감사 로그</h1>
 
-<div class="card">
+<div class="card audit-card" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+    <div class="admin-load-region">
+    @if (isLoading)
+    {
+        <span class="admin-load-status" role="status">감사 로그를 불러오는 중…</span>
+        <div class="admin-load-skeleton" data-retained="@(hasLoaded ? "true" : "false")" aria-hidden="true">
+            @if (hasLoaded && logs.Count == 0)
+            {
+                <p class="empty"><span class="loading-placeholder">&nbsp;</span></p>
+            }
+            else
+            {
+                <div class="card-list split-2">
+                    @for (var i = 0; i < (hasLoaded ? logs.Count : 3); i++)
+                    {
+                        <div class="member-row">
+                            <div>
+                                <div class="member-name"><span class="loading-placeholder">&nbsp;</span></div>
+                                <div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div>
+                            </div>
+                            <div style="margin-left:auto;text-align:right">
+                                <div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div>
+                                <div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    @if (loadError is not null)
+    {
+        <div role="alert">
+            <p>@loadError</p>
+            <button type="button" class="btn-primary" @onclick="LoadAsync">다시 불러오기</button>
+        </div>
+    }
+    else if (hasLoaded)
+    {
+    <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
     @if (logs.Count == 0)
     {
         <p class="empty">기록이 없습니다.</p>
@@ -30,14 +71,47 @@
             }
         </div>
     }
+    </div>
+    }
+    </div>
 </div>
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : loadError is not null ? "error" : "ready";
     private List<AuditLogDto> logs = [];
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        logs = await Audit.GetRecentAsync(100);
+        var generation = ++loadGeneration;
+        isLoading = true;
+        loadError = null;
+        try
+        {
+            var loaded = await Audit.GetRecentAsync(100)
+                ?? throw new InvalidOperationException("감사 로그 응답이 없습니다.");
+            if (generation != loadGeneration) return;
+            logs = loaded;
+            hasLoaded = true;
+        }
+        catch (AppException ex)
+        {
+            if (generation == loadGeneration) loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "감사 로그 조회 실패");
+            if (generation == loadGeneration) loadError = "감사 로그를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (generation == loadGeneration) isLoading = false;
+        }
     }
 
     private static string ActionText(AdminAction action) => action switch

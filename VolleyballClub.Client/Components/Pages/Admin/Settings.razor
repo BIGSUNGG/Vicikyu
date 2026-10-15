@@ -4,27 +4,64 @@
 @inject SettingClient SettingSvc
 @inject SheetAdminClient SheetAdminSvc
 @inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<Settings> Logger
+@using Microsoft.Extensions.Logging
 
 <PageTitle>설정 · 빅이큐</PageTitle>
 
 <h1 class="page-title"><img class="icon" src="/icons/gear.svg" alt=""> 설정</h1>
 
-<div class="card settings-card">
+<div class="card settings-card" data-load-state="@LoadState">
     <h2 class="card-title">시트 목록 (종류별)</h2>
-    @foreach (var sheet in sheets)
+    <div class="settings-load-region" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+        @if (isLoading)
+        {
+            <span class="admin-load-status" role="status">시트 목록을 불러오는 중…</span>
+        }
+        @if (loadError is not null)
+        {
+            <div role="alert">
+                <p>@loadError</p>
+                <button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button>
+            </div>
+        }
+    </div>
+    @if (loadError is null)
     {
-        <div class="btn-row" style="align-items:flex-end">
-            <div class="field" style="flex:1">
-                <label class="form-label">이름</label>
-                <input class="form-control" @bind="sheet.Name" />
+        @for (var i = 0; i < (hasLoaded ? sheets.Count : 1); i++)
+        {
+            var sheet = hasLoaded ? sheets[i] : null;
+            <div class="btn-row settings-sheet-row" style="align-items:flex-end" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+                @if (sheet is not null)
+                {
+                    <div class="field settings-sheet-value" style="flex:1" aria-hidden="@(isLoading ? "true" : "false")">
+                        <label class="form-label">이름</label>
+                        <input class="form-control" @bind="sheet.Name" />
+                    </div>
+                    <div class="field settings-sheet-value" style="flex:2" aria-hidden="@(isLoading ? "true" : "false")">
+                        <label class="form-label">주소 (docs.google.com/…)</label>
+                        <input class="form-control" @bind="sheet.SpreadsheetId" />
+                    </div>
+                    <button type="button" class="btn-secondary settings-sheet-value" aria-hidden="@(isLoading ? "true" : "false")" @onclick="() => SaveSheetAsync(sheet)">저장</button>
+                    <button type="button" class="btn-danger settings-sheet-value" aria-hidden="@(isLoading ? "true" : "false")" @onclick="() => DeleteSheetAsync(sheet)">삭제</button>
+                }
+                @if (isLoading)
+                {
+                    <div class="btn-row settings-sheet-skeleton" data-retained="@(hasLoaded ? "true" : "false")" aria-hidden="true" style="align-items:flex-end">
+                        <div class="field" style="flex:1">
+                            <span class="form-label">이름</span>
+                            <div class="form-control"><span class="loading-placeholder">&nbsp;</span></div>
+                        </div>
+                        <div class="field" style="flex:2">
+                            <span class="form-label">주소 (docs.google.com/…)</span>
+                            <div class="form-control"><span class="loading-placeholder">&nbsp;</span></div>
+                        </div>
+                        <span class="btn-secondary"><span class="loading-placeholder">&nbsp;</span></span>
+                        <span class="btn-danger"><span class="loading-placeholder">&nbsp;</span></span>
+                    </div>
+                }
             </div>
-            <div class="field" style="flex:2">
-                <label class="form-label">주소 (docs.google.com/…)</label>
-                <input class="form-control" @bind="sheet.SpreadsheetId" />
-            </div>
-            <button type="button" class="btn-secondary" @onclick="() => SaveSheetAsync(sheet)">저장</button>
-            <button type="button" class="btn-danger" @onclick="() => DeleteSheetAsync(sheet)">삭제</button>
-        </div>
+        }
     }
     <div class="btn-row" style="align-items:flex-end">
         <div class="field" style="flex:1">
@@ -48,6 +85,12 @@
 </div>
 
 @code {
+    private bool isLoading = true;
+    private bool hasLoaded;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private string serviceAccountKey = "";
     private List<EditableSheet> sheets = [];
     private string newSheetName = "";
@@ -62,12 +105,54 @@
         public string SpreadsheetId { get; set; } = "";
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         serviceAccountKey = ""; // 미리 불러오지 않는다 — 민감 키는 표시하지 않고 변경 시에만 입력
-        sheets = (await SheetAdminSvc.GetListAsync())
-            .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
-            .ToList();
+        return ReadAsync();
+    }
+
+    private Task ReadAsync() => LoadSheetsAsync(showSkeleton: true);
+
+    private Task LoadSheetsAsync() => LoadSheetsAsync(showSkeleton: false);
+
+    private async Task LoadSheetsAsync(bool showSkeleton)
+    {
+        var generation = ++loadGeneration;
+        isLoading = showSkeleton || !hasLoaded || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
+        try
+        {
+            var definitions = await SheetAdminSvc.GetListAsync()
+                ?? throw new InvalidOperationException("시트 목록 응답이 없습니다.");
+            var loaded = definitions
+                .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
+                .ToList();
+            if (generation != loadGeneration) return;
+            sheets = loaded;
+            hasLoaded = true;
+        }
+        catch (AppException ex)
+        {
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+            if (!showSkeleton) throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "시트 목록 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "시트 목록을 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+            if (!showSkeleton) throw new AppException(loadError);
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
+        }
     }
 
     private async Task SaveKeyAsync()
@@ -104,9 +189,7 @@
             Snackbar.Add($"시트 '{newSheetName.Trim()}' 추가 완료", Severity.Success);
             newSheetName = "";
             newSheetUrl = "";
-            sheets = (await SheetAdminSvc.GetListAsync())
-                .Select(s => new EditableSheet { Id = s.Id, Name = s.Name, SpreadsheetId = s.SpreadsheetId })
-                .ToList();
+            await LoadSheetsAsync();
         }
         catch (AppException ex)
         {
