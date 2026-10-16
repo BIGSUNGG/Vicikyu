@@ -25,14 +25,14 @@ docker compose up -d
 # cloudflared Windows 서비스 등록(최초 1회) 또는 기동
 $svc = Get-Service -Name 'cloudflared' -ErrorAction SilentlyContinue
 if (-not $svc) {
-    & "$env:ProgramFiles\cloudflared\cloudflared.exe" service install $token
+    & "${env:ProgramFiles(x86)}\cloudflared\cloudflared.exe" service install $token
 } else {
     Start-Service cloudflared
 }
 
 Start-Sleep -Seconds 5
 Get-Service cloudflared | Format-Table Name, Status
-& "$env:ProgramFiles\cloudflared\cloudflared.exe" tunnel info 2>$null
+& "${env:ProgramFiles(x86)}\cloudflared\cloudflared.exe" tunnel info 2>$null
 
 # 브라우저로 로그인 페이지 열기
 Start-Process -FilePath 'https://vicikyu.site/Account/Login'
