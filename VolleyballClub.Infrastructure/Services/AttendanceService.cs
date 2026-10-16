@@ -15,10 +15,14 @@ public class AttendanceService(
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
     ISheetFormatResolver formatResolver,
-    TimeProvider timeProvider) : IAttendanceService
+    TimeProvider timeProvider,
+    IAdminActivityService adminActivities) : IAttendanceService
 {
     public async Task<DateTime> CheckInWithOtpAsync(string otp)
     {
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
+        try
+        {
         var userId = await currentUser.RequireUserIdAsync();
         var code = otp.Trim();
 
@@ -70,10 +74,15 @@ public class AttendanceService(
         }
 
         return now;
+        }
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
     }
 
     public async Task AdminAddAsync(string targetUserId)
     {
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
+        try
+        {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
@@ -110,10 +119,15 @@ public class AttendanceService(
         }
 
         await auditLog.LogAsync(AdminAction.AttendanceAdd, "User", targetUserId, $"{member.Name} 직접 출석 추가");
+        }
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
     }
 
     public async Task AdminCancelAsync(string targetUserId, bool confirmTeamImpact = false)
     {
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
+        try
+        {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
@@ -124,59 +138,15 @@ public class AttendanceService(
         }
 
         await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
+        }
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
     }
 
-    public async Task AdminAddForActivityAsync(string targetUserId, int activityId)
-    {
-        await currentUser.RequireAdminAsync();
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.Id == activityId)
-            ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
+    public Task AdminAddForActivityAsync(string targetUserId, int activityId) =>
+        adminActivities.SetAttendanceAsync($"app:{activityId}", targetUserId, new(true));
 
-        if (activity.Status == ActivityStatus.Ready)
-        {
-            throw new ConflictException("아직 출석이 시작되지 않은 활동입니다.");
-        }
-
-        if (await db.Attendances.AnyAsync(a => a.ActivityId == activity.Id && a.UserId == targetUserId))
-        {
-            throw new ConflictException("이미 출석 처리되었습니다.");
-        }
-
-        var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId)
-            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
-
-        var now = KstClock.NowUtc(timeProvider);
-        db.Attendances.Add(new Attendance
-        {
-            ActivityId = activity.Id,
-            UserId = targetUserId,
-            AttendanceType = AttendanceType.Admin,
-            CheckedAt = now,
-            CreatedAt = now,
-        });
-        try
-        {
-            await db.SaveChangesAsync();
-        }
-        catch (DbUpdateException)
-        {
-            throw new ConflictException("이미 출석 처리되었습니다.");
-        }
-
-        await auditLog.LogAsync(AdminAction.AttendanceAdd, "User", targetUserId,
-            $"{member.Name} {activity.ActivityDate:MM.dd} 출석 추가");
-    }
-
-    public async Task AdminRemoveForActivityAsync(string targetUserId, int activityId, bool confirmTeamImpact = false)
-    {
-        await currentUser.RequireAdminAsync();
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await db.Activities.AsNoTracking().FirstOrDefaultAsync(a => a.Id == activityId)
-            ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
-
-        await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
-    }
+    public Task AdminRemoveForActivityAsync(string targetUserId, int activityId, bool confirmTeamImpact = false) =>
+        adminActivities.SetAttendanceAsync($"app:{activityId}", targetUserId, new(false, confirmTeamImpact));
 
     /// <summary>지정 활동의 출석 기록 삭제 — 팀 편성 영향 확인과 팀원 제거를 당일·과거 기록이 공유한다.</summary>
     private async Task RemoveAttendanceCoreAsync(ApplicationDbContext db, string targetUserId, Activity activity, bool confirmTeamImpact)

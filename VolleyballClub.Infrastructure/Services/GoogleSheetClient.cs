@@ -13,7 +13,7 @@ namespace VolleyballClub.Infrastructure.Services;
 /// <summary>Google Sheets API 기반 ISheetClient 구현.
 /// 자격증명(서비스 계정 JSON 본문 또는 파일 경로)은 Setting 테이블의 Google:ServiceAccountJson 값을
 /// 우선 사용하고, 없으면 구성(개발 user-secrets) 값으로 폴백한다 — 값이 바뀌면 서비스를 재구성한다.</summary>
-public sealed class GoogleSheetClient(
+public sealed partial class GoogleSheetClient(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IConfiguration configuration) : ISheetClient
 {

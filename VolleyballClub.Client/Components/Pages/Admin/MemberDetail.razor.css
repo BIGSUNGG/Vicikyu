@@ -1,0 +1,7 @@
+.attendance-description { min-width: 0; overflow-wrap: anywhere; }
+.member-attendance .member-row input[type="checkbox"],
+.member-attendance .member-row input[type="checkbox"]::after,
+.attendance-confirm, .attendance-confirm .confirm-box { animation: none; transition: none; }
+.member-attendance input:disabled { cursor: not-allowed; opacity: .6; }
+.member-attendance input:focus-visible { outline: 3px solid var(--vb-text); outline-offset: 3px; }
+.attendance-confirm .confirm-box { overflow-wrap: anywhere; max-height: calc(100dvh - 48px); overflow-y: auto; }

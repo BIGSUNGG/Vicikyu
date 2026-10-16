@@ -63,6 +63,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(Verificatio
 {
     // 마이그레이션 적용 + 시드 데이터(멱등)
     await DbInitializer.InitializeAsync(app.Services);
+    await ActivityManagementVerification.SeedAsync(app);
 
     // 시트 출석부 동기화(시작 시 1회) — 실패해도 기동은 계속된다(DB 캐시는 이전 상태 유지)
     // TODO(배포 전): 프로덕션 환경에서도 동일하게 실행되어야 한다 — 이 블록을 IsDevelopment 밖으로 이동
@@ -108,6 +109,7 @@ app.MapRazorComponents<App>()
 app.MapAuthApi();
 app.MapBusinessApi();
 app.MapDatabaseBackupApi();
+ActivityManagementVerification.MapEndpoints(app);
 
 app.Run();
 

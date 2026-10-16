@@ -58,6 +58,7 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ISettingService, SettingService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IAdminActivityService, AdminActivityService>();
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<ITeamService, TeamService>();

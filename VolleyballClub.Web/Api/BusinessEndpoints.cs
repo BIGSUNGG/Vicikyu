@@ -8,6 +8,14 @@ public static class BusinessEndpoints
     {
         var my = app.MapGroup("/api/my").RequireAuthorization().AddEndpointFilter<ApiValidation>();
         var admin = app.MapGroup("/api/admin").RequireAuthorization(policy => policy.RequireRole("ADMIN")).AddEndpointFilter<ApiValidation>();
+        admin.MapGet("/activities/targets", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetTargetsAsync(ct)));
+        admin.MapGet("/activities", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetActivitiesAsync(ct)));
+        admin.MapPost("/activities", async (IAdminActivityService s, ActivityCreateRequest r, CancellationToken ct) => Results.Json(await s.CreateAsync(r, ct)));
+        admin.MapPut("/activities/{key}", async (IAdminActivityService s, string key, ActivityEditRequest r, CancellationToken ct) => Results.Json(await s.EditAsync(key, r, ct)));
+        admin.MapDelete("/activities/{key}", async (IAdminActivityService s, string key, CancellationToken ct) => { await s.DeleteAsync(key, ct); return Results.NoContent(); });
+        admin.MapGet("/activities/{key}/members", async (IAdminActivityService s, string key, CancellationToken ct) => Results.Json(await s.GetMembersAsync(key, ct)));
+        admin.MapPut("/activities/{key}/members/{userId}", async (IAdminActivityService s, string key, string userId, ActivityAttendanceRequest r, CancellationToken ct) => { await s.SetAttendanceAsync(key, userId, r, ct); return Results.NoContent(); });
+        admin.MapGet("/members/{userId}/activities", async (IAdminActivityService s, string userId, CancellationToken ct) => Results.Json(await s.GetMemberActivitiesAsync(userId, ct)));
         my.MapGet("/activity", async (IActivityService s, ICurrentUserService me) => { return Results.Json(await s.GetMyTodayAsync(await me.RequireUserIdAsync())); });
         admin.MapPost("/activity/today", async (IActivityService s) => { return Results.Json(await s.GetOrCreateTodayAsync()); });
         admin.MapGet("/activity/today", async (IActivityService s) => { return Results.Json(await s.GetTodayForAdminAsync()); });

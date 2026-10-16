@@ -1,8 +1,9 @@
 @page "/admin/members/{UserId}"
 @attribute [Authorize(Roles = "ADMIN")]
+@implements IDisposable
 
 @inject MemberClient MemberSvc
-@inject AttendanceClient AttendanceSvc
+@inject AdminActivityClient ActivitySvc
 @inject SheetMemberMappingClient MappingSvc
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
@@ -143,15 +144,23 @@ else if (memberError is not null)
 
 @if (section == Section.Attendance && member is not null && !memberLoading)
 {
-    <div class="card member-attendance" aria-busy="@(attendanceLoading ? "true" : "false")" data-load-state="@AttendanceLoadState">
+    <div class="card member-attendance" aria-busy="@(attendanceLoading || attendanceBusy ? "true" : "false")" data-load-state="@AttendanceLoadState">
         <h2 class="card-title">출석 기록 — @member.Name</h2>
+        @if (attendanceWriteError is not null)
+        {
+            <p class="attendance-write-error" role="alert">@attendanceWriteError</p>
+        }
+        @if (attendanceBusy)
+        {
+            <span role="status">출석 변경 중…</span>
+        }
         <div class="admin-load-region">
         @if (attendanceLoading)
         {
             <span class="admin-load-status" role="status">출석 기록을 불러오는 중…</span>
             <div class="admin-load-skeleton" data-retained="@(attendance is not null ? "true" : "false")" aria-hidden="true">
                 <p class="member-meta"><span class="loading-placeholder" style="min-width:12em">&nbsp;</span></p>
-                @for (var row = 0; row < (attendance is null ? 3 : Math.Max(1, attendance.Records.Count)); row++)
+                @for (var row = 0; row < (attendance is null ? 3 : Math.Max(1, attendance.Items.Count)); row++)
                 {
                     <div class="member-row"><div><div class="member-name"><span class="loading-placeholder">&nbsp;</span></div><div class="member-meta"><span class="loading-placeholder">&nbsp;</span></div></div></div>
                 }
@@ -165,44 +174,25 @@ else if (memberError is not null)
         {
         <div class="admin-load-values" aria-hidden="@(attendanceLoading ? "true" : "false")">
         <p class="member-meta">
-            이번 달 @(attendance.MonthCount)회 · 이번 학기 @(attendance.SemesterCount)회@(!string.IsNullOrEmpty(attendance.Semester.Name) ? $" ({attendance.Semester.Name})" : "") · 총 @(attendance.TotalCount)회
+            이번 달 @(attendance.MonthCount)회 · 이번 학기 @(attendance.SemesterCount)회 · 총 @(attendance.TotalCount)회
         </p>
 
-        <div class="toolbar-row">
-            <div class="field">
-                <label class="form-label">출석 추가할 활동</label>
-                <select class="form-control" value="@addActivityId" @onchange="e => addActivityId = int.Parse(e.Value!.ToString()!)">
-                    <option value="0">활동 선택…</option>
-                    @foreach (var activity in attendance.AddableActivities)
-                    {
-                        <option value="@activity.ActivityId" disabled="@activity.AlreadyAttended">
-                            @activity.Date.ToString("MM.dd") @ActivityLabel(activity.Status)@(activity.AlreadyAttended ? " · 출석됨" : "")
-                        </option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label class="form-label">&nbsp;</label>
-                <button type="button" class="btn-primary" disabled="@(addActivityId == 0)" @onclick="AddAttendanceAsync">출석 추가</button>
-            </div>
-        </div>
-
+        <p class="member-meta">모든 연결 시트·탭·학기 활동입니다. 예정·없음은 출석을 수정할 수 없습니다.</p>
         <div class="card-list">
-            @if (attendance.Records.Count == 0)
+            @if (attendance.Items.Count == 0)
             {
-                <p class="member-meta">출석 기록이 없습니다.</p>
+                <p class="member-meta">등록된 활동이 없습니다.</p>
             }
-            @foreach (var record in attendance.Records)
+            @foreach (var record in attendance.Items)
             {
-                <div class="member-row">
-                    <div>
-                        <div class="member-name">@record.ActivityDate.ToString("yyyy.MM.dd")</div>
-                        <div class="member-meta">
-                            @TypeLabel(record.Type) · @Domain.KstClock.ToKstTimeString(record.CheckedAt) 처리@(record.HasTeam ? " · 팀 편성 있음" : "")
-                        </div>
-                    </div>
-                    <div style="margin-left:auto">
-                        <button type="button" class="btn-danger" @onclick="() => confirmRemove = record">삭제</button>
+                <div class="member-row" @key="record.Key" data-activity-key="@record.Key">
+                    <input type="checkbox" role="switch" checked="@record.IsAttended" aria-checked="@(record.IsAttended ? "true" : "false")"
+                           aria-label="@($"{record.Date:yyyy.MM.dd} {member.Name} 출석 ({record.SourceLabel})")"
+                           disabled="@(attendanceBusy || attendanceLoading || !record.CanEditAttendance)"
+                           @onclick="() => ToggleAttendanceAsync(record)" @onclick:preventDefault />
+                    <div class="attendance-description">
+                        <div class="member-name">@record.Date.ToString("yyyy.MM.dd") · @record.StateText</div>
+                        <div class="member-meta">@record.SourceLabel · @(record.IsAttended ? "출석" : "미출석")@(record.HasTeam ? " · 팀 편성 있음" : "")</div>
                     </div>
                 </div>
             }
@@ -229,15 +219,16 @@ else if (memberError is not null)
 
 @if (confirmRemove is not null)
 {
-    <div class="confirm-overlay" @onclick="() => confirmRemove = null">
-        <div class="confirm-box" @onclick:stopPropagation>
-            <h3>출석 기록 삭제</h3>
-            <p>@confirmRemove.ActivityDate.ToString("yyyy.MM.dd") 출석 기록을 삭제하시겠습니까?
-                @(confirmRemove.HasTeam ? "이 활동의 팀에서도 제외됩니다." : "")</p>
-            <div class="btn-row">
-                <button type="button" class="btn-ghost" @onclick="() => confirmRemove = null">취소</button>
-                <button type="button" class="btn-danger" @onclick="RemoveAttendanceAsync">삭제</button>
-            </div>
+    <div class="confirm-overlay attendance-confirm" @onkeydown="AttendanceDialogKeyDown">
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="member-attendance-confirm-heading">
+            <MudFocusTrap>
+                <h3 id="member-attendance-confirm-heading">출석 취소</h3>
+                <p>@confirmRemove.Date.ToString("yyyy.MM.dd") · @member?.Name · @confirmRemove.SourceLabel 출석을 취소하시겠습니까? 이 활동의 팀에서도 제외됩니다.</p>
+                <div class="btn-row">
+                    <button type="button" class="btn-ghost" disabled="@attendanceBusy" @onclick="() => confirmRemove = null">취소</button>
+                    <button type="button" class="btn-danger" disabled="@attendanceBusy" @onclick="ConfirmRemoveAsync">출석 취소 확인</button>
+                </div>
+            </MudFocusTrap>
         </div>
     </div>
 }
@@ -265,15 +256,16 @@ else if (memberError is not null)
     private string? attendanceError;
     private string MemberLoadState => memberLoading ? "loading" : memberError is not null ? "error" : "ready";
     private string MappingLoadState => mappingLoading ? "loading" : mappingError is not null ? "error" : "ready";
-    private string AttendanceLoadState => attendanceLoading ? "loading" : attendanceError is not null ? "error" : "ready";
+    private string AttendanceLoadState => attendanceBusy ? "saving" : attendanceLoading ? "loading" : attendanceError is not null ? "error" : "ready";
     private Section section = Section.Edit;
     private MemberListDto? member;
     private MemberEditForm editForm = new();
     private List<MemberTabMappingDto>? tabMappings;
-    private MemberAttendanceAdminDto? attendance;
-    private int addActivityId;
+    private MemberActivityListDto? attendance;
+    private bool attendanceBusy;
+    private string? attendanceWriteError;
     private (string Name, MemberStatus Status)? confirmStatus;
-    private MemberAttendanceRecordDto? confirmRemove;
+    private MemberActivityRowDto? confirmRemove;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -290,7 +282,8 @@ else if (memberError is not null)
         section = Section.Edit;
         confirmStatus = null;
         confirmRemove = null;
-        addActivityId = 0;
+        attendanceBusy = false;
+        attendanceWriteError = null;
         await LoadMemberAsync(epoch, UserId);
     }
 
@@ -341,7 +334,7 @@ else if (memberError is not null)
 
     private async Task OpenSectionAsync(Section target)
     {
-        if (memberLoading || member is null || memberError is not null) return;
+        if (memberLoading || member is null || memberError is not null || attendanceBusy) return;
         section = target;
         if (target == Section.Sheet && tabMappings is null) await LoadMappingsAsync();
         if (target == Section.Attendance) await ReadAttendanceAsync();
@@ -417,12 +410,10 @@ else if (memberError is not null)
         attendanceError = null;
         try
         {
-            var loaded = await AttendanceSvc.GetAdminRecordsAsync(requestedUserId)
+            var loaded = await ActivitySvc.GetMemberActivitiesAsync(requestedUserId)
                 ?? throw new InvalidOperationException("부원 출석 기록 응답이 없습니다.");
-            var loadedActivityId = loaded.AddableActivities.FirstOrDefault(a => !a.AlreadyAttended)?.ActivityId ?? 0;
             if (epoch != routeEpoch || generation != attendanceGeneration) return;
             attendance = loaded;
-            addActivityId = loadedActivityId;
         }
         catch (AppException ex)
         {
@@ -443,38 +434,60 @@ else if (memberError is not null)
         }
     }
 
-    private async Task AddAttendanceAsync()
+    public void Dispose()
     {
-        try
-        {
-            await AttendanceSvc.AdminAddForActivityAsync(UserId, addActivityId);
-            Snackbar.Add("출석 추가 완료", Severity.Success);
-            await LoadAttendanceAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
+        routeEpoch++;
+        memberGeneration++;
+        mappingGeneration++;
+        attendanceGeneration++;
     }
 
-    private async Task RemoveAttendanceAsync()
+    private void AttendanceDialogKeyDown(KeyboardEventArgs e)
     {
-        if (confirmRemove is null)
-        {
-            return;
-        }
+        if (e.Key == "Escape" && !attendanceBusy) confirmRemove = null;
+    }
 
-        var target = confirmRemove;
-        confirmRemove = null;
+    private Task ConfirmRemoveAsync() => confirmRemove is { } record
+        ? SetAttendanceAsync(record, true) : Task.CompletedTask;
+
+    private Task ToggleAttendanceAsync(MemberActivityRowDto record)
+    {
+        if (attendanceBusy || attendanceLoading || !record.CanEditAttendance) return Task.CompletedTask;
+        if (record.IsAttended && record.HasTeam)
+        {
+            confirmRemove = record;
+            return Task.CompletedTask;
+        }
+        return SetAttendanceAsync(record, false);
+    }
+
+    private async Task SetAttendanceAsync(MemberActivityRowDto record, bool confirmed)
+    {
+        if (attendanceBusy || attendanceLoading || !record.CanEditAttendance) return;
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
+        attendanceBusy = true;
+        attendanceWriteError = null;
         try
         {
-            await AttendanceSvc.AdminRemoveForActivityAsync(UserId, target.ActivityId, target.HasTeam);
-            Snackbar.Add($"{target.ActivityDate:yyyy.MM.dd} 출석 기록 삭제", Severity.Success);
-            await LoadAttendanceAsync();
+            await ActivitySvc.SetAttendanceAsync(record.Key, requestedUserId, new(!record.IsAttended, confirmed));
+            if (epoch != routeEpoch) return;
+            Snackbar.Add(record.IsAttended ? "출석 취소 완료" : "출석 추가 완료", Severity.Success);
         }
-        catch (AppException ex)
+        catch (Exception ex)
         {
-            Snackbar.Add(ex.Message, Severity.Error);
+            Logger.LogWarning(ex, "부원 출석 변경 실패");
+            if (epoch != routeEpoch) return;
+            attendanceWriteError = ex is AppException ? ex.Message : "출석을 변경하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (epoch == routeEpoch)
+            {
+                confirmRemove = null;
+                await LoadAttendanceAsync();
+                if (epoch == routeEpoch) attendanceBusy = false;
+            }
         }
     }
 
@@ -553,22 +566,6 @@ else if (memberError is not null)
         MemberStatus.Withdrawn => "탈퇴",
         MemberStatus.Expelled => "퇴출",
         _ => "활동",
-    };
-
-    private static string TypeLabel(AttendanceType type) => type switch
-    {
-        AttendanceType.Otp => "OTP",
-        AttendanceType.Sheet => "시트",
-        _ => "관리자",
-    };
-
-    private static string ActivityLabel(ActivityStatus status) => status switch
-    {
-        ActivityStatus.Ready => "준비중",
-        ActivityStatus.AttendanceOpen => "활동 중",
-        ActivityStatus.TeamCreated => "팀 편성됨",
-        ActivityStatus.AttendanceClosed => "마감",
-        _ => "종료",
     };
 
     private class MemberEditForm

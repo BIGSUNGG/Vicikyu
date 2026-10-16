@@ -1,0 +1,12 @@
+.segment {
+    flex-wrap: wrap;
+    border-radius: 20px;
+}
+
+.seg-btn {
+    flex: 1 1 28%;
+}
+
+@media (min-width: 600px) {
+    .seg-btn { flex: 1; }
+}

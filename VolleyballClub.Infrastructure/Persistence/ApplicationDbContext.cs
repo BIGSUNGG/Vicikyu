@@ -34,10 +34,20 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<SheetDayMark> SheetDayMarks => Set<SheetDayMark>();
 
+    public DbSet<ActivitySource> ActivitySources => Set<ActivitySource>();
+    public DbSet<SheetEditJournal> SheetEditJournals => Set<SheetEditJournal>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         modelBuilder.Entity<SheetDayMark>().HasKey(m => m.Date);
+        modelBuilder.Entity<ActivitySource>().HasKey(s => s.Id);
+        modelBuilder.Entity<ActivitySource>().HasIndex(s => s.ActivityId).IsUnique();
+        modelBuilder.Entity<ActivitySource>().HasOne(s => s.Activity).WithOne()
+            .HasForeignKey<ActivitySource>(s => s.ActivityId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<ActivitySource>().HasOne<SheetDefinition>().WithMany()
+            .HasForeignKey(s => s.SheetDefinitionId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<SheetEditJournal>().HasKey(j => j.Id);
     }
 }

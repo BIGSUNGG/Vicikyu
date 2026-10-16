@@ -17,4 +17,13 @@ public interface ISheetClient
 
     /// <summary>columnIndex 열을 통째로 삭제한다(활동 취소 — 시트에서 그 날짜 열 제거).</summary>
     Task DeleteColumnAsync(string spreadsheetId, string tabName, int columnIndex, CancellationToken ct = default);
+    // Managed mutations MUST be atomic, including insertion + values + identity + operation marker.
+    Task<ManagedSheetTab> GetManagedTabAsync(string spreadsheetId, string tabName, CancellationToken ct = default)
+        => throw new NotSupportedException("Managed sheet edits are not supported by this client.");
+    Task ApplyManagedMutationAsync(string spreadsheetId, ManagedSheetTab expected, ManagedSheetMutation mutation, CancellationToken ct = default)
+        => throw new NotSupportedException("Managed sheet edits are not supported by this client.");
+    // Restore only after verifying the exact observed postimage. Never delete by a stale column index.
+    Task RestoreManagedTabAsync(string spreadsheetId, ManagedSheetTab before, ManagedSheetTab expected,
+        ManagedSheetMutation mutation, CancellationToken ct = default)
+        => throw new NotSupportedException("Managed sheet edits are not supported by this client.");
 }

@@ -409,3 +409,6 @@ FodyWeavers.xsd
 *.db
 *.db-shm
 *.db-wal
+
+# Cloudflare tunnel token (secret)
+.cloudflare/

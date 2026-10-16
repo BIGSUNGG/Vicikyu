@@ -238,6 +238,56 @@ public sealed class HttpApiTests
         Assert.Equal(2, await db.AuditLogs.CountAsync());
     }
 
+    [Fact]
+    public async Task Managed_activity_http_contract_requires_admin_csrf_and_syncs_historical_aliases()
+    {
+        await using var host = await ApiHost.StartAsync();
+        using var anonymous = host.Client(); using var member = host.Client(); using var admin = host.Client();
+        await Token(anonymous); await Login(member, "member"); await Token(member);
+        foreach (var path in new[] { "/api/admin/activities", "/api/admin/activities/targets", "/api/admin/activities/key/members", "/api/admin/members/member-id/activities" })
+        {
+            await Status(anonymous.GetAsync(path), HttpStatusCode.Unauthorized);
+            await Status(member.GetAsync(path), HttpStatusCode.Forbidden);
+        }
+        await Login(admin, "admin"); await Token(admin);
+        int sheetId;
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var sheet = new VolleyballClub.Domain.Entities.SheetDefinition { Name = "synthetic", SpreadsheetId = "fake", Kind = SheetKind.Attendance };
+            db.SheetDefinitions.Add(sheet); await db.SaveChangesAsync(); sheetId = sheet.Id;
+            db.SheetMemberMappings.Add(new() { SheetDefinitionId = sheetId, TabName = "2026-2", UserId = "member-id", RowLabel = "member" });
+            await db.SaveChangesAsync();
+        }
+        host.Sheets.Tabs.Add(new SheetTab("2026-2", [["활동 상태"], ["부원"], ["member"]]));
+        var request = new ActivityCreateRequest(sheetId, "2026-2", new(2026, 10, 2), SheetDayKind.NoActivity);
+        await Status(anonymous.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.Unauthorized);
+        await Status(member.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.Forbidden);
+        admin.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        await Status(admin.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.BadRequest);
+        await Token(admin);
+        await Status(admin.PostAsJsonAsync("/api/admin/activities", request with { Kind = (SheetDayKind)999 }), HttpStatusCode.BadRequest);
+        var row = await Read<ManagedActivityDto>(admin.PostAsJsonAsync("/api/admin/activities", request));
+        Assert.Null(row.Reason); Assert.False(row.CanEditAttendance);
+        await Status(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}/members/member-id", new ActivityAttendanceRequest(true)), HttpStatusCode.Conflict);
+        var completed = await Read<ManagedActivityDto>(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}", new ActivityEditRequest(request.Date, SheetDayKind.Completed)));
+        Assert.NotNull(completed.ActivityId); Assert.True(completed.CanEditAttendance);
+        await Status(admin.PostAsync($"/api/admin/members/member-id/attendance/{completed.ActivityId}", null), HttpStatusCode.NoContent);
+        var list = await admin.GetFromJsonAsync<MemberActivityListDto>("/api/admin/members/member-id/activities");
+        Assert.Equal(1, list!.TotalCount); Assert.True(Assert.Single(list.Items).IsAttended);
+        var members = await admin.GetFromJsonAsync<List<AttendanceMemberDto>>($"/api/admin/activities/{row.Key}/members");
+        Assert.True(members!.Single(m => m.UserId == "member-id").IsAttended);
+        await Status(SendDelete(admin, $"/api/admin/members/member-id/attendance/{completed.ActivityId}", new AttendanceChangeRequest()), HttpStatusCode.NoContent);
+        Assert.Contains(host.Sheets.ManagedWrites, w => w.Kind == SheetMutationKind.Write);
+        await Status(admin.DeleteAsync($"/api/admin/activities/app:{completed.ActivityId}"), HttpStatusCode.NoContent);
+        await Status(admin.DeleteAsync($"/api/admin/activities/app:{completed.ActivityId}"), HttpStatusCode.NoContent);
+        await Status(admin.DeleteAsync($"/api/admin/activities/{row.Key}"), HttpStatusCode.NoContent);
+        Assert.Single(host.Sheets.Deletions);
+        using var verifyScope = host.Services.CreateScope();
+        var verify = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await verify.AuditLogs.CountAsync(a => a.Action == AdminAction.ActivityCancel && a.TargetType == "ActivitySource"));
+    }
+
     private sealed class PasswordChangeHandler : HttpMessageHandler
     {
         private bool changed;
@@ -323,6 +373,7 @@ public sealed class HttpApiTests
     {
         private readonly string dbPath = Path.Combine(Path.GetTempPath(), $"vicikyu-http-{Guid.NewGuid():N}.db");
         public bool FailingSync { get; set; }
+        public FakeSheetClient Sheets { get; } = new();
         public HttpClient Client() => CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -333,7 +384,7 @@ public sealed class HttpApiTests
                 services.RemoveAll<ISheetSyncService>();
                 services.AddSingleton<ISheetSyncService>(new TestSync(this));
                 services.RemoveAll<ISheetClient>();
-                services.AddSingleton<ISheetClient, NoNetworkSheets>();
+                services.AddSingleton<ISheetClient>(Sheets);
             });
         }
         public static async Task<ApiHost> StartAsync()
@@ -367,13 +418,6 @@ public sealed class HttpApiTests
             public Task<bool> ExportClosedActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
             public Task<bool> ExportScheduledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
             public Task<bool> RemoveCancelledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
-        }
-        private sealed class NoNetworkSheets : ISheetClient
-        {
-            public Task<IReadOnlyList<SheetTab>> GetTabsAsync(string id, IEnumerable<string>? names = null, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<SheetTab>>([]);
-            public Task WriteColumnAsync(string id, string tab, int index, SheetColumn column, CancellationToken ct = default) => Task.CompletedTask;
-            public Task InsertColumnAsync(string id, string tab, int index, SheetColumn column, CancellationToken ct = default) => Task.CompletedTask;
-            public Task DeleteColumnAsync(string id, string tab, int index, CancellationToken ct = default) => Task.CompletedTask;
         }
     }
 }

@@ -100,11 +100,14 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
 
             // 신형은 상태행이 원천: 명시적 완료/없음/예정을 그대로 읽고, 상태가 빈칸인 날짜 열은
             // 출석 마크가 있으면 완료로, 없으면 의도 불명이라 가져오지 않는다(미리 만들어진 빈 열 보호).
-            // 구형은 상태 정보가 없으므로 출석 1명 이상인 열만 활동(전원 불참=공휴일 등 제외).
+            // 구형의 미표시 빈 날짜는 목록에만 예정으로 표시하고 완료 분모에서 제외한다.
             SheetDayKind kind;
             if (statusRow is null)
             {
-                kind = SheetDayKind.Completed;
+                var header = Cell(tab.Rows[headerIndex], col - 1);
+                kind = header.Contains(StatusNone) ? SheetDayKind.NoActivity
+                    : header.Contains(StatusScheduled) ? SheetDayKind.Scheduled
+                    : header.Contains(StatusCompleted) || attended.Count > 0 ? SheetDayKind.Completed : SheetDayKind.Scheduled;
             }
             else
             {
@@ -127,12 +130,12 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
                 }
             }
 
-            // 신형(빈칸+출석0 열은 위에서 continue됨)은 상태 표시대로 항상 담고,
-            // 구형은 출석 1명 이상인 열만 담는다(전원 불참=공휴일 등 제외).
-            if (statusRow is not null || attended.Count > 0)
-            {
-                activities.Add(new SheetActivityColumn(date, attended, kind));
-            }
+            // 명시적 완료는 출석 0명이어도 유지하고, 구형의 미표시 빈 열도 목록에 담는다.
+            var statusText = statusRow is null ? Cell(tab.Rows[headerIndex], col - 1) : Cell(statusRow, col - 1);
+            var reason = kind == SheetDayKind.NoActivity
+                ? statusText[(statusText.IndexOf(StatusNone, StringComparison.Ordinal) + StatusNone.Length)..].Trim() : null;
+            if (reason is not null && reason.StartsWith('(') && reason.EndsWith(')')) reason = reason[1..^1].Trim();
+            activities.Add(new SheetActivityColumn(date, attended, kind, col, string.IsNullOrEmpty(reason) ? null : reason));
         }
 
         return new SheetSemesterData(activities);

@@ -83,8 +83,16 @@ public partial class SheetAdminService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var sheet = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Id == id)
             ?? throw new NotFoundException("시트를 찾을 수 없습니다.");
+        if (await db.ActivitySources.AnyAsync(s => s.SheetDefinitionId == id))
+            throw new ConflictException("연결된 활동 원본이 있어 시트를 삭제할 수 없습니다. 활동 원본을 먼저 정리하세요.");
         db.SheetDefinitions.Remove(sheet); // 부원 매핑은 FK cascade
-        await db.SaveChangesAsync();
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException)
+        {
+            if (await db.ActivitySources.AsNoTracking().AnyAsync(s => s.SheetDefinitionId == id))
+                throw new ConflictException("연결된 활동 원본이 있어 시트를 삭제할 수 없습니다.");
+            throw;
+        }
         await auditLog.LogAsync(AdminAction.SettingChange, "SheetDefinition", id.ToString(), $"시트 '{sheet.Name}' 삭제");
     }
 

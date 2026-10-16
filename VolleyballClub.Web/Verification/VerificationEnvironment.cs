@@ -16,8 +16,18 @@ internal static class VerificationEnvironment
         if (!string.IsNullOrEmpty(builder.Configuration["Google:ServiceAccountJson"]) ||
             !string.IsNullOrEmpty(builder.Configuration["Google:SpreadsheetId"]))
             throw new InvalidOperationException("Verification must not receive Google credentials or live sheet IDs.");
-        builder.Services.AddSingleton<ISheetClient>(new FixtureSheets());
-        builder.Services.AddSingleton<ISheetSyncService>(new FixtureSync());
+        if (ActivityManagementVerification.Enabled(builder.Environment, builder.Configuration))
+        {
+            builder.Services.AddSingleton<TimeProvider, ActivityManagementVerification.FixtureClock>();
+            builder.Services.AddSingleton<MutableActivitySheets>();
+            builder.Services.AddSingleton<ISheetClient>(sp => sp.GetRequiredService<MutableActivitySheets>());
+            // Keep the real scoped SheetSyncService registered by AddInfrastructure.
+        }
+        else
+        {
+            builder.Services.AddSingleton<ISheetClient>(new FixtureSheets());
+            builder.Services.AddSingleton<ISheetSyncService>(new FixtureSync());
+        }
     }
 
     private sealed class FixtureSheets : ISheetClient

@@ -9,7 +9,7 @@ using VolleyballClub.Infrastructure.Services;
 namespace VolleyballClub.Tests;
 
 /// <summary>ISheetClient 스텁 — 탭 읽기/열 기록·삽입을 기록한다.</summary>
-public sealed class FakeSheetClient : ISheetClient
+public sealed partial class FakeSheetClient : ISheetClient
 {
     public List<SheetTab> Tabs { get; } = [];
 
@@ -24,7 +24,7 @@ public sealed class FakeSheetClient : ISheetClient
     public Task<IReadOnlyList<SheetTab>> GetTabsAsync(
         string spreadsheetId, IEnumerable<string>? tabNames = null, CancellationToken ct = default)
     {
-        IReadOnlyList<SheetTab> result = tabNames is null ? Tabs : Tabs.Where(t => tabNames.Contains(t.Name)).ToList();
+        IReadOnlyList<SheetTab> result = Document(spreadsheetId).Where(t => tabNames is null || tabNames.Contains(t.Name)).ToList();
         return Task.FromResult(result);
     }
 
@@ -264,7 +264,7 @@ public sealed class SheetSyncTests
         await host.SeedMappingAsync("2026-1", "박유진 24 만화", user1);
         var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 3, 10), user1);
         host.Client.Tabs.Add(new SheetTab("2026-1", []));
-        host.Client.WriteHandler = (_, _, _) => throw new InvalidOperationException("시트 쓰기 실패");
+        host.Client.BeforeManagedApply = _ => throw new InvalidOperationException("시트 쓰기 실패");
 
         Assert.False(await host.Sync.ExportClosedActivityAsync(activity.Id));
         await using (var db = host.Db.CreateContext())
@@ -272,7 +272,7 @@ public sealed class SheetSyncTests
             Assert.Null(await db.Activities.Where(a => a.Id == activity.Id).Select(a => a.SheetExportedAt).FirstAsync());
         }
 
-        host.Client.WriteHandler = null;
+        host.Client.BeforeManagedApply = null;
         Assert.True(await host.Sync.ExportClosedActivityAsync(activity.Id));
         Assert.Single(host.Client.Writes);
     }
@@ -508,17 +508,11 @@ public sealed class SheetSyncTests
 
         Assert.True(await host.Sync.ExportClosedActivityAsync(activity.Id));
 
-        // 부원 마크(3행~)와 상태행(1행) 갈라 쓰기 — 2행 헤더는 건너뛴다
-        Assert.Equal(2, host.Client.Writes.Count);
-        var marks = host.Client.Writes[0];
-        Assert.False(marks.Insert);
-        Assert.Equal(9, marks.ColumnIndex); // 26. 10. 16 열
-        Assert.Equal(3, marks.Column.FirstRowIndex);
-        Assert.Equal(["출석", "미출석", "미출석"], marks.Column.Cells);
-        var status = host.Client.Writes[1];
-        Assert.Equal(9, status.ColumnIndex);
-        Assert.Equal(1, status.Column.FirstRowIndex);
-        Assert.Equal(["활동 완료"], status.Column.Cells);
+        // Unbound sessions never overwrite a date-matched source. One atomic insertion writes header/status/marks.
+        var write = Assert.Single(host.Client.Writes);
+        Assert.True(write.Insert);
+        Assert.Equal("활동 완료", write.Column.Cells[0]);
+        Assert.Equal(["출석", "미출석", "미출석"], write.Column.Cells.Skip(2).Take(3));
 
         await using var db2 = host.Db.CreateContext();
         Assert.False(await db2.SheetDayMarks.AnyAsync(m => m.Date == new DateOnly(2026, 10, 16))); // 마크 즉시 제거
@@ -536,8 +530,7 @@ public sealed class SheetSyncTests
 
         Assert.True(await host.Sync.ExportScheduledActivityAsync(activity.Id));
 
-        Assert.Contains(host.Client.Writes, w =>
-            w.ColumnIndex == 9 && w.Column.FirstRowIndex == 1 && w.Column.Cells.SequenceEqual(["활동 예정"]));
+        Assert.Equal("활동 예정", Assert.Single(host.Client.Writes).Column.Cells[0]);
     }
 
     [Fact]
@@ -600,10 +593,10 @@ public sealed class SheetSyncTests
 
         var report = await host.Sync.SyncAsync();
 
-        Assert.Contains(report.Warnings, w => w.Contains("진행 중 활동과"));
         await using var db = host.Db.CreateContext();
-        var attendance = await db.Attendances.SingleAsync();
-        Assert.Equal(user2, attendance.UserId); // OTP 출석 보존 — 병합 안 함
+        var attendance = await db.Attendances.SingleAsync(a => a.AttendanceType == AttendanceType.Otp);
+        Assert.Equal(user2, attendance.UserId); // The imported source is separate, not date-joined to the open app session.
+        Assert.Equal(2, await db.Activities.CountAsync());
     }
 
     [Fact]
@@ -667,9 +660,14 @@ public sealed class SheetSyncTests
 
         format.Data = new SheetSemesterData(
             [new SheetActivityColumn(new DateOnly(2026, 3, 10), [], SheetDayKind.NoActivity)]);
-        var second = await host.Sync.SyncAsync();
-
-        Assert.Contains(second.Warnings, w => w.Contains("시트 유래 활동을 제거"));
+        await Assert.ThrowsAsync<VolleyballClub.Application.Exceptions.ConflictException>(() => host.Sync.SyncAsync());
+        await using (var remove = host.Db.CreateContext())
+        {
+            Assert.Equal(1, await remove.Attendances.CountAsync());
+            remove.Attendances.RemoveRange(remove.Attendances);
+            await remove.SaveChangesAsync();
+        }
+        await host.Sync.SyncAsync();
         await using var db2 = host.Db.CreateContext();
         Assert.Equal(0, await db2.Activities.CountAsync()); // 시트 유래 활동 제거
         Assert.Equal(0, await db2.Attendances.CountAsync());
@@ -681,23 +679,25 @@ public sealed class SheetSyncTests
     [Fact]
     public async Task SyncAsync_앱_활동이_있는_날의_없음_표기는_활동을_지우지_않는다()
     {
-        await using var host = new SheetSyncHost(new FakeSemesterFormat
-        {
-            Data = new SheetSemesterData(
-                [new SheetActivityColumn(new DateOnly(2026, 3, 10), [], SheetDayKind.NoActivity)]),
-        });
+        // A real parser observes the pending export's separate completed column before import.
+        // The fixed-data format double would incorrectly keep reporting its pre-export NoActivity.
+        await using var host = new SheetSyncHost(SemesterTabFormat.All().Single(f => f.TabName == "2026-1"));
         var (user1, _) = await SeedUsersAsync(host.Db);
         await host.SeedSheetAsync();
         await host.SeedMappingAsync("2026-1", "박유진", user1);
-        host.Client.Tabs.Add(new SheetTab("2026-1", []));
+        host.Client.Tabs.Add(new SheetTab("2026-1", [["부원", "26. 03. 10. 활동 없음"], ["박유진", ""]]));
         await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 3, 10), user1); // 앱 생성(OTP 실적)
 
         var report = await host.Sync.SyncAsync();
 
-        Assert.Contains(report.Warnings, w => w.Contains("앱 활동이 있어"));
+        Assert.Empty(report.Warnings); // Different source: the app session is preserved independently.
+        Assert.Equal(1, report.ExportedColumns);
         await using var db = host.Db.CreateContext();
         Assert.Equal(1, await db.Activities.CountAsync()); // 보존
         Assert.Equal(1, await db.Attendances.CountAsync());
+        Assert.Equal(2, await db.ActivitySources.CountAsync());
+        Assert.True(await db.ActivitySources.AnyAsync(s => s.Kind == SheetDayKind.NoActivity && s.ActivityId == null));
+        Assert.True(await db.ActivitySources.AnyAsync(s => s.Kind == SheetDayKind.Completed && s.ActivityId != null));
     }
 
     [Fact]
@@ -728,11 +728,9 @@ public sealed class SheetSyncTests
 
         var report = await host.Sync.ResyncAsync();
 
-        // 1) 진행 중 활동(10/16 예정 열) 임시 기록 — 상태행 '활동 예정' 유지, 현재 출석자만 마크
-        Assert.Contains(host.Client.Writes, w =>
-            w.ColumnIndex == 9 && w.Column.FirstRowIndex == 3 && w.Column.Cells.SequenceEqual(["출석", "", ""]));
-        Assert.Contains(host.Client.Writes, w =>
-            w.ColumnIndex == 9 && w.Column.FirstRowIndex == 1 && w.Column.Cells.SequenceEqual(["활동 예정"]));
+        var liveWrite = Assert.Single(host.Client.Writes);
+        Assert.Equal("활동 예정", liveWrite.Column.Cells[0]);
+        Assert.Equal(["출석", "", ""], liveWrite.Column.Cells.Skip(2).Take(3));
 
         // 2) 전체 재반영 — 완료 열 2건(9/11, 9/18) 신규 생성, 진행 중 활동·예정 마크는 그대로
         Assert.Equal(2, report.ImportedActivities);
@@ -752,11 +750,14 @@ public sealed class SheetSyncTests
         var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 9, 18));
         host.Client.Tabs.Add(SemesterTabFormatTests.NewFormatTab());
 
+        // Without an explicit identity this app session must not delete another source's same-date column.
         Assert.True(await host.Sync.RemoveCancelledActivityAsync(activity.Id));
-
-        // 9/18 열(1-based 4) 삭제 — 내용 지우기가 아니라 열 제거
-        Assert.Equal([("2026-2", 4)], host.Client.Deletions);
-        Assert.Empty(host.Client.Writes);
+        Assert.Empty(host.Client.Deletions);
+        Assert.True(await host.Sync.ExportClosedActivityAsync(activity.Id));
+        var inserted = Assert.Single(host.Client.Writes).ColumnIndex;
+        host.Client.Writes.Clear();
+        Assert.True(await host.Sync.RemoveCancelledActivityAsync(activity.Id));
+        Assert.Equal([("2026-2", inserted)], host.Client.Deletions);
 
         // 열이 없는 날짜 — 삭제 없이 true
         var other = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 10, 10));
@@ -1098,7 +1099,7 @@ public sealed class SemesterTabFormatTests
 
         var data = format.Parse(tab);
 
-        Assert.Equal(2, data.Activities.Count); // 09.25는 전원 불참(공휴일) → 제외, 집계/OT 열 제외
+        Assert.Equal(3, data.Activities.Count); // All legacy dates are visible, including empty completed columns; aggregate/OT excluded.
         var first = data.Activities[0];
         Assert.Equal(new DateOnly(2026, 9, 11), first.Date);
         Assert.Equal(["박유진 24 만화"], first.AttendedRowLabels);

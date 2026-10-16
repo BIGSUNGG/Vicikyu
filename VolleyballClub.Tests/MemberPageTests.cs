@@ -174,12 +174,12 @@ public class MemberPageTests
     {
         var host = NewHost();
         var member = await host.SeedUserAsync("김정정", "6001");
+        await host.SeedManagedSheetAsync(member);
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 9, 20), ActivityStatus.ActivityClosed);
 
         await host.Attendance.AdminAddForActivityAsync(member, activity.Id);
 
-        await Assert.ThrowsAsync<ConflictException>(
-            () => host.Attendance.AdminAddForActivityAsync(member, activity.Id));
+        await host.Attendance.AdminAddForActivityAsync(member, activity.Id); // idempotent managed retry
 
         var records = await host.Attendance.GetAdminRecordsAsync(member);
         Assert.Equal(1, records.TotalCount);
@@ -192,6 +192,7 @@ public class MemberPageTests
     {
         var host = NewHost();
         var member = await host.SeedUserAsync("김삭제", "7001");
+        await host.SeedManagedSheetAsync(member);
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 9, 25), ActivityStatus.ActivityClosed);
         await SeedAttendanceRowAsync(host, activity.Id, member);
         await using (var db = host.Db.CreateContext())

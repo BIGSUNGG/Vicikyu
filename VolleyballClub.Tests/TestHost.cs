@@ -162,6 +162,17 @@ public sealed class ServiceHost : IAsyncDisposable
     public ISemesterService Semester { get; }
 
     public FakeSheetSyncService SheetSync { get; } = new();
+    public FakeSheetClient ManagedSheets { get; } = new();
+    public async Task SeedManagedSheetAsync(string userId)
+    {
+        await using var db = Db.CreateContext();
+        var sheet = new SheetDefinition { Name = "test attendance", SpreadsheetId = "managed-test", Kind = SheetKind.Attendance };
+        db.SheetDefinitions.Add(sheet);
+        await db.SaveChangesAsync();
+        db.SheetMemberMappings.Add(new SheetMemberMapping { SheetDefinitionId = sheet.Id, TabName = "2026-2", UserId = userId, RowLabel = userId });
+        await db.SaveChangesAsync();
+        ManagedSheets.Tabs.Add(new VolleyballClub.Application.Dtos.SheetTab("2026-2", [["활동 상태"], ["부원"], [userId]]));
+    }
 
     /// <summary>출석 서비스가 참조할 학기 전략 리졸버 — 기본은 전략 없음(모든 시트 활동이 비회원 학기가 됨).</summary>
     public ISheetFormatResolver FormatResolver { get; }
@@ -184,7 +195,8 @@ public sealed class ServiceHost : IAsyncDisposable
         Audit = new AuditLogService(Db.Factory, Current, Time);
         Settings = new SettingService(Db.Factory, Current, Time);
         Activity = new ActivityService(Db.Factory, Current, Audit, SheetSync, Time);
-        Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time);
+        Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time,
+            new AdminActivityService(Db.Factory, ManagedSheets, new SheetFormatResolver(SemesterTabFormat.All()), Current, SheetSync, Time));
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);

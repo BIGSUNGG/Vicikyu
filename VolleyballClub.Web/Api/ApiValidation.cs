@@ -13,6 +13,10 @@ public sealed class ApiValidation : IEndpointFilter
         {
             switch (value)
             {
+                case ActivityCreateRequest r:
+                    Required(r.TabName); if (r.SheetId <= 0 || !Enum.IsDefined(r.Kind) || r.Reason?.Length > 500) Invalid(); break;
+                case ActivityEditRequest r:
+                    if (r.Kind is { } kind && !Enum.IsDefined(kind) || r.Reason?.Length > 500) Invalid(); break;
                 case MemberCreateRequest r:
                     Required(r.StudentNumber, r.Name, r.Password); NonNull(r.Department);
                     Role(r.Role); break;

@@ -192,6 +192,43 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Activities", (string)null);
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.ActivitySource", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ActivityId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsMissing")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SheetDefinitionId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TabName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivityId")
+                        .IsUnique();
+
+                    b.HasIndex("SheetDefinitionId");
+
+                    b.ToTable("ActivitySources");
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>
                 {
                     b.Property<int>("Id")
@@ -445,6 +482,28 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("SheetDefinitions");
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetEditJournal", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BeforeJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MutationJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SpreadsheetId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SheetEditJournals");
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetMemberMapping", b =>
                 {
                     b.Property<int>("Id")
@@ -674,6 +733,22 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.ActivitySource", b =>
+                {
+                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
+                        .WithOne()
+                        .HasForeignKey("VolleyballClub.Domain.Entities.ActivitySource", "ActivityId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("VolleyballClub.Domain.Entities.SheetDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("SheetDefinitionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
                 });
 
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>

@@ -11,6 +11,7 @@ builder.Services.AddScoped<ApiHttp>();
 builder.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
 builder.Services.AddMudServices();
 builder.Services.AddScoped<ActivityClient>();
+builder.Services.AddScoped<AdminActivityClient>();
 builder.Services.AddScoped<AttendanceClient>();
 builder.Services.AddScoped<TeamClient>();
 builder.Services.AddScoped<MemberClient>();

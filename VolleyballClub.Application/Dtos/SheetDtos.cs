@@ -26,4 +26,5 @@ public sealed record SheetSemesterData(IReadOnlyList<SheetActivityColumn> Activi
 public sealed record SheetActivityColumn(
     DateOnly Date,
     IReadOnlyList<string> AttendedRowLabels,
-    SheetDayKind Kind = SheetDayKind.Completed);
+    SheetDayKind Kind = SheetDayKind.Completed,
+    int ColumnIndex = 0, string? Reason = null);
