@@ -56,11 +56,11 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 var app = builder.Build();
+if (app.Services.GetRequiredService<IDatabaseMaintenance>().IsBlocked)
+    throw new InvalidOperationException("DB 복원 중단/복구 실패 표식이 있습니다. database-backups 자동 백업을 확인하고 수동 복구 후 표식을 제거하세요.");
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(VerificationEnvironment.Name))
 {
-    app.UseMigrationsEndPoint();
-
     // 마이그레이션 적용 + 시드 데이터(멱등)
     await DbInitializer.InitializeAsync(app.Services);
 
@@ -91,6 +91,9 @@ else
 
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/api"), branch =>
     branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
+app.UseMiddleware<DatabaseMaintenanceMiddleware>();
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(VerificationEnvironment.Name))
+    app.UseMigrationsEndPoint();
 app.UseAuthentication();
 app.UseMiddleware<ApiMiddleware>();
 app.UseAuthorization();
@@ -104,6 +107,7 @@ app.MapRazorComponents<App>()
 
 app.MapAuthApi();
 app.MapBusinessApi();
+app.MapDatabaseBackupApi();
 
 app.Run();
 

@@ -39,6 +39,9 @@ public static class DependencyInjection
             .AddSignInManager()
             .AddDefaultTokenProviders();
 
+        services.AddSingleton<IDatabaseMaintenance>(new DatabaseMaintenance(connectionString));
+        services.AddSingleton<IDatabaseSnapshot, SqliteDatabaseSnapshot>();
+        services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISheetClient, GoogleSheetClient>();
         services.AddSingleton<ISheetFormatResolver, SheetFormatResolver>();

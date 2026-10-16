@@ -20,6 +20,7 @@ builder.Services.AddScoped<SheetAdminClient>();
 builder.Services.AddScoped<SheetMemberMappingClient>();
 builder.Services.AddScoped<AuditLogClient>();
 builder.Services.AddScoped<SettingClient>();
+builder.Services.AddScoped<DatabaseBackupClient>();
 builder.Services.AddScoped<SheetSyncClient>();
 builder.Services.AddScoped<CurrentUserClient>();
 await builder.Build().RunAsync();
