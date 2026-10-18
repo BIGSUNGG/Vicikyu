@@ -96,7 +96,6 @@
     private IJSObjectReference? module;
     private DotNetObjectReference<SheetSyncNotice>? selfRef;
     private Task? polling;
-    private string? shown;
     private string? statusError;
     private string? downloadError;
     private string? resyncMessage;
@@ -136,8 +135,6 @@
         {
             status = await Sheets.GetStatusAsync();
             statusError = null;
-            var signature = string.Join(";", status.Pending.Select(p => $"{p.ActivityId}:{p.PendingSince:O}")) + status.RecoveryRequired;
-            if (HasPending && Watch && signature != shown) { shown = signature; await OpenFixesAsync(); showRequested = true; }
         }
         catch (Exception ex)
         {

@@ -3,13 +3,20 @@ dialog {
 	max-height: calc(100dvh - 2rem);
 	box-sizing: border-box;
 	margin: auto;
-	/* 헤더-목록-푸터 세로 플렉스: 제목·버튼은 고정, 목록만 스크롤 (닫힘 display:none은 UA의 dialog:not([open]) 규칙이 이긴다) */
-	display: flex;
-	flex-direction: column;
+	/* 헤더-목록-푸터 세로 플렉스: 제목·버튼은 고정, 목록만 스크롤.
+	   flex를 무조건 선언하면 UA의 닫힘 규칙(display:none)을 작성자 스타일이 이겨
+	   닫힌 dialog가 화면을 덮어 클릭을 가로챈다(2026-10 실측) — 열림 상태에만 플렉스. */
 	overflow: hidden;
 	padding: 0;
 	border: 0;
 	border-radius: 1rem;
+}
+dialog[open] {
+	display: flex;
+	flex-direction: column;
+}
+dialog:not([open]) {
+	display: none;
 }
 dialog::backdrop {
 	background: rgb(0 0 0 / 45%);
