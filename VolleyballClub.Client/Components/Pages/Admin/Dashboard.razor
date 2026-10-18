@@ -212,7 +212,8 @@ else if (loadError is not null)
         try
         {
             resyncReport = await SheetSync.ResyncAsync();
-            Snackbar.Add("시트 갱신 완료", Severity.Success);
+            Snackbar.Add(resyncReport.Warnings.Count == 0 ? "시트 갱신 완료" : "시트 갱신 결과에 경고가 있습니다.",
+                resyncReport.Warnings.Count == 0 ? Severity.Success : Severity.Warning);
 
             StateHasChanged();
         }

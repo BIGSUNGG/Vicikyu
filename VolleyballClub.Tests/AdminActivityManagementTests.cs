@@ -147,7 +147,7 @@ public sealed partial class AdminActivityManagementTests
     {
         await using var h = new Host(); await h.Seed(); var row = await h.Completed();
         var attendance = new AttendanceService(h.Db.Factory, h.Current, new AuditLogService(h.Db.Factory, h.Current, h.Clock),
-            new SheetFormatResolver(SemesterTabFormat.All()), h.Clock, h.Service);
+            new SheetFormatResolver(SemesterTabFormat.All()), h.Clock, h.Service, h.Sync);
         await attendance.AdminAddForActivityAsync("a", row.ActivityId!.Value);
         await using (var db = h.Db.CreateContext())
         {

@@ -25,6 +25,27 @@ public class Activity
     /// 다시 열기(Reopen) 시 null로 초기화되어, 재마감 시 같은 날짜 열을 제자리 덮어써 변경분이 반영된다.</summary>
     public DateTime? SheetExportedAt { get; set; }
 
+    /// <summary>활동·출석 정보가 시트에 반영되지 못한 시각. null이면 미반영 없음.
+    /// 시트 우선 가져오기는 이 값이 남은 활동이 없을 때만 진행한다(그 전까지 DB 우선 유지).</summary>
+    public DateTime? SheetSyncPendingAt { get; set; }
+
+    /// <summary>마지막 시트 반영 실패 사유. 성공하면 null로 초기화된다.</summary>
+    public string? SheetSyncError { get; set; }
+
+    /// <summary>동시 출석이 이전 시트 기록의 성공으로 미반영 해제되지 않도록 하는 변경 버전.</summary>
+    public long SheetSyncRevision { get; set; }
+
+    /// <summary>취소된 출석도 행 매핑을 검증할 수 있도록 아직 전송하지 못한 변경 부원을 보존한다.</summary>
+    public List<string> SheetSyncRequiredUserIds { get; set; } = [];
+
+    public void MarkSheetPending(DateTime now, string? userId = null)
+    {
+        SheetSyncRevision++;
+        SheetSyncPendingAt = now;
+        SheetSyncError = null;
+        if (userId is not null && !SheetSyncRequiredUserIds.Contains(userId)) SheetSyncRequiredUserIds.Add(userId);
+    }
+
     public string CreatedByUserId { get; set; } = "";
 
     /// <summary>시트 가져오기로 생성된 활동의 CreatedByUserId 값 — 해당 학기 탭에 매핑된 부원만 미출석으로 계산하는 판별에 쓰인다.</summary>

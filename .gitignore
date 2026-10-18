@@ -412,3 +412,6 @@ FodyWeavers.xsd
 
 # Cloudflare tunnel token (secret)
 .cloudflare/
+
+# Google service account key (secret)
+.secrets/

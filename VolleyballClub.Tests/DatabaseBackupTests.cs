@@ -372,6 +372,9 @@ public sealed class DatabaseBackupTests
     }
     private sealed class PausingSheetSync : ISheetSyncService
     {
+        public SheetPushResult? LastPushResult => null;
+        public Task<SheetPushResult> PushActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(new SheetPushResult(true, true, null));
+        public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default)

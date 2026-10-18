@@ -319,49 +319,47 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
 
     public async Task SetAttendanceAsync(string key, string userId, ActivityAttendanceRequest request, CancellationToken ct = default)
     {
-        await Locked(async db =>
+        await currentUser.RequireAdminAsync();
+        int activityId;
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync(ct);
+        try
         {
-            var s = await Source(db, key);
-            var a = s.Activity;
-            if (!Editable(a) || s.Kind == SheetDayKind.NoActivity) throw new ConflictException("시작 또는 완료된 활동만 출석을 수정할 수 있습니다.");
-            var member = await db.Users.SingleOrDefaultAsync(u => u.Id == userId) ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
-            var existing = a!.Attendances.SingleOrDefault(x => x.UserId == userId);
-            var teams = await db.TeamMembers.Where(m => m.UserId == userId && m.Team!.ActivityId == a.Id).ToListAsync();
+            await using var db = await factory.CreateDbContextAsync(ct);
+            var source = await db.ActivitySources.Include(s => s.Activity).ThenInclude(a => a!.Attendances)
+                .SingleOrDefaultAsync(s => s.Id == key, ct);
+            var activity = source?.Activity;
+            if (key.StartsWith("app:") && int.TryParse(key[4..], out var id))
+                activity = await db.Activities.Include(a => a.Attendances).SingleOrDefaultAsync(a => a.Id == id, ct);
+            if (!Editable(activity) || source?.Kind == SheetDayKind.NoActivity)
+                throw new ConflictException("시작 또는 완료된 활동만 출석을 수정할 수 있습니다.");
+            var a = activity!;
+            source ??= await db.ActivitySources.SingleOrDefaultAsync(s => s.ActivityId == a.Id, ct);
+            if (source is null && await db.SheetDefinitions.CountAsync(s => s.Kind == SheetKind.Attendance, ct) != 1)
+                throw new ConflictException("앱 활동의 대상 시트/탭을 유일하게 정할 수 없습니다.");
+            var member = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+            var existing = a.Attendances.SingleOrDefault(x => x.UserId == userId);
+            var teams = await db.TeamMembers.Where(m => m.UserId == userId && m.Team!.ActivityId == a.Id).ToListAsync(ct);
             if (!request.IsAttended && teams.Count > 0 && !request.ConfirmTeamImpact)
                 throw new ConflictException("팀 편성이 완료되어 있습니다. 출석을 취소하면 팀에서도 제외됩니다. 계속하시겠습니까?");
-            var (sheet, format, tab) = await Target(db, s.SheetDefinitionId, s.TabName, s.Date);
-            var (index, insert, cells) = await SourceCells(db, s, tab, format);
-            var mappings = await db.SheetMemberMappings.Where(m => m.SheetDefinitionId == sheet.Id && m.TabName == tab.Name).ToListAsync();
-            var representedLabels = tab.Rows.Skip(NewFormat(tab) ? 2 : 1)
-                .TakeWhile(r => r.FirstOrDefault()?.Trim() is not ("총 참여자 수" or "탈퇴/퇴출자"))
-                .Select(r => r.FirstOrDefault()?.Trim()).ToHashSet();
-            if (!mappings.Any(m => m.UserId == userId && representedLabels.Contains(m.RowLabel)))
+            // Configuration validation is local. Network outages must never prevent this DB commit.
+            var tabName = source?.TabName ?? resolver.ResolveByDate(a.ActivityDate)?.TabName;
+            if (!await db.SheetMemberMappings.AnyAsync(m => m.UserId == userId && m.TabName == tabName
+                && (source == null || m.SheetDefinitionId == source.SheetDefinitionId), ct))
                 throw new ConflictException("부원의 시트 행 매핑이 필요합니다. 매핑 후 다시 시도하세요.");
-            var beforeCells = cells.ToList();
-            // The fresh source owns everyone else's marks, even when the DB cache is stale.
-            var start = NewFormat(tab) ? 2 : 1;
-            for (var row = start; row < tab.Rows.Count; row++)
-            {
-                var label = tab.Rows[row].FirstOrDefault()?.Trim();
-                if (label is "총 참여자 수" or "탈퇴/퇴출자") break;
-                var mapping = mappings.SingleOrDefault(m => m.RowLabel == label);
-                if (mapping?.UserId == userId) Set(cells, row, request.IsAttended ? NewFormat(tab) ? "출석" : "1" : NewFormat(tab) && a.Status == ActivityStatus.ActivityClosed ? "미출석" : "");
-            }
             var attendanceChanged = (existing is not null) != request.IsAttended;
-            if (!insert && !attendanceChanged && cells.SequenceEqual(beforeCells)) return true;
-            await ManagedSheetEdits.CommitAsync(db, client, sheet.SpreadsheetId, tab, Mutation(insert ? SheetMutationKind.Insert : SheetMutationKind.Write, index, s.Id, cells), async () =>
-            {
-                if (db.Entry(s).State == EntityState.Detached) db.ActivitySources.Add(s);
-                if (!attendanceChanged) return;
-                var now = KstClock.NowUtc(clock);
-                if (request.IsAttended) a.Attendances.Add(new Attendance { UserId = userId, AttendanceType = AttendanceType.Admin, CheckedAt = now, CreatedAt = now });
-                else { db.Attendances.Remove(existing!); db.TeamMembers.RemoveRange(teams); }
-                db.AuditLogs.Add(new AuditLog { AdminUserId = await currentUser.RequireUserIdAsync(),
-                    Action = request.IsAttended ? AdminAction.AttendanceAdd : AdminAction.AttendanceRemove, TargetType = "User", TargetId = userId,
-                    Details = $"{member.Name} {s.Date:yyyy-MM-dd} 출석 {(request.IsAttended ? "추가" : "취소")}", CreatedAt = now });
-            });
-            return true;
-        }, ct);
+            var now = KstClock.NowUtc(clock);
+            if (attendanceChanged && request.IsAttended)
+                a.Attendances.Add(new Attendance { UserId = userId, AttendanceType = AttendanceType.Admin, CheckedAt = now, CreatedAt = now });
+            else if (attendanceChanged) { db.Attendances.Remove(existing!); db.TeamMembers.RemoveRange(teams); }
+            a.MarkSheetPending(now, userId);
+            if (attendanceChanged) db.AuditLogs.Add(new AuditLog { AdminUserId = await currentUser.RequireUserIdAsync(),
+                Action = request.IsAttended ? AdminAction.AttendanceAdd : AdminAction.AttendanceRemove, TargetType = "User", TargetId = userId,
+                Details = $"{member.Name} {a.ActivityDate:yyyy-MM-dd} 출석 {(request.IsAttended ? "추가" : "취소")}", CreatedAt = now });
+            await db.SaveChangesAsync(ct);
+            activityId = a.Id;
+        }
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+        await sync.PushActivityAsync(activityId, ct);
     }
 
     public async Task<MemberActivityListDto> GetMemberActivitiesAsync(string userId, CancellationToken ct = default)

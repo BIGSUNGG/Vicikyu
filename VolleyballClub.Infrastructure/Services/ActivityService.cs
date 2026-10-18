@@ -103,25 +103,25 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
-        if (!activity.CanStartAttendance)
+        Activity activity;
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
+        try
         {
-            throw new ConflictException("이미 활동이 시작되었습니다.");
+            activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
+            if (!activity.CanStartAttendance) throw new ConflictException("이미 활동이 시작되었습니다.");
+            if (string.IsNullOrEmpty(activity.OtpCode)) activity.OtpCode = GenerateOtpCode();
+            var now = KstClock.NowUtc(timeProvider);
+            activity.Status = ActivityStatus.AttendanceOpen;
+            activity.AttendanceOpenedAt = now;
+            activity.UpdatedAt = now;
+            activity.MarkSheetPending(now);
+            await db.SaveChangesAsync();
         }
-
-        if (string.IsNullOrEmpty(activity.OtpCode))
-        {
-            activity.OtpCode = GenerateOtpCode();
-        }
-
-        var now = KstClock.NowUtc(timeProvider);
-        activity.Status = ActivityStatus.AttendanceOpen;
-        activity.AttendanceOpenedAt = now;
-        activity.UpdatedAt = now;
-        await db.SaveChangesAsync();
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
         await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "활동 시작");
 
-        // 신형 탭 상태행에 활동 예정 기록(구형 탭·실패는 무시 — 부가 정보. 조회 경로 자동생성은 기록 안 함)
+        // 신형 탭 상태행에 활동 예정 기록(구형 탭은 기록 없음. 조회 경로 자동생성은 기록 안 함).
+        // 실패해도 시작은 유효 — 미반영으로 보존되고 관리자 화면에 알림이 뜬다.
         await sheetSync.ExportScheduledActivityAsync(activity.Id);
 
         return await LoadAdminDtoAsync(db, activity.Id);
@@ -150,6 +150,7 @@ public class ActivityService(
             CreatedAt = now,
             UpdatedAt = now,
         };
+        activity.MarkSheetPending(now);
         db.Activities.Add(activity);
         try
         {
@@ -162,7 +163,7 @@ public class ActivityService(
         }
         await auditLog.LogAsync(AdminAction.ActivityCreate, "Activity", activity.Id.ToString(), $"{today:yyyy-MM-dd} 새 세션 활동 시작");
 
-        // 신형 탭 상태행에 활동 예정 기록(구형 탭·실패는 무시 — 부가 정보)
+        // 신형 탭 상태행에 활동 예정 기록(구형 탭은 기록 없음). 실패해도 시작은 유효 — 미반영으로 보존된다.
         await sheetSync.ExportScheduledActivityAsync(activity.Id);
 
         return await LoadAdminDtoAsync(db, activity.Id);
@@ -196,39 +197,34 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
-        if (!activity.CanClose)
+        Activity activity;
+        var teamCount = 0;
+        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
+        try
         {
-            throw new ConflictException("이미 종료된 활동입니다.");
+            activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
+            if (!activity.CanClose) throw new ConflictException("이미 종료된 활동입니다.");
+            var now = KstClock.NowUtc(timeProvider);
+            var teams = await db.Teams.Where(t => t.ActivityId == activity.Id).ToListAsync();
+            teamCount = teams.Count;
+            db.Teams.RemoveRange(teams);
+            activity.Status = ActivityStatus.ActivityClosed;
+            activity.ActivityClosedAt = now;
+            activity.AttendanceOpenedAt ??= now;
+            activity.AttendanceClosedAt ??= now;
+            activity.UpdatedAt = now;
+            activity.MarkSheetPending(now);
+            await db.SaveChangesAsync();
         }
-
-        var now = KstClock.NowUtc(timeProvider);
-        // 마감 시 현재 팀은 삭제한다 — 팀 데이터는 진행 중 활동에만 존재
-        var teams = await db.Teams.Where(t => t.ActivityId == activity.Id).ToListAsync();
-        db.Teams.RemoveRange(teams); // 팀원은 FK cascade
-
-        activity.Status = ActivityStatus.ActivityClosed;
-        activity.ActivityClosedAt = now;
-        if (activity.AttendanceOpenedAt is null)
-        {
-            activity.AttendanceOpenedAt = now;
-        }
-
-        if (activity.AttendanceClosedAt is null)
-        {
-            activity.AttendanceClosedAt = now;
-        }
-
-        activity.UpdatedAt = now;
-        await db.SaveChangesAsync();
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
         await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(),
-            $"오늘 활동 마감{(teams.Count > 0 ? $" (팀 {teams.Count}개 삭제)" : string.Empty)}");
+            $"오늘 활동 마감{(teamCount > 0 ? $" (팀 {teamCount}개 삭제)" : string.Empty)}");
 
-        // 시트 출석부 내보내기 — 실패해도 마감은 유지한다(다음 시작 동기화가 복구)
+        // 시트 출석부 내보내기 — 실패해도 마감은 유지한다(미반영으로 보존, 시트 갱신 시 재시도)
         if (!await sheetSync.ExportClosedActivityAsync(activity.Id))
         {
             await auditLog.LogAsync(AdminAction.ActivityClose, "Activity", activity.Id.ToString(),
-                "시트 내보내기 실패 — 다음 기동 시 재동기화 예정");
+                "시트 내보내기 실패 — 미반영 상태로 보존, 시트 갱신 시 재시도");
         }
 
         return await LoadAdminDtoAsync(db, activity.Id);

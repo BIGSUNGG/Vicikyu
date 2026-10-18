@@ -31,7 +31,7 @@ public class SheetUnmappedTests
     }
 
     private static SheetMemberMappingService NewService(ServiceHost host) =>
-        new(host.Db.Factory, new ThrowingSheetClient(), host.FormatResolver, host.Current, host.Audit, host.SheetSync, host.Time);
+        new(host.Db.Factory, new ThrowingSheetClient(), host.FormatResolver, host.Current, host.Audit, host.Time);
 
     private static async Task<int> SeedAttendanceSheetAsync(ServiceHost host)
     {

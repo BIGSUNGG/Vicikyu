@@ -79,6 +79,13 @@ public sealed partial class SemesterTabFormat(string tabName, DateOnly from, Dat
         return end;
     }
 
+    // Shared by parsing, mapping choices and managed row insertion (zero-based, end exclusive).
+    internal static (int Start, int End) MemberRegion(SheetTab tab)
+    {
+        var (header, _) = Layout(tab);
+        return (header + 1, MemberEndRow(tab, header));
+    }
+
     public SheetSemesterData Parse(SheetTab tab)
     {
         var (headerIndex, statusRow) = Layout(tab);

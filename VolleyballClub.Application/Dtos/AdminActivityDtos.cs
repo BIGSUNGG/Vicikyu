@@ -18,7 +18,7 @@ public record MemberActivityListDto(string UserId, int MonthCount, int SemesterC
 public record ManagedSheetTab(string Name, IReadOnlyList<IReadOnlyList<string>> Rows,
     IReadOnlyList<IReadOnlyList<string>> RawValues, IReadOnlyDictionary<int, string> ColumnKeys,
     string? LastMutation = null, IReadOnlyList<IReadOnlyList<string>>? RawCellData = null,
-    IReadOnlyList<string>? ColumnProperties = null, IReadOnlyList<string>? OtherColumnMetadata = null);
-public enum SheetMutationKind { Bind, Insert, Write, Delete }
+    IReadOnlyList<string>? ColumnProperties = null, IReadOnlyList<string>? OtherColumnMetadata = null, IReadOnlyList<string>? RowProperties = null);
+public enum SheetMutationKind { Bind, Insert, Write, Delete, InsertMemberRow }
 public record ManagedSheetMutation(string OperationId, SheetMutationKind Kind, int ColumnIndex,
-    string SourceKey, IReadOnlyList<string> RawValues);
+    string SourceKey, IReadOnlyList<string> RawValues, int RowIndex = 0);

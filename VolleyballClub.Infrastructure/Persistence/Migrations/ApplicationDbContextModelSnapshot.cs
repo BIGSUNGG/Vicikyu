@@ -177,6 +177,19 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("SheetExportedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SheetSyncError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("SheetSyncPendingAt")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("SheetSyncRequiredUserIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SheetSyncRevision")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 

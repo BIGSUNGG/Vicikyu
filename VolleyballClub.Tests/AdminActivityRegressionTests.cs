@@ -101,7 +101,7 @@ public sealed partial class AdminActivityManagementTests
         var before = await Snapshot(h);
         var member = new FakeCurrentUser("a");
         var attendance = new AttendanceService(h.Db.Factory, member, new AuditLogService(h.Db.Factory, member, h.Clock),
-            new SheetFormatResolver(SemesterTabFormat.All()), h.Clock, h.Service);
+            new SheetFormatResolver(SemesterTabFormat.All()), h.Clock, h.Service, new FakeSheetSyncService());
         Task<DateTime>? checkin = null;
         h.Sheets.AfterManagedApply = _ =>
         {
@@ -152,7 +152,9 @@ public sealed partial class AdminActivityManagementTests
         rows[4][column] = "=COUNTIF($E$3:$E$4,\"출석\")";
         h.Sheets.SetTab("first", new("2026-2", rows));
         var before = await h.Sheets.GetManagedTabAsync("first", "2026-2");
-        var report = await h.Sync.ResyncAsync(); Assert.Empty(report.Warnings);
+        var report = await h.Sync.ResyncAsync();
+        if (unmapped == "출석") Assert.Contains(report.Warnings, w => w.Contains("'Unmapped' 미지정"));
+        else Assert.Empty(report.Warnings);
         var live = await h.Sheets.GetManagedTabAsync("first", "2026-2");
         Assert.Equal(before.RawValues[3][column], live.RawValues[3][column]);
         Assert.Equal(before.RawValues[4][column], live.RawValues[4][column]);

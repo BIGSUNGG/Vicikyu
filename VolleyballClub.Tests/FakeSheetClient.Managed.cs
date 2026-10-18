@@ -1,6 +1,7 @@
 using System.Text.Json;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
 
@@ -54,6 +55,28 @@ public sealed partial class FakeSheetClient
         if (Json(await GetManagedTabAsync(spreadsheetId, expected.Name, ct)) != Json(expected)) throw new ConflictException("Changed source");
         BeforeManagedApply?.Invoke(mutation);
         var values = expected.RawValues.Select(r => r.ToList()).ToList();
+        if (mutation.Kind == SheetMutationKind.InsertMemberRow)
+        {
+            // Independently model the sheet: append the member row, then widen every totals-range end by one.
+            var end = SemesterTabFormat.MemberRegion(new(expected.Name, expected.Rows)).End;
+            var row = Enumerable.Repeat("{}", Math.Max(1, values.Max(r => r.Count))).ToList();
+            row[0] = mutation.RawValues[0];
+            values.Insert(end, row);
+            var totals = values[end + 1];
+            for (var c = 0; c < totals.Count; c++)
+            {
+                using var cell = JsonDocument.Parse(totals[c]);
+                if (!cell.RootElement.TryGetProperty("formulaValue", out var formula)) continue;
+                totals[c] = Raw(System.Text.RegularExpressions.Regex.Replace(formula.GetString()!,
+                    @"(\$?)([A-Z]+)(\$?)" + end + @"(\)|,)",
+                    match => $"{match.Groups[1].Value}{match.Groups[2].Value}{match.Groups[3].Value}{end + 1}{match.Groups[4].Value}",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+            }
+            Store(spreadsheetId, new(expected.Name, [], values, expected.ColumnKeys.ToDictionary(k => k.Key, k => k.Value), mutation.OperationId));
+            ManagedWrites.Add(mutation);
+            AfterManagedApply?.Invoke(mutation);
+            return;
+        }
         var index = mutation.ColumnIndex - 1;
         var changedKeys = new Dictionary<int, string>();
         foreach (var key in expected.ColumnKeys)

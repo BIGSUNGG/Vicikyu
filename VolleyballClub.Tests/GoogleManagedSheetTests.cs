@@ -25,6 +25,9 @@ public sealed partial class GoogleManagedSheetTests
             if (request.Method == HttpMethod.Get)
                 return new(HttpStatusCode.OK) { Content = new StringContent(Spreadsheet, Encoding.UTF8, "application/json") };
             Assert.Equal(HttpMethod.Post, request.Method);
+            // 원본 메타데이터 병합 검색은 응용 계층 요청이다 — 기록하지 않고 빈 결과로 응답한다.
+            if (request.RequestUri!.AbsolutePath.EndsWith("developerMetadata:search"))
+                return new(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             Assert.EndsWith(":batchUpdate", request.RequestUri!.AbsolutePath);
             await using var content = await request.Content!.ReadAsStreamAsync(ct);
             await using var decoded = request.Content.Headers.ContentEncoding.Contains("gzip")

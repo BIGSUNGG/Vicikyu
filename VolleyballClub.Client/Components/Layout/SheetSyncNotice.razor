@@ -1,0 +1,130 @@
+@implements IAsyncDisposable
+@inject ApiHttp Api
+@inject SheetSyncClient Sheets
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Logging.ILogger<SheetSyncNotice> Logger
+@using Microsoft.Extensions.Logging
+
+@if (HasPending)
+{
+    <section class="card" role="alert" data-testid="sheet-sync-warning">
+        <p>시트 미반영 @(status!.PendingCount)건 — 모두 저장될 때까지 DB 값을 유지합니다.</p>
+        @if (status.RecoveryRequired) { <p>시트 복구 기록을 확인해야 합니다. 추가 동기화를 중단한 상태입니다.</p> }
+        <button type="button" class="btn-danger" @onclick="Show">경고·백업 다운로드</button>
+    </section>
+}
+@if (statusError is not null) { <p role="alert">@statusError</p> }
+<dialog @ref="dialog" aria-labelledby="sheet-sync-warning-title" data-testid="sheet-sync-dialog">
+    <h2 id="sheet-sync-warning-title">시트 저장 실패 · DB 백업 필요</h2>
+    <p>출석·활동 변경은 서버 DB에 보존했습니다. 시트 갱신으로 재시도해 주세요.</p>
+    @foreach (var item in status?.Pending ?? [])
+    {
+        <p>@item.ActivityDate.ToString("yyyy-MM-dd") · @item.State: @item.Error</p>
+    }
+    <p>백업에는 개인정보·비밀번호 해시·Google 인증정보가 포함됩니다. 안전하게 보관하세요.</p>
+    @if (downloadError is not null) { <p role="alert">@downloadError</p> }
+    <div class="btn-row">
+        <button type="button" class="btn-primary" disabled="@downloading" @onclick="DownloadAsync">@(downloading ? "백업 다운로드 중…" : ".db 백업 다운로드")</button>
+        <button type="button" class="btn-secondary" @onclick="CloseAsync">닫기</button>
+    </div>
+</dialog>
+
+@code {
+    [Parameter] public bool Watch { get; set; }
+    private readonly CancellationTokenSource stop = new();
+    private SheetSyncStatusDto? status;
+    private ElementReference dialog;
+    private IJSObjectReference? module;
+    private Task? polling;
+    private string? shown;
+    private string? statusError;
+    private string? downloadError;
+    private bool showRequested;
+    private bool downloading;
+    private bool disposed;
+    private bool HasPending => status is { PendingCount: > 0 } or { RecoveryRequired: true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Api.SheetWriteFailed += OnWriteFailedAsync;
+        await LoadAsync();
+        if (Watch) polling = PollAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            status = await Sheets.GetStatusAsync();
+            statusError = null;
+            var signature = string.Join(";", status.Pending.Select(p => $"{p.ActivityId}:{p.PendingSince:O}")) + status.RecoveryRequired;
+            if (HasPending && Watch && signature != shown) { shown = signature; showRequested = true; }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "시트 미반영 상태 조회 실패");
+            statusError = "시트 미반영 상태를 확인하지 못했습니다. 연결을 확인하고 다시 불러와 주세요.";
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop.Token))
+                await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+    }
+
+    private async Task<IJSObjectReference> ModuleAsync() => module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/sheet-backup.js");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!showRequested || disposed) return;
+        showRequested = false;
+        await (await ModuleAsync()).InvokeVoidAsync("show", dialog);
+    }
+
+    private void Show() => showRequested = true;
+    private async Task CloseAsync() => await (await ModuleAsync()).InvokeVoidAsync("close", dialog);
+
+    private async Task OnWriteFailedAsync()
+    {
+        if (disposed) return;
+        await InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            showRequested = true;
+            Snackbar.Add("시트 저장에 실패했습니다. DB는 보존됐으며 백업 다운로드를 시도합니다.", Severity.Error);
+            await DownloadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (downloading) return;
+        downloading = true; downloadError = null;
+        try { await (await ModuleAsync()).InvokeVoidAsync("download"); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "미반영 DB 백업 다운로드 실패");
+            downloadError = "백업 다운로드를 완료하지 못했습니다. 다운로드 버튼으로 다시 시도해 주세요.";
+            Snackbar.Add(downloadError, Severity.Error);
+        }
+        finally { downloading = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        Api.SheetWriteFailed -= OnWriteFailedAsync;
+        stop.Cancel();
+        if (polling is not null) await polling;
+        stop.Dispose();
+        if (module is not null) await module.DisposeAsync();
+    }
+}

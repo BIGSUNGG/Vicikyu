@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
@@ -17,7 +18,36 @@ public sealed partial class GoogleSheetClient
         request.Ranges = new[] { QuoteTab(tabName) };
         request.IncludeGridData = true;
         request.Fields = "sheets(properties(sheetId,title,gridProperties),developerMetadata,data(startRow,startColumn,columnMetadata(pixelSize,hiddenByUser),rowData(values(userEnteredValue,userEnteredFormat,note,dataValidation,textFormatRuns))))";
-        return (await request.ExecuteAsync(ct)).Sheets.Single(s => s.Properties.Title == tabName);
+        await ThrottleAsync(ct);
+        var sheet = (await request.ExecuteAsync(ct)).Sheets.Single(s => s.Properties.Title == tabName);
+        // 정상 시트는 열 메타데이터가 get에 포함된다 — 없을 때만 검색 API로 병합(요청 수 절약).
+        if ((sheet.DeveloperMetadata ?? []).Any(m => m.Location?.DimensionRange is not null)) return sheet;
+        return await MergeDimensionMetadataAsync(svc, spreadsheetId, sheet, ct);
+    }
+
+    /// <summary>일부 시트에서 spreadsheets.get는 열 범위 developerMetadata를 반환하지 않는다(시트 범위만).
+    /// 검색 API로 열 범위 원본 메타데이터를 다시 가져와 병합한다 — 없으면 Bind 검증이 항상 실패한다.</summary>
+    private static async Task<Sheet> MergeDimensionMetadataAsync(SheetsService svc, string spreadsheetId, Sheet sheet, CancellationToken ct)
+    {
+        var searchRequest = svc.Spreadsheets.DeveloperMetadata.Search(new SearchDeveloperMetadataRequest
+        {
+            DataFilters =
+            [
+                new DataFilter { DeveloperMetadataLookup = new DeveloperMetadataLookup { MetadataKey = SourceMetadata, LocationType = "COLUMN" } }
+            ]
+        }, spreadsheetId);
+        await ThrottleAsync(ct);
+        var search = await searchRequest.ExecuteAsync(ct);
+        var found = (search.MatchedDeveloperMetadata ?? [])
+            .Select(m => m.DeveloperMetadata)
+            .Where(m => m?.Location?.DimensionRange is { } range && range.SheetId == sheet.Properties.SheetId)
+            .ToList();
+        if (found.Count == 0) return sheet;
+        sheet.DeveloperMetadata ??= [];
+        foreach (var metadata in found)
+            if (sheet.DeveloperMetadata.All(m => m.MetadataId != metadata!.MetadataId))
+                sheet.DeveloperMetadata.Add(metadata!);
+        return sheet;
     }
 
     private static ManagedSheetTab Snapshot(Sheet sheet)
@@ -29,8 +59,10 @@ public sealed partial class GoogleSheetClient
         // Normalize trailing empties; Google omits them in responses.
         raw = raw.Select(r => (IReadOnlyList<string>)r.Reverse().SkipWhile(v => v == "{}").Reverse().ToList()).ToList();
         while (raw.Count > 0 && raw[^1].Count == 0) raw.RemoveAt(raw.Count - 1);
-        var keys = (sheet.DeveloperMetadata ?? []).Where(m => m.MetadataKey == SourceMetadata)
-            .ToDictionary(m => m.Location.DimensionRange.StartIndex!.Value + 1, m => m.MetadataValue);
+        // 중복 열 메타데이터(실패한 Bind 잔존)가 있으면 가장 오래된 것을 식별자로 쓴다 — 복구가 정리한다.
+        var keys = (sheet.DeveloperMetadata ?? []).Where(m => m.MetadataKey == SourceMetadata && m.Location?.DimensionRange is not null)
+            .GroupBy(m => m.Location.DimensionRange.StartIndex!.Value + 1)
+            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.MetadataId!.Value).First().MetadataValue);
         return new ManagedSheetTab(sheet.Properties.Title,
             raw.Select(r => (IReadOnlyList<string>)r.Select(RawText).ToList()).ToList(), raw,
             keys.OrderBy(k => k.Key).ToDictionary(k => k.Key, k => k.Value),
@@ -105,6 +137,7 @@ public sealed partial class GoogleSheetClient
         var request = svc.Spreadsheets.Get(spreadsheetId);
         request.IncludeGridData = true;
         request.Fields = "namedRanges(range),sheets(properties(sheetId,title),developerMetadata,data(startRow,startColumn,rowData(values(userEnteredValue))))";
+        await ThrottleAsync(ct);
         var workbook = await request.ExecuteAsync(ct);
         var target = workbook.Sheets.Single(s => s.Properties.Title == tabName);
         if ((workbook.NamedRanges ?? []).Any(n => n.Range.SheetId == target.Properties.SheetId)
@@ -129,7 +162,7 @@ public sealed partial class GoogleSheetClient
     public async Task ApplyManagedMutationAsync(string spreadsheetId, ManagedSheetTab expected,
         ManagedSheetMutation mutation, CancellationToken ct = default)
     {
-        if (mutation.Kind is SheetMutationKind.Insert or SheetMutationKind.Delete)
+        if (mutation.Kind is SheetMutationKind.Insert or SheetMutationKind.Delete or SheetMutationKind.InsertMemberRow)
             await CheckStructuralSafetyAsync(spreadsheetId, expected.Name,
                 mutation.Kind == SheetMutationKind.Delete ? mutation.ColumnIndex : null, ct);
         var sheet = await ReadManagedAsync(spreadsheetId, expected.Name, ct);
@@ -138,7 +171,34 @@ public sealed partial class GoogleSheetClient
         var requests = new List<Request>();
         foreach (var marker in (sheet.DeveloperMetadata ?? []).Where(m => m.MetadataKey == OperationMetadata))
             requests.Add(RemoveMetadata(marker.MetadataId!.Value));
-        if (mutation.Kind == SheetMutationKind.Insert) requests.Add(Insert(sheet, mutation.ColumnIndex));
+        if (mutation.Kind == SheetMutationKind.InsertMemberRow)
+        {
+            // New member row appended just before the totals row; only totals ranges are rewritten (MemberRowEdits.Validate).
+            requests.Add(new Request { InsertDimension = new InsertDimensionRequest
+                { Range = new DimensionRange { SheetId = id, Dimension = "ROWS", StartIndex = mutation.RowIndex - 1, EndIndex = mutation.RowIndex } } });
+            requests.Add(new Request { UpdateCells = new UpdateCellsRequest
+            {
+                Start = new GridCoordinate { SheetId = id, RowIndex = mutation.RowIndex - 1, ColumnIndex = 0 },
+                Fields = "userEnteredValue",
+                Rows = [new RowData { Values = [new CellData { UserEnteredValue = Decode(mutation.RawValues[0]) }] }]
+            } });
+            var (start, end) = SemesterTabFormat.MemberRegion(new SheetTab(expected.Name, expected.Rows));
+            var totals = new List<CellData>();
+            for (var c = 0; c < expected.RawValues[end].Count; c++)
+            {
+                string? formula = null;
+                using (var doc = JsonDocument.Parse(expected.RawValues[end][c]))
+                    if (doc.RootElement.TryGetProperty("formulaValue", out var found)) formula = found.GetString();
+                totals.Add(formula is null ? null
+                    : new CellData { UserEnteredValue = new ExtendedValue { FormulaValue = MemberRowEdits.ExpandTotal(formula, c + 1, start + 1, end) } });
+            }
+            requests.Add(new Request { UpdateCells = new UpdateCellsRequest
+            {
+                Start = new GridCoordinate { SheetId = id, RowIndex = mutation.RowIndex, ColumnIndex = 0 },
+                Fields = "userEnteredValue", Rows = [new RowData { Values = totals }]
+            } });
+        }
+        else if (mutation.Kind == SheetMutationKind.Insert) requests.Add(Insert(sheet, mutation.ColumnIndex));
         if (mutation.Kind == SheetMutationKind.Delete) requests.Add(Delete(id, mutation.ColumnIndex));
         if (mutation.Kind == SheetMutationKind.Insert)
         {
@@ -173,7 +233,7 @@ public sealed partial class GoogleSheetClient
         ManagedSheetMutation mutation, CancellationToken ct = default)
     {
         ManagedSheetEdits.RequireOwnedPostimage(before, expected, mutation);
-        if (mutation.Kind is SheetMutationKind.Insert or SheetMutationKind.Delete)
+        if (mutation.Kind is SheetMutationKind.Insert or SheetMutationKind.Delete or SheetMutationKind.InsertMemberRow)
             await CheckStructuralSafetyAsync(spreadsheetId, before.Name,
                 mutation.Kind == SheetMutationKind.Insert ? mutation.ColumnIndex : null, ct);
         var sheet = await ReadManagedAsync(spreadsheetId, before.Name, ct);
@@ -187,6 +247,9 @@ public sealed partial class GoogleSheetClient
             if (inserted.Key != mutation.ColumnIndex) throw new ConflictException("삽입한 열의 위치를 확인할 수 없습니다.");
             requests.Add(Delete(id, inserted.Key));
         }
+        if (mutation.Kind == SheetMutationKind.InsertMemberRow)
+            requests.Add(new Request { DeleteDimension = new DeleteDimensionRequest
+                { Range = new DimensionRange { SheetId = id, Dimension = "ROWS", StartIndex = mutation.RowIndex - 1, EndIndex = mutation.RowIndex } } });
         if (mutation.Kind == SheetMutationKind.Delete) requests.Add(Insert(sheet, mutation.ColumnIndex));
         // Restore the entire raw preimage: structural edits can rewrite formulas outside the edited column.
         requests.Add(new Request { UpdateCells = new UpdateCellsRequest
@@ -216,6 +279,7 @@ public sealed partial class GoogleSheetClient
         foreach (var key in before.ColumnKeys) requests.Add(AddMetadata(id, SourceMetadata, key.Value, key.Key));
         if (before.LastMutation is not null) requests.Add(AddMetadata(id, OperationMetadata, before.LastMutation));
         var svc = await GetServiceAsync(ct);
+        await ThrottleAsync(ct);
         await svc.Spreadsheets.BatchUpdate(new BatchUpdateSpreadsheetRequest { Requests = requests }, spreadsheetId).ExecuteAsync(ct);
     }
 }

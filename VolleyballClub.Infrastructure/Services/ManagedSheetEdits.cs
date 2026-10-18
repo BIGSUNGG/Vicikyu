@@ -27,6 +27,22 @@ internal static class ManagedSheetEdits
 
     internal static void RequireOwnedPostimage(ManagedSheetTab before, ManagedSheetTab actual, ManagedSheetMutation mutation)
     {
+        if (mutation.Kind == SheetMutationKind.InsertMemberRow)
+        {
+            var rows = before.RawValues.Select(r => r.ToList()).ToList();
+            MemberRowEdits.Transform(rows, mutation, false);
+            if (actual.LastMutation != mutation.OperationId
+                || Json(before.ColumnKeys.OrderBy(k => k.Key)) != Json(actual.ColumnKeys.OrderBy(k => k.Key))
+                || !GridEquals(rows, actual.RawValues)) Diverged();
+            if (before.RawCellData is not null)
+            {
+                var cells = before.RawCellData.Select(r => r.ToList()).ToList();
+                MemberRowEdits.Transform(cells, mutation, true);
+                if (actual.RawCellData is null || !GridEquals(cells, actual.RawCellData)) Diverged();
+            }
+            if (Json(before.OtherColumnMetadata) != Json(actual.OtherColumnMetadata)) Diverged();
+            return;
+        }
         var values = before.RawValues.Select(r => r.ToList()).ToList();
         var keys = new Dictionary<int, string>();
         foreach (var key in before.ColumnKeys)
@@ -154,13 +170,17 @@ internal static class ManagedSheetEdits
         var before = JsonSerializer.Deserialize<ManagedSheetTab>(journal.BeforeJson)!;
         var mutation = JsonSerializer.Deserialize<ManagedSheetMutation>(journal.MutationJson)!;
         var current = await client.GetManagedTabAsync(journal.SpreadsheetId, before.Name, CancellationToken.None);
+        // A previous rollback can leave only a newer bookkeeping marker. Equal data/identities
+        // prove the preimage is intact; never rewrite the sheet merely to reset that marker.
+        if (current.LastMutation != mutation.OperationId
+            && Json(current with { LastMutation = before.LastMutation }) == Json(before)) return;
         if (current.LastMutation == mutation.OperationId)
         {
             RequireOwnedPostimage(before, current, mutation);
             await client.RestoreManagedTabAsync(journal.SpreadsheetId, before, current, mutation, CancellationToken.None);
             current = await client.GetManagedTabAsync(journal.SpreadsheetId, before.Name, CancellationToken.None);
         }
-        if (Json(current) != Json(before))
+        if (Json(current with { LastMutation = before.LastMutation }) != Json(before))
             throw new ConflictException("시트 복구 상태를 확인할 수 없습니다. 추가 변경/동기화를 중단했습니다. 원본과 복구 기록을 확인하세요.");
     }
 

@@ -16,10 +16,13 @@ public class AttendanceService(
     IAuditLogService auditLog,
     ISheetFormatResolver formatResolver,
     TimeProvider timeProvider,
-    IAdminActivityService adminActivities) : IAttendanceService
+    IAdminActivityService adminActivities,
+    ISheetSyncService sheetSync) : IAttendanceService
 {
     public async Task<DateTime> CheckInWithOtpAsync(string otp)
     {
+        int activityId = 0;
+        var checkedAt = default(DateTime);
         await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
         try
         {
@@ -64,6 +67,7 @@ public class AttendanceService(
             CreatedAt = now,
         };
         db.Attendances.Add(attendance);
+        activity.MarkSheetPending(now, userId);
         try
         {
             await db.SaveChangesAsync();
@@ -73,13 +77,20 @@ public class AttendanceService(
             throw new ConflictException("이미 출석 처리되었습니다.");
         }
 
-        return now;
+        activityId = activity.Id;
+        checkedAt = now;
         }
         finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+
+        // 즉시 시트 반영 — 원격 I/O는 AttendanceCommitGate를 절대 잡지 않는다(Gate→AttendanceCommitGate 순서만 허용).
+        // 실패해도 출석은 유효: 미반영(pending)으로 보존되고 관리자 화면에 알림이 뜬다.
+        await sheetSync.PushActivityAsync(activityId);
+        return checkedAt;
     }
 
     public async Task AdminAddAsync(string targetUserId)
     {
+        int activityId;
         await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
         try
         {
@@ -109,6 +120,7 @@ public class AttendanceService(
             CheckedAt = now,
             CreatedAt = now,
         });
+        activity.MarkSheetPending(now, targetUserId);
         try
         {
             await db.SaveChangesAsync();
@@ -119,12 +131,17 @@ public class AttendanceService(
         }
 
         await auditLog.LogAsync(AdminAction.AttendanceAdd, "User", targetUserId, $"{member.Name} 직접 출석 추가");
+        activityId = activity.Id;
         }
         finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+
+        // 즉시 시트 반영 — 실패해도 추가는 유효(미반영 보존·관리자 알림)
+        await sheetSync.PushActivityAsync(activityId);
     }
 
     public async Task AdminCancelAsync(string targetUserId, bool confirmTeamImpact = false)
     {
+        int activityId;
         await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
         try
         {
@@ -138,8 +155,12 @@ public class AttendanceService(
         }
 
         await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
+        activityId = activity.Id;
         }
         finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+
+        // 즉시 시트 반영 — 실패해도 취소는 유효(미반영 보존·관리자 알림)
+        await sheetSync.PushActivityAsync(activityId);
     }
 
     public Task AdminAddForActivityAsync(string targetUserId, int activityId) =>
@@ -168,6 +189,8 @@ public class AttendanceService(
             .Where(m => m.UserId == targetUserId && m.Team!.ActivityId == activity.Id)
             .ToListAsync();
         db.TeamMembers.RemoveRange(teamMembers);
+        // 출석 취소도 '시트 미반영' 마킹과 같이 커밋된다 — 시트 기록 성공 시 해제된다
+        activity.MarkSheetPending(KstClock.NowUtc(timeProvider), targetUserId);
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.AttendanceRemove, "User", targetUserId,
             $"{member?.Name ?? targetUserId} {activity.ActivityDate:MM.dd} 출석 취소");

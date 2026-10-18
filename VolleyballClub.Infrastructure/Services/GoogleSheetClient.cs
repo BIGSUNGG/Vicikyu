@@ -23,10 +23,29 @@ public sealed partial class GoogleSheetClient(
     private SheetsService? service;
     private string? serviceCredentials;
 
+    // Sheets API 분당 할당량(읽기·쓰기 각 60/사용자)을 넘기지 않도록 전 요청을 직렬화해 간격을 둔다.
+    // 첫 전체 동기화는 9탭 × (탭 읽기+원본 바인드 검증) ≈ 50읽기라 순차 실행만으로도 한도 안에 든다.
+    private static readonly SemaphoreSlim RequestGate = new(1, 1);
+    private static DateTimeOffset lastRequestUtc;
+    private static readonly TimeSpan MinimumRequestInterval = TimeSpan.FromSeconds(1.3);
+
+    private static async Task ThrottleAsync(CancellationToken ct)
+    {
+        await RequestGate.WaitAsync(ct);
+        try
+        {
+            var wait = lastRequestUtc + MinimumRequestInterval - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait, ct);
+            lastRequestUtc = DateTimeOffset.UtcNow;
+        }
+        finally { RequestGate.Release(); }
+    }
+
     public async Task<IReadOnlyList<SheetTab>> GetTabsAsync(
         string spreadsheetId, IEnumerable<string>? tabNames = null, CancellationToken ct = default)
     {
         var svc = await GetServiceAsync(ct);
+        await ThrottleAsync(ct);
         var names = tabNames is null
             ? (await GetSheetPropertiesAsync(svc, spreadsheetId, fields: "sheets(properties(title))", ct))
                 .Select(p => p.Title!.ToString())
@@ -39,6 +58,7 @@ public sealed partial class GoogleSheetClient(
 
         var batch = svc.Spreadsheets.Values.BatchGet(spreadsheetId);
         batch.Ranges = names;
+        await ThrottleAsync(ct);
         var response = await batch.ExecuteAsync(ct);
 
         // BatchGet은 요청 순서대로 반환한다. 빈 탭은 Values가 null로 온다.
@@ -201,6 +221,7 @@ public sealed partial class GoogleSheetClient(
     {
         var request = svc.Spreadsheets.Get(spreadsheetId);
         request.Fields = fields;
+        await ThrottleAsync(ct);
         var spreadsheet = await request.ExecuteAsync(ct);
         return spreadsheet.Sheets.Select(sheet => sheet.Properties).ToList();
     }

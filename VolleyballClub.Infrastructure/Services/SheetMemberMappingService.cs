@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Application.Dtos;
 using VolleyballClub.Domain;
 using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Identity;
@@ -10,14 +11,13 @@ namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>탭별 부원↔시트 행 연결 관리. 행 후보는 시트를 실시간으로 읽고
 /// 라벨의 이름 접두사가 부원 이름과 같으면 추천(최상단 강조)으로 올린다.
-/// 연결 변경 즉시 동기화를 실행해 과거 출석이 바로 반영된다(재기동 불필요).</summary>
+/// 연결 변경은 해당 탭에만 적용하며 출석 동기화는 별도로 실행한다.</summary>
 public sealed class SheetMemberMappingService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ISheetClient sheetClient,
     ISheetFormatResolver resolver,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
-    ISheetSyncService sync,
     TimeProvider time) : ISheetMemberMappingService
 {
     public async Task<List<MemberTabMappingDto>> GetForMemberAsync(string userId)
@@ -37,6 +37,7 @@ public sealed class SheetMemberMappingService(
             .Where(m => m.UserId == userId)
             .ToListAsync();
 
+        var held = await db.SheetMemberMappings.Where(m => m.UserId != userId).ToListAsync();
         var result = new List<MemberTabMappingDto>();
         foreach (var sheet in sheets)
         {
@@ -49,11 +50,14 @@ public sealed class SheetMemberMappingService(
                     continue;
                 }
 
-                var labels = tab.Rows
-                    .Skip(1)
+                var (start, end) = SemesterTabFormat.MemberRegion(tab);
+                var labels = tab.Rows.Skip(start).Take(end - start)
                     .Select(row => row.Count > 0 ? row[0].Trim() : "")
                     .Where(label => label.Length > 0)
-                    .Distinct()
+                    .GroupBy(label => label, StringComparer.Ordinal)
+                    .Where(group => group.Count() == 1)
+                    .Select(group => group.Key)
+                    .Where(label => !held.Any(m => m.SheetDefinitionId == sheet.Id && m.TabName == tab.Name && m.RowLabel == label))
                     .ToList();
                 var options = labels
                     .Select(label => new SheetRowOptionDto(label, NameOf(label) == memberName))
@@ -72,63 +76,77 @@ public sealed class SheetMemberMappingService(
         return result;
     }
 
-    public async Task<SheetSyncReport?> SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel)
+    public async Task SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel, bool addNewRow = false)
     {
         await currentUser.RequireAdminAsync();
-        await using var db = await dbFactory.CreateDbContextAsync();
-        _ = await db.Users.FirstOrDefaultAsync(u => u.Id == userId)
-            ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
-        _ = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Id == sheetId)
-            ?? throw new NotFoundException("시트를 찾을 수 없습니다.");
-
-        var own = await db.SheetMemberMappings
-            .FirstOrDefaultAsync(m => m.SheetDefinitionId == sheetId && m.TabName == tabName && m.UserId == userId);
+        if (resolver.ResolveByTabName(tabName) is null)
+            throw new RuleViolationException("지원하지 않는 학기 탭입니다.");
         rowLabel = string.IsNullOrWhiteSpace(rowLabel) ? null : rowLabel.Trim();
+        if (addNewRow && rowLabel is null || rowLabel is { Length: > 150 }
+            || rowLabel?.Any(char.IsControl) == true
+            || rowLabel is "총 참여자 수" or "탈퇴/퇴출자" or "활동 상태")
+            throw new RuleViolationException("부원 행 이름을 1~150자로 입력하세요. 집계/상태 이름과 제어 문자는 사용할 수 없습니다.");
 
-        if (rowLabel is null)
+        await ManagedSheetEdits.Gate.WaitAsync();
+        try
         {
-            if (own is not null)
+            await ManagedSheetEdits.RecoverAsync(dbFactory, sheetClient);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            _ = await db.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
+            var sheet = await db.SheetDefinitions.FirstOrDefaultAsync(s => s.Id == sheetId && s.Kind == SheetKind.Attendance)
+                ?? throw new NotFoundException("출석 시트를 찾을 수 없습니다.");
+            var own = await db.SheetMemberMappings.FirstOrDefaultAsync(m =>
+                m.SheetDefinitionId == sheetId && m.TabName == tabName && m.UserId == userId);
+            if (rowLabel is null)
             {
+                if (own is null) return;
                 db.SheetMemberMappings.Remove(own);
                 await db.SaveChangesAsync();
-                await auditLog.LogAsync(AdminAction.MemberSheetMapping, "SheetMemberMapping",
-                    $"{sheetId}/{tabName}/{userId}", "시트 연결 해제");
-
-                return await TrySyncAsync();
             }
-
-            return null;
-        }
-
-        var held = await db.SheetMemberMappings.FirstOrDefaultAsync(m =>
-            m.SheetDefinitionId == sheetId && m.TabName == tabName && m.RowLabel == rowLabel && m.UserId != userId);
-        if (held is not null)
-        {
-            var holderName = await db.Users.Where(u => u.Id == held.UserId).Select(u => u.Name).FirstOrDefaultAsync();
-            throw new ConflictException($"'{rowLabel}'은(는) 이미 {holderName}님에게 연결되어 있습니다.");
-        }
-
-        if (own is null)
-        {
-            db.SheetMemberMappings.Add(new Domain.Entities.SheetMemberMapping
+            else
             {
-                SheetDefinitionId = sheetId,
-                TabName = tabName,
-                RowLabel = rowLabel,
-                UserId = userId,
-            });
-        }
-        else
-        {
-            own.RowLabel = rowLabel;
-        }
+                var held = await db.SheetMemberMappings.AnyAsync(m => m.SheetDefinitionId == sheetId
+                    && m.TabName == tabName && m.RowLabel == rowLabel && m.UserId != userId);
+                if (held) throw new ConflictException($"'{rowLabel}'은(는) 이미 다른 계정에 연결되어 있습니다.");
+                var before = await sheetClient.GetManagedTabAsync(sheet.SpreadsheetId, tabName);
+                var tab = new SheetTab(before.Name, before.Rows);
+                var (start, end) = SemesterTabFormat.MemberRegion(tab);
+                var count = tab.Rows.Skip(start).Take(end - start).Count(r => r.Count > 0 && r[0].Trim() == rowLabel);
+                // A successfully committed request whose HTTP response was lost is a no-op, not another insertion.
+                if (own?.RowLabel == rowLabel && count == 1) return;
+                if (addNewRow)
+                {
+                    if (tab.Rows.Any(r => r.Count > 0 && r[0].Trim() == rowLabel))
+                        throw new ConflictException("이 이름의 행이 이미 있습니다. 기존 행 연결을 선택하거나 다른 이름을 입력하세요.");
+                }
+                else if (count != 1)
+                    throw new ConflictException("부원 구간에 유일하게 존재하는 행만 연결할 수 있습니다. 새로고침 후 확인하세요.");
 
-        await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.MemberSheetMapping, "SheetMemberMapping",
-            $"{sheetId}/{tabName}/{userId}", $"시트 연결: '{rowLabel}'");
-
-        // 매핑 변경 즉시 반영 — 재기동 없이 과거 출석이 백필된다
-        return await TrySyncAsync();
+                Task SaveMapping()
+                {
+                    if (own is null) db.SheetMemberMappings.Add(new Domain.Entities.SheetMemberMapping
+                        { SheetDefinitionId = sheetId, TabName = tabName, RowLabel = rowLabel, UserId = userId });
+                    else own.RowLabel = rowLabel;
+                    return Task.CompletedTask;
+                }
+                if (addNewRow)
+                {
+                    var mutation = new ManagedSheetMutation(Guid.NewGuid().ToString("N"), SheetMutationKind.InsertMemberRow,
+                        0, userId, [ManagedSheetEdits.Json(new { stringValue = rowLabel })], end + 1);
+                    MemberRowEdits.Validate(before, mutation);
+                    await ManagedSheetEdits.CommitAsync(db, sheetClient, sheet.SpreadsheetId, before, mutation, SaveMapping);
+                }
+                else
+                {
+                    await SaveMapping();
+                    await db.SaveChangesAsync();
+                }
+            }
+            await auditLog.LogAsync(AdminAction.MemberSheetMapping, "SheetMemberMapping",
+                $"{sheetId}/{tabName}/{userId}", rowLabel is null ? "시트 연결 해제" : $"시트 연결: '{rowLabel}'");
+        }
+        finally { ManagedSheetEdits.Gate.Release(); }
     }
 
     public async Task<IReadOnlySet<string>> GetUnmappedUserIdsAsync()
@@ -159,19 +177,6 @@ public sealed class SheetMemberMappingService(
         var unmapped = await db.Users.Select(u => u.Id).ToHashSetAsync();
         unmapped.ExceptWith(mapped);
         return unmapped;
-    }
-
-    /// <summary>동기화 실패는 매핑 저장을 롤백하지 않는다 — null 반환(다음 기동 SyncAsync가 반영).</summary>
-    private async Task<SheetSyncReport?> TrySyncAsync()
-    {
-        try
-        {
-            return await sync.SyncAsync();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return null;
-        }
     }
 
     /// <summary>라벨에서 이름 추출 — "박유진 24 만화" → "박유진".</summary>

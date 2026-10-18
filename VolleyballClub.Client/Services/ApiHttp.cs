@@ -11,6 +11,7 @@ public sealed class ApiHttp(HttpClient http)
     private readonly SemaphoreSlim tokenLock = new(1, 1);
     public event Action? Unauthorized;
     public event Func<Task>? IdentityChanged;
+    public event Func<Task>? SheetWriteFailed;
 
     public async Task RefreshIdentityAsync()
     {
@@ -63,6 +64,8 @@ public sealed class ApiHttp(HttpClient http)
                 _ => new AppException(message)
             };
         }
+        if (response.Headers.TryGetValues("X-Sheet-Sync-Failed", out var failures) && failures.Contains("true")
+            && SheetWriteFailed is { } notify) await notify();
         if (response.StatusCode == HttpStatusCode.NoContent) return default!;
         return (await response.Content.ReadFromJsonAsync<T>())!;
     }

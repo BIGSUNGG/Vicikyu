@@ -44,10 +44,13 @@ internal static class VerificationEnvironment
 
     private sealed class FixtureSync : ISheetSyncService
     {
-        public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
-        public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) => SyncAsync(ct);
+        public SheetPushResult? LastPushResult => null;
         public Task<bool> ExportClosedActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
         public Task<bool> ExportScheduledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
+        public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
+        public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) => SyncAsync(ct);
+        public Task<SheetPushResult> PushActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(new SheetPushResult(true, true, null));
         public Task<bool> RemoveCancelledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
+        public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
     }
 }

@@ -18,6 +18,15 @@ namespace VolleyballClub.Tests;
 /// <summary>시트 동기화 스텁 — 마감·예정 내보내기 호출만 기록한다.</summary>
 public sealed class FakeSheetSyncService : ISheetSyncService
 {
+    public SheetPushResult? LastPushResult { get; private set; }
+    public List<int> PushedActivityIds { get; } = [];
+    public Task<SheetPushResult> PushActivityAsync(int activityId, CancellationToken ct = default)
+    {
+        PushedActivityIds.Add(activityId);
+        return Task.FromResult(LastPushResult = new SheetPushResult(true, true, null));
+    }
+    public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
+
     public List<int> ExportedActivityIds { get; } = [];
 
     public List<int> ScheduledActivityIds { get; } = [];
@@ -196,7 +205,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Settings = new SettingService(Db.Factory, Current, Time);
         Activity = new ActivityService(Db.Factory, Current, Audit, SheetSync, Time);
         Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time,
-            new AdminActivityService(Db.Factory, ManagedSheets, new SheetFormatResolver(SemesterTabFormat.All()), Current, SheetSync, Time));
+            new AdminActivityService(Db.Factory, ManagedSheets, new SheetFormatResolver(SemesterTabFormat.All()), Current, SheetSync, Time), SheetSync);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);

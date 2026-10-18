@@ -245,7 +245,7 @@ public sealed class SheetSyncTests
         await host.SeedSheetAsync();
         await host.SeedMappingAsync("2026-1", "박유진 24 만화", user1);
         await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 3, 10), user1);
-        host.Client.Tabs.Add(new SheetTab("2026-1", []));
+        host.Client.Tabs.Add(new SheetTab("2026-1", [["부원"], ["박유진 24 만화"]]));
 
         var report = await host.Sync.SyncAsync();
 
@@ -263,7 +263,7 @@ public sealed class SheetSyncTests
         await host.SeedSheetAsync();
         await host.SeedMappingAsync("2026-1", "박유진 24 만화", user1);
         var activity = await SeedClosedActivityAsync(host.Db, new DateOnly(2026, 3, 10), user1);
-        host.Client.Tabs.Add(new SheetTab("2026-1", []));
+        host.Client.Tabs.Add(new SheetTab("2026-1", [["부원"], ["박유진 24 만화"]]));
         host.Client.BeforeManagedApply = _ => throw new InvalidOperationException("시트 쓰기 실패");
 
         Assert.False(await host.Sync.ExportClosedActivityAsync(activity.Id));
@@ -355,7 +355,7 @@ public sealed class SheetSyncTests
     }
 
     [Fact]
-    public async Task 매핑_저장_즉시_과거_출석이_백필된다()
+    public async Task 매핑_저장_후_명시적_갱신으로_과거_출석이_백필된다()
     {
         await using var host = new SheetSyncHost(new FakeSemesterFormat
         {
@@ -363,10 +363,10 @@ public sealed class SheetSyncTests
         });
         var (user1, _) = await SeedUsersAsync(host.Db);
         await host.SeedSheetAsync();
-        host.Client.Tabs.Add(new SheetTab("2026-1", []));
+        host.Client.Tabs.Add(new SheetTab("2026-1", [["부원"], ["박유진 24 만콘"]]));
         await host.Sync.SyncAsync(); // 첫 가져오기 — 매핑 없음 → 출석 0
 
-        // UI에서 매핑 저장 → 즉시 동기화 → 백필되어야 한다(재기동 불필요)
+        // UI에서 매핑 저장(선택 탭 전용) → 관리자 '시트 갱신' → 백필된다
         var mapping = new SheetMemberMappingService(
             host.Db.Factory,
             host.Client,
@@ -374,12 +374,12 @@ public sealed class SheetSyncTests
             new FakeCurrentUser("admin-1", isAdmin: true),
             new AuditLogService(host.Db.Factory, new FakeCurrentUser("admin-1", isAdmin: true),
                 new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc))),
-            host.Sync,
             new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc)));
-        var report = await mapping.SetMappingAsync(host.SheetId, "2026-1", user1, "박유진 24 만콘");
+        await mapping.SetMappingAsync(host.SheetId, "2026-1", user1, "박유진 24 만콘");
 
-        Assert.NotNull(report);
-        Assert.Equal(1, report!.ImportedAttendances);
+        var report = await host.Sync.SyncAsync();
+
+        Assert.Equal(1, report.ImportedAttendances);
         await using var db = host.Db.CreateContext();
         Assert.Equal(1, await db.Attendances.CountAsync(a => a.AttendanceType == AttendanceType.Sheet));
     }
@@ -701,7 +701,7 @@ public sealed class SheetSyncTests
     }
 
     [Fact]
-    public async Task ResyncAsync_진행중_활동을_임시기록하고_전체를_재반영한다()
+    public async Task ResyncAsync_미반영_진행활동을_기록하고_전체를_재반영한다()
     {
         await using var host = new SheetSyncHost(
             new SemesterTabFormat("2026-2", new DateOnly(2026, 8, 1), new DateOnly(2027, 1, 31)));
@@ -722,6 +722,7 @@ public sealed class SheetSyncTests
                 UpdatedAt = now,
             };
             open.Attendances.Add(new Attendance { UserId = user1, AttendanceType = AttendanceType.Otp, CheckedAt = now, CreatedAt = now });
+            open.MarkSheetPending(now, user1);
             ctx.Activities.Add(open);
             await ctx.SaveChangesAsync();
         }

@@ -135,9 +135,24 @@ else if (memberError is not null)
                             <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
                         }
                     </select>
+                    @if (addingTab?.TabName == tab.TabName && addingTab?.SheetId == tab.SheetId)
+                    {
+                        <div class="field" style="margin-top:8px">
+                            <label class="form-label" for="new-row-label-@tab.TabName">새 부원 행 이름</label>
+                            <input id="new-row-label-@tab.TabName" class="form-control" maxlength="150" @bind="newRowLabel" />
+                            <div class="btn-row" style="margin-top:8px">
+                                <button type="button" class="btn-primary" disabled="@(addRowBusy || string.IsNullOrWhiteSpace(newRowLabel))" @onclick="() => AddRowAsync(tab)">@(addRowBusy ? "추가 중…" : "행 추가·연결")</button>
+                                <button type="button" class="btn-secondary" disabled="@addRowBusy" @onclick="CancelAddRow">취소</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-ghost" disabled="@addRowBusy" @onclick="() => BeginAddRow(tab)">＋ 이 탭에 새 부원 행 추가</button>
+                    }
                 </div>
             }
-            <p class="member-meta">★ 은 이름이 같아 추천하는 행입니다. 미지정 두면 동기화에서 건너뜁니다.</p>
+            <p class="member-meta">★ 은 이름이 같아 추천하는 행입니다. 새 행 추가는 이 탭에만 반영되고, 출석 반영은 '시트 갱신'에서 진행됩니다.</p>
         }
     </div>
 }
@@ -261,6 +276,9 @@ else if (memberError is not null)
     private MemberListDto? member;
     private MemberEditForm editForm = new();
     private List<MemberTabMappingDto>? tabMappings;
+    private MemberTabMappingDto? addingTab;
+    private string newRowLabel = "";
+    private bool addRowBusy;
     private MemberActivityListDto? attendance;
     private bool attendanceBusy;
     private string? attendanceWriteError;
@@ -373,27 +391,50 @@ else if (memberError is not null)
     {
         try
         {
-            var report = await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, UserId,
+            await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, UserId,
                 string.IsNullOrEmpty(rowLabel) ? null : rowLabel);
             tabMappings = [.. (tabMappings ?? []).Select(t => t == tab
                 ? t with { CurrentRowLabel = string.IsNullOrEmpty(rowLabel) ? null : rowLabel }
                 : t)];
-            if (report is null)
-            {
-                Snackbar.Add("연결 저장됨 — 시트 동기화 실패, 다음 기동에 반영됩니다.", Severity.Warning);
-            }
-            else if (report.ImportedAttendances > 0)
-            {
-                Snackbar.Add($"연결 저장 및 출석 {report.ImportedAttendances}건 반영 완료", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("연결 저장됨", Severity.Success);
-            }
+            Snackbar.Add("연결 저장됨 — 출석 반영은 시트 갱신에서 진행합니다.", Severity.Success);
         }
         catch (AppException ex)
         {
             Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void BeginAddRow(MemberTabMappingDto tab)
+    {
+        addingTab = tab;
+        newRowLabel = member?.Name ?? "";
+    }
+
+    private void CancelAddRow() => addingTab = null;
+
+    private async Task AddRowAsync(MemberTabMappingDto tab)
+    {
+        if (addRowBusy || string.IsNullOrWhiteSpace(newRowLabel)) return;
+        addRowBusy = true;
+        try
+        {
+            await MappingSvc.SetMappingAsync(tab.SheetId, tab.TabName, UserId, newRowLabel.Trim(), addNewRow: true);
+            Snackbar.Add("행 추가·연결 저장됨 — 출석 반영은 시트 갱신에서 진행합니다.", Severity.Success);
+            addingTab = null;
+            await LoadMappingsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "부원 시트 행 추가 실패");
+            Snackbar.Add("행 추가를 완료하지 못했습니다. 시트 상태를 확인하고 다시 시도해 주세요.", Severity.Error);
+        }
+        finally
+        {
+            addRowBusy = false;
         }
     }
 

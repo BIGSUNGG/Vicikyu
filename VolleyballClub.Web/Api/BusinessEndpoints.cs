@@ -7,7 +7,9 @@ public static class BusinessEndpoints
     public static void MapBusinessApi(this WebApplication app)
     {
         var my = app.MapGroup("/api/my").RequireAuthorization().AddEndpointFilter<ApiValidation>();
-        var admin = app.MapGroup("/api/admin").RequireAuthorization(policy => policy.RequireRole("ADMIN")).AddEndpointFilter<ApiValidation>();
+        var admin = app.MapGroup("/api/admin").RequireAuthorization(policy => policy.RequireRole("ADMIN"))
+            .AddEndpointFilter<ApiValidation>().AddEndpointFilter<SheetSyncFailureFilter>();
+        admin.MapGet("/sheets/sync-status", async (ISheetSyncService s, CancellationToken ct) => Results.Json(await s.GetStatusAsync(ct)));
         admin.MapGet("/activities/targets", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetTargetsAsync(ct)));
         admin.MapGet("/activities", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetActivitiesAsync(ct)));
         admin.MapPost("/activities", async (IAdminActivityService s, ActivityCreateRequest r, CancellationToken ct) => Results.Json(await s.CreateAsync(r, ct)));
@@ -78,8 +80,8 @@ public static class BusinessEndpoints
         admin.MapGet("/members/{userId}/mappings", async (ISheetMemberMappingService s, string userId) => { return Results.Json(await s.GetForMemberAsync(userId)); });
         admin.MapPut("/members/{userId}/mappings", async (ISheetMemberMappingService s, string userId, SheetMappingRequest request) =>
         {
-            var report = await s.SetMappingAsync(request.SheetId, request.TabName, userId, request.RowLabel);
-            return report is null ? (IResult)Results.NoContent() : Results.Json(report);
+            await s.SetMappingAsync(request.SheetId, request.TabName, userId, request.RowLabel, request.AddNewRow);
+            return Results.NoContent();
         });
         admin.MapGet("/audit", async (IAuditLogService s, int? take) => { return Results.Json(await s.GetRecentAsync(take ?? 100)); });
         admin.MapPut("/settings/google-key", async (TextRequest request, ISettingService s, IAuditLogService audit) =>

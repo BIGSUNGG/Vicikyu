@@ -105,10 +105,11 @@ public sealed class HttpApiTests
         Assert.True((await member.GetFromJsonAsync<List<FeeStatusDto>>("/api/my/fees"))!.Single().IsPaid);
         await Status(admin.PostAsJsonAsync("/api/admin/semesters", new SemesterSaveRequest("HTTP semester", now, now.AddDays(30))), HttpStatusCode.OK);
         var sheetId = await Read<int>(admin.PostAsJsonAsync("/api/admin/sheets", new SheetSaveRequest(null, "fake sheet", "fake-id")));
-        // Mapping persistence succeeds even if its subsequent optional synchronization fails.
-        host.FailingSync = true;
+        // Mapping save reads the selected tab and no longer runs a global sync.
+        host.Sheets.Tabs.Add(new SheetTab("2026-2", [["활동 상태"], ["부원"], ["member", ""]]));
         var mapping = await admin.PutAsJsonAsync("/api/admin/members/member-id/mappings", new SheetMappingRequest(sheetId, "2026-2", "member"));
         Assert.Equal(HttpStatusCode.NoContent, mapping.StatusCode);
+        host.FailingSync = true;
         var failedSync = await admin.PostAsync("/api/admin/sheets/resync", null);
         Assert.Equal(HttpStatusCode.InternalServerError, failedSync.StatusCode);
         var error = (await failedSync.Content.ReadFromJsonAsync<ApiErrorDto>())!;
@@ -412,6 +413,9 @@ public sealed class HttpApiTests
         }
         private sealed class TestSync(ApiHost host) : ISheetSyncService
         {
+            public SheetPushResult? LastPushResult => null;
+            public Task<SheetPushResult> PushActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(new SheetPushResult(true, true, null));
+            public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
             public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) => ResyncAsync(ct);
             public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) => host.FailingSync
                 ? throw new InvalidOperationException("test sync failure") : Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));

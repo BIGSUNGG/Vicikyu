@@ -22,6 +22,7 @@
     <a class="seg-btn @(Active == "members" ? "active" : "")" href="/admin/members">부원 관리</a>
     <a class="seg-btn @(Active == "fees" ? "active" : "")" href="/admin/fees">회비 관리</a>
 </nav>
+<SheetSyncNotice Watch="@(Active == "dashboard")" />
 
 @code {
     [Parameter]

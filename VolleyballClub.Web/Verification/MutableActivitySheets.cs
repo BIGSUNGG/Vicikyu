@@ -77,6 +77,17 @@ internal sealed class MutableActivitySheets : ISheetClient
     {
         lock (gate) return Task.FromResult(Copy(Read(spreadsheetId, tabName)));
     }
+    private static int MemberEnd(ManagedSheetTab tab)
+    {
+        var header = tab.Rows.Count > 0 && tab.Rows[0].Any(v => v.Trim().StartsWith("활동 ")) ? 1 : 0;
+        for (var row = header + 1; row < tab.Rows.Count; row++)
+        {
+            var label = tab.Rows[row].Count > 0 ? tab.Rows[row][0].Trim() : "";
+            if (label is "총 참여자 수" or "탈퇴/퇴출자") return row;
+        }
+        return tab.Rows.Count;
+    }
+
     public Task ApplyManagedMutationAsync(string spreadsheetId, ManagedSheetTab expected, ManagedSheetMutation mutation, CancellationToken ct = default)
     {
         lock (gate)
@@ -84,6 +95,28 @@ internal sealed class MutableActivitySheets : ISheetClient
             if (Json(Read(spreadsheetId, expected.Name)) != Json(expected)) throw new ConflictException("Changed synthetic source");
             Fail("beforeApply");
             var values = expected.RawValues.Select(r => r.ToList()).ToList();
+            if (mutation.Kind == SheetMutationKind.InsertMemberRow)
+            {
+                // Same sheet behavior as production Google: append member row, widen totals ranges by one.
+                var end = MemberEnd(expected);
+                var row = Enumerable.Repeat("{}", Math.Max(1, values.Max(r => r.Count))).ToList();
+                row[0] = mutation.RawValues[0];
+                values.Insert(end, row);
+                var totals = values[end + 1];
+                for (var c = 0; c < totals.Count; c++)
+                {
+                    using var cell = JsonDocument.Parse(totals[c]);
+                    if (!cell.RootElement.TryGetProperty("formulaValue", out var formula)) continue;
+                    totals[c] = Raw(System.Text.RegularExpressions.Regex.Replace(formula.GetString()!,
+                        @"(\$?)([A-Z]+)(\$?)" + end + @"(\)|,)",
+                        match => $"{match.Groups[1].Value}{match.Groups[2].Value}{match.Groups[3].Value}{end + 1}{match.Groups[4].Value}",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+                }
+                Store(spreadsheetId, new(expected.Name, [], values, expected.ColumnKeys.ToDictionary(k => k.Key, k => k.Value), mutation.OperationId));
+                applied++;
+                Fail("afterApply");
+                return Task.CompletedTask;
+            }
             var index = mutation.ColumnIndex - 1;
             var keys = new Dictionary<int, string>();
             foreach (var key in expected.ColumnKeys)
