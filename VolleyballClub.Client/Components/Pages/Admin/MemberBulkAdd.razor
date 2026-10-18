@@ -1,4 +1,5 @@
 @inject MemberClient MemberSvc
+@inject SheetMemberMappingClient MappingSvc
 @inject ISnackbar Snackbar
 
 <div class="card member-bulk-add">
@@ -10,68 +11,163 @@
         var errors = Errors.ToArray();
         <div class="reveal" style="margin-top:14px" aria-busy="@(busy ? "true" : "false")">
             <h2 class="card-title">부원 일괄 추가</h2>
-            <p class="member-meta">기본값은 새 행에만 적용됩니다. 업로드·편집 중에는 저장되지 않습니다. 최대 500행, XLSX 1MB.</p>
-            <a class="btn-secondary" href="/templates/member-list.xlsx" download="빅이큐 부원 목록 템플릿.xlsx">템플릿 다운로드</a>
+            <nav class="segment" aria-label="일괄 추가 보기 전환">
+                <button type="button" class="seg-btn @(view == BulkView.Basic ? "active" : "")" @onclick="() => view = BulkView.Basic">기본 정보</button>
+                <button type="button" class="seg-btn @(view == BulkView.Sheet ? "active" : "")" @onclick="ShowSheetViewAsync">시트 연결</button>
+            </nav>
+            @if (view == BulkView.Basic)
+            {
+                <p class="member-meta">기본값은 새 행에만 적용됩니다. 업로드·편집 중에는 저장되지 않습니다. 최대 500행, XLSX 1MB.</p>
+                <a class="btn-secondary" href="/templates/member-list.xlsx" download="빅이큐 부원 목록 템플릿.xlsx">템플릿 다운로드</a>
+            }
             <fieldset disabled="@busy" class="bulk-fields">
-                <div class="field">
-                    <label class="form-label" for="member-default-role">기본 역할</label>
-                    <select class="form-control" id="member-default-role" @bind="defaultRole">
-                        <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label class="form-label" for="member-default-password">기본 초기 비밀번호(4자 이상)</label>
-                    <input class="form-control" id="member-default-password" type="password" autocomplete="new-password" @bind="defaultPassword" @bind:event="oninput" maxlength="4096" />
-                </div>
-                <div class="field">
-                    <label class="form-label" for="member-workbook">XLSX 업로드</label>
-                    <InputFile @key="uploadKey" id="member-workbook" accept=".xlsx" OnChange="ImportAsync" disabled="@(!DefaultsReady || busy)" />
-                    @if (!DefaultsReady) { <p class="member-meta">기본 역할과 초기 비밀번호를 먼저 설정해 주세요.</p> }
-                </div>
-                <button type="button" class="btn-secondary" disabled="@(rows.Count >= MemberBulkValidation.MaxRows)" @onclick="AddRow">+ 행 추가</button>
-                <p class="member-meta" role="status">미리보기 @rows.Count 행</p>
-                @foreach (var row in rows)
+                @if (view == BulkView.Basic)
                 {
-                    var index = rows.IndexOf(row) + 1;
-                    var prefix = $"member-row-{row.Id}";
-                    <div class="card bulk-row" @key="row.Id" data-row="@index">
-                        <h3 class="card-title">@index 행</h3>
-                        <div class="field">
-                            <label class="form-label" for="@(prefix + "-student")">학번</label>
-                            <input class="form-control" id="@(prefix + "-student")" data-field="student" @bind="row.StudentNumber" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
-                        </div>
-                        <div class="field">
-                            <label class="form-label" for="@(prefix + "-name")">이름</label>
-                            <input class="form-control" id="@(prefix + "-name")" data-field="name" @bind="row.Name" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
-                        </div>
-                        <div class="field">
-                            <label class="form-label" for="@(prefix + "-department")">학과</label>
-                            <input class="form-control" id="@(prefix + "-department")" data-field="department" @bind="row.Department" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
-                        </div>
-                        <div class="field">
-                            <label class="form-label" for="@(prefix + "-role")">역할</label>
-                            <select class="form-control" id="@(prefix + "-role")" data-field="role" @bind="row.Role" @bind:after="ClearServerErrors">
-                                <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label class="form-label" for="@(prefix + "-password")">초기 비밀번호</label>
-                            <input class="form-control" id="@(prefix + "-password")" data-field="password" type="password" autocomplete="new-password" @bind="row.Password" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
-                        </div>
-                        @foreach (var error in errors.Where(e => e.Row == index))
-                        { <p role="alert">@error.Message</p> }
-                        <button type="button" class="btn-secondary" aria-label="@(index + " 행 삭제")" @onclick="() => Delete(row)">행 삭제</button>
+                    <div class="field">
+                        <label class="form-label" for="member-default-role">기본 역할</label>
+                        <select class="form-control" id="member-default-role" @bind="defaultRole">
+                            <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
+                        </select>
                     </div>
+                    <div class="field">
+                        <label class="form-label" for="member-default-password">기본 초기 비밀번호(4자 이상)</label>
+                        <input class="form-control" id="member-default-password" type="password" autocomplete="new-password" @bind="defaultPassword" @bind:event="oninput" maxlength="4096" />
+                    </div>
+                    <div class="field">
+                        <label class="form-label" for="member-workbook">XLSX 업로드</label>
+                        <InputFile @key="uploadKey" id="member-workbook" accept=".xlsx" OnChange="ImportAsync" disabled="@(!DefaultsReady || busy)" />
+                        @if (!DefaultsReady) { <p class="member-meta">기본 역할과 초기 비밀번호를 먼저 설정해 주세요.</p> }
+                    </div>
+                    <button type="button" class="btn-secondary" disabled="@(rows.Count >= MemberBulkValidation.MaxRows)" @onclick="AddRow">+ 행 추가</button>
+                    <p class="member-meta" role="status">미리보기 @rows.Count 행</p>
+                    @foreach (var row in rows)
+                    {
+                        var index = rows.IndexOf(row) + 1;
+                        var prefix = $"member-row-{row.Id}";
+                        <div class="card bulk-row" @key="row.Id" data-row="@index">
+                            <h3 class="card-title">@index 행</h3>
+                            <div class="field">
+                                <label class="form-label" for="@(prefix + "-student")">학번</label>
+                                <input class="form-control" id="@(prefix + "-student")" data-field="student" @bind="row.StudentNumber" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="@(prefix + "-name")">이름</label>
+                                <input class="form-control" id="@(prefix + "-name")" data-field="name" @bind="row.Name" @bind:event="oninput" @bind:after="() => NameChanged(row)" maxlength="4096" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="@(prefix + "-department")">학과</label>
+                                <input class="form-control" id="@(prefix + "-department")" data-field="department" @bind="row.Department" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="@(prefix + "-role")">역할</label>
+                                <select class="form-control" id="@(prefix + "-role")" data-field="role" @bind="row.Role" @bind:after="ClearServerErrors">
+                                    <option value="MEMBER">부원</option><option value="ADMIN">관리자</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="@(prefix + "-password")">초기 비밀번호</label>
+                                <input class="form-control" id="@(prefix + "-password")" data-field="password" type="password" autocomplete="new-password" @bind="row.Password" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
+                            </div>
+                            @foreach (var error in errors.Where(e => e.Row == index))
+                            { <p role="alert">@error.Message</p> }
+                            <button type="button" class="btn-secondary" aria-label="@(index + " 행 삭제")" @onclick="() => Delete(row)">행 삭제</button>
+                        </div>
+                    }
+                }
+                else
+                {
+                    @if (optionsLoading)
+                    {
+                        <p class="member-meta" role="status">시트에서 행 후보를 불러오는 중…</p>
+                    }
+                    else if (optionsError is not null)
+                    {
+                        <div role="alert"><p>@optionsError</p><button type="button" class="btn-primary" @onclick="LoadOptionsAsync">다시 불러오기</button></div>
+                    }
+                    else if (rows.Count == 0)
+                    {
+                        <p class="member-meta">기본 정보 탭에서 행을 먼저 추가하세요.</p>
+                    }
+                    else if (optionsByName.Count == 0)
+                    {
+                        <p class="member-meta">등록된 출석 시트가 없습니다 — 설정에서 먼저 등록하세요.</p>
+                    }
+                    else
+                    {
+                        <p class="member-meta">행을 클릭해 확장하세요. ★ 추천 행은 자동으로 연결되며, 실행 전에 여기서 바꿀 수 있습니다.</p>
+                        @foreach (var row in rows)
+                        {
+                            var index = rows.IndexOf(row) + 1;
+                            var name = row.Name.Trim();
+                            var tabs = optionsByName.GetValueOrDefault(name);
+                            var linked = row.Picks.Count(p => p.Value.Selection.Label is not null);
+                            // @key 없음 — 기본 정보 탭과 같은 @key를 두 브랜치에 두면 전환 시 키 재사용 diff가 속성을 유실한다(2026-10 실측)
+                            <div class="card bulk-row" data-row="@index">
+                                <button type="button" class="bulk-row-head" aria-expanded="@(row.Expanded ? "true" : "false")" @onclick="() => row.Expanded = !row.Expanded">
+                                    <span class="member-name">@(name.Length == 0 ? $"{index}행 — 이름 없음" : name)</span>
+                                    <span class="member-meta">@row.StudentNumber · 연결 @(linked)개</span>
+                                </button>
+                                @if (row.Expanded)
+                                {
+                                    @if (tabs is null)
+                                    {
+                                        <p class="member-meta">이름이 바뀌어 추천이 갱신되지 않았습니다.</p>
+                                        <button type="button" class="btn-secondary" disabled="@optionsLoading" @onclick="LoadOptionsAsync">추천 다시 불러오기</button>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var tab in tabs)
+                                        {
+                                            var pick = row.Picks.TryGetValue((tab.SheetId, tab.TabName), out var p) ? p : null;
+                                            <div class="field">
+                                                <label class="form-label">@tab.SheetName · @tab.TabName 탭</label>
+                                                @if (pick is { AddNewMode: true })
+                                                {
+                                                    <input class="form-control" maxlength="150" placeholder="새 부원 행 이름" data-testid="bulk-new-label" @bind="pick.NewLabel" @bind:event="oninput" />
+                                                    <div class="btn-row">
+                                                        <button type="button" class="btn-secondary" @onclick="() => SetPick(row, tab, null)">기존 행 선택</button>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <select class="form-control" value="@(pick?.Selected)" @onchange="e => SetPick(row, tab, e.Value?.ToString())">
+                                                        <option value="">미지정</option>
+                                                        @foreach (var option in tab.Options)
+                                                        {
+                                                            <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
+                                                        }
+                                                    </select>
+                                                    <button type="button" class="btn-ghost" @onclick="() => BeginAddNew(row, tab)">＋ 이 탭에 새 부원 행 추가</button>
+                                                }
+                                            </div>
+                                        }
+                                        <p class="member-meta">★ 은 이름이 같아 추천하는 행입니다. 추천이 여러 개면 직접 선택하세요. 새 행 추가는 일괄 추가 실행 시 반영됩니다.</p>
+                                    }
+                                }
+                                @foreach (var error in mappingFailures.Where(e => e.Row == index))
+                                { <p role="alert">@error.Message</p> }
+                            </div>
+                        }
+                    }
+                    @foreach (var error in mappingFailures.Where(e => e.Row == 0)) { <p role="alert">@error.Message</p> }
                 }
                 @foreach (var error in errors.Where(e => e.Row == 0)) { <p role="alert">@error.Message</p> }
                 @if (message is not null) { <p role="alert">@message</p> }
-                <button type="button" class="btn-primary btn-block" @onclick="SubmitAsync">@(busy ? "처리 중…" : "일괄 추가")</button>
+                @if (accountsCreated)
+                {
+                    <p class="member-meta">계정은 생성되었습니다. 시트 연결에 실패한 행은 부원 상세의 시트 연결에서 다시 시도할 수 있습니다.</p>
+                }
+                <button type="button" class="btn-primary btn-block" data-testid="member-bulk-submit" disabled="@(accountsCreated || busy)" @onclick="SubmitAsync">
+                    @(accountsCreated ? "추가 완료" : busy ? "처리 중…" : "일괄 추가")
+                </button>
             </fieldset>
         </div>
     }
 </div>
 
 @code {
+    private enum BulkView { Basic, Sheet }
+
     [Parameter] public EventCallback OnAdded { get; set; }
     private bool open;
     private bool busy;
@@ -81,6 +177,12 @@
     private string? message;
     private List<Row> rows = [];
     private IReadOnlyList<MemberRowError> serverErrors = [];
+    private List<MemberRowError> mappingFailures = [];
+    private BulkView view = BulkView.Basic;
+    private Dictionary<string, List<MemberTabMappingDto>> optionsByName = [];
+    private bool optionsLoading;
+    private string? optionsError;
+    private bool accountsCreated;
     private bool DefaultsReady => MemberBulkValidation.ValidDefaults(defaultRole, defaultPassword);
     private IReadOnlyList<MemberCreateRequest> Requests => rows.Select(r => r.Request()).ToArray();
     private IEnumerable<MemberRowError> Errors => MemberBulkValidation.Validate(Requests).Concat(serverErrors).Distinct();
@@ -89,10 +191,73 @@
     {
         open = !open;
         rows.Clear(); defaultPassword = ""; defaultRole = "MEMBER"; ClearServerErrors();
+        view = BulkView.Basic; optionsByName = []; optionsError = null; optionsLoading = false;
+        mappingFailures = []; accountsCreated = false;
     }
     private void ClearServerErrors() { serverErrors = []; message = null; }
+
+    /// <summary>행 이름이 바뀌면 해당 행의 시트 연결 선택을 버린다 — 다음 옵션 조회 때 새 이름 기준 추천이 다시 채워진다.</summary>
+    private void NameChanged(Row row)
+    {
+        ClearServerErrors();
+        row.Picks.Clear();
+    }
+
     private void AddRow() { rows.Add(new(new("", "", "", defaultPassword, defaultRole))); ClearServerErrors(); }
     private void Delete(Row row) { rows.Remove(row); ClearServerErrors(); }
+
+    private async Task ShowSheetViewAsync()
+    {
+        view = BulkView.Sheet;
+        await EnsureOptionsAsync();
+    }
+
+    /// <summary>이름별 시트 행 후보를 가져온다. 캐시에 없는 이름이 있을 때만 호출하며, 시트는 요청당 한 번만 읽는다.</summary>
+    private async Task EnsureOptionsAsync()
+    {
+        var names = rows.Select(r => r.Name.Trim()).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        if (names.Count == 0) return;
+        if (names.All(optionsByName.ContainsKey)) { AutoPick(); return; }
+        optionsLoading = true;
+        try
+        {
+            optionsByName = await MappingSvc.GetBulkOptionsAsync(names);
+            optionsError = null;
+            AutoPick();
+        }
+        catch (AppException ex) { optionsError = ex.Message; }
+        catch (HttpRequestException) { optionsError = "시트 행 후보를 가져오지 못했습니다. 연결을 확인하고 다시 시도해 주세요."; }
+        finally { optionsLoading = false; }
+    }
+
+    /// <summary>수동으로 고른 행이 전혀 없는 행에만 ★ 추천을 자동 선택한다(★가 탭에 하나일 때만).</summary>
+    private void AutoPick()
+    {
+        foreach (var row in rows)
+        {
+            if (row.Picks.Count > 0) continue;
+            if (!optionsByName.TryGetValue(row.Name.Trim(), out var tabs)) continue;
+            foreach (var tab in tabs)
+            {
+                var recommended = tab.Options.Where(o => o.Recommended).ToList();
+                if (recommended.Count == 1)
+                    row.Picks[(tab.SheetId, tab.TabName)] = new TabPick { Selected = recommended[0].RowLabel };
+            }
+        }
+    }
+
+    private async Task LoadOptionsAsync()
+    {
+        if (optionsLoading) return;
+        optionsByName = [];
+        await EnsureOptionsAsync();
+    }
+
+    private void SetPick(Row row, MemberTabMappingDto tab, string? label) =>
+        row.Picks[(tab.SheetId, tab.TabName)] = new TabPick { Selected = string.IsNullOrWhiteSpace(label) ? null : label };
+
+    private void BeginAddNew(Row row, MemberTabMappingDto tab) =>
+        row.Picks[(tab.SheetId, tab.TabName)] = new TabPick { AddNewMode = true };
 
     private async Task ImportAsync(InputFileChangeEventArgs e)
     {
@@ -118,7 +283,7 @@
 
     private async Task SubmitAsync()
     {
-        if (busy) return;
+        if (busy || accountsCreated) return;
         ClearServerErrors();
         if (MemberBulkValidation.Validate(Requests).Count > 0) return;
         busy = true;
@@ -126,16 +291,52 @@
         {
             var result = await MemberSvc.AddBulkAsync(new(Requests));
             serverErrors = result.Errors;
-            if (result.Errors.Count == 0)
+            if (result.Errors.Count > 0) return;
+
+            // 계정 생성은 전부 성공했을 때만 여기에 온다 — 시트 연결 실패는 계정을 되돌리지 않고 행·탭 단위로 보고한다.
+            accountsCreated = true;
+            await EnsureOptionsAsync();
+            if (optionsError is not null)
+                mappingFailures.Add(new(0, $"시트 행 후보를 가져오지 못해 자동 연결을 건너뛰었습니다. {optionsError}"));
+            mappingFailures.AddRange(await ApplyMappingsAsync(result.Created));
+
+            if (mappingFailures.Count == 0)
             {
-                Snackbar.Add($"부원 {result.Created.Count}명 추가 완료", Severity.Success);
+                Snackbar.Add($"부원 {result.Created.Count}명 추가·시트 연결 완료", Severity.Success);
                 Toggle();
-                await OnAdded.InvokeAsync();
             }
+            else
+            {
+                view = BulkView.Sheet;
+                Snackbar.Add($"부원 {result.Created.Count}명 추가 — 시트 연결 실패 {mappingFailures.Count(e => e.Row > 0)}건", Severity.Warning);
+            }
+            await OnAdded.InvokeAsync();
         }
         catch (AppException ex) { message = ex.Message; }
         catch (HttpRequestException) { message = "응답을 확인하지 못했습니다. 부원 목록을 확인한 후 다시 시도해 주세요."; }
         finally { busy = false; }
+    }
+
+    /// <summary>생성된 계정(요청 행 순서와 1:1)에 선택한 탭 연결을 적용한다. 실패는 행 단위로 모은다.</summary>
+    private async Task<List<MemberRowError>> ApplyMappingsAsync(IReadOnlyList<MemberListDto> created)
+    {
+        var failures = new List<MemberRowError>();
+        for (var i = 0; i < rows.Count && i < created.Count; i++)
+        {
+            var row = rows[i];
+            foreach (var ((sheetId, tabName), pick) in row.Picks)
+            {
+                var (label, addNew) = pick.Selection;
+                if (label is null) continue;
+                try
+                {
+                    await MappingSvc.SetMappingAsync(sheetId, tabName, created[i].UserId, label, addNew);
+                }
+                catch (AppException ex) { failures.Add(new(i + 1, $"시트 연결 실패 — {tabName} 탭: {ex.Message}")); }
+                catch (HttpRequestException) { failures.Add(new(i + 1, $"시트 연결 실패 — {tabName} 탭: 네트워크 오류로 저장하지 못했습니다.")); }
+            }
+        }
+        return failures;
     }
 
     private sealed class Row(MemberCreateRequest request)
@@ -146,6 +347,19 @@
         public string Department { get; set; } = request.Department;
         public string Role { get; set; } = request.Role;
         public string Password { get; set; } = request.Password;
+        public bool Expanded { get; set; }
+        public Dictionary<(int SheetId, string TabName), TabPick> Picks { get; } = [];
         public MemberCreateRequest Request() => new(StudentNumber, Name, Department, Password, Role);
+    }
+
+    /// <summary>한 행의 한 탭에 대한 연결 선택 — 기존 행 라벨 또는 새 행 추가.</summary>
+    private sealed class TabPick
+    {
+        public string? Selected { get; set; }
+        public bool AddNewMode { get; set; }
+        public string NewLabel { get; set; } = "";
+        public (string? Label, bool AddNew) Selection => AddNewMode
+            ? (string.IsNullOrWhiteSpace(NewLabel) ? null : NewLabel.Trim(), true)
+            : (string.IsNullOrWhiteSpace(Selected) ? null : Selected, false);
     }
 }

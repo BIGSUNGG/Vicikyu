@@ -16,6 +16,10 @@ public interface ISheetMemberMappingService
     /// <summary>부원 하나의 탭별 연결 상태 + 행 라벨 후보(추천 순 정렬). 시트를 실시간으로 읽는다.</summary>
     Task<List<MemberTabMappingDto>> GetForMemberAsync(string userId);
 
+    /// <summary>아직 계정이 없는 일괄 추가 행용 — 이름별 탭 행 후보(추천 순). 시트는 한 번만 읽는다.
+    /// 다른 계정에 이미 연결된 행은 후보에서 제외되고 CurrentRowLabel은 항상 null이다.</summary>
+    Task<IReadOnlyDictionary<string, List<MemberTabMappingDto>>> GetBulkOptionsAsync(IReadOnlyList<string> names);
+
     /// <summary>선택한 탭만 연결/해제한다. addNewRow는 빈 부원 행을 먼저 검증·삽입한다.
     /// 출석 가져오기/내보내기는 실행하지 않는다.</summary>
     Task SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel, bool addNewRow = false);

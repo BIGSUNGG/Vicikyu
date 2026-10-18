@@ -27,6 +27,8 @@ public sealed class ApiValidation : IEndpointFilter
                 case TextRequest r: Required(r.Value); break;
                 case SheetSaveRequest r: Required(r.Name, r.SpreadsheetIdOrUrl); break;
                 case SheetMappingRequest r: Required(r.TabName); if (r.SheetId <= 0) Invalid(); break;
+                case SheetBulkOptionsRequest r:
+                    if (r.Names is null || r.Names.Count > MemberBulkValidation.MaxRows || r.Names.Any(n => n?.Length > 4096)) Invalid(); break;
                 case TeamCreateRequest r:
                     if (r.UserIds is null || r.GuestIds is null || r.TeamSizes is null || r.UserIds.Any(string.IsNullOrWhiteSpace)) Invalid(); break;
                 case TeamAddRequest r: Required(r.ParticipantKey); if (r.TeamId <= 0) Invalid(); break;

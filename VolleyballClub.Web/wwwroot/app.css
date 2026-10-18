@@ -2213,3 +2213,24 @@ button.court-head {
 	border-radius: 5px;
 	background: var(--vb-border);
 }
+
+/* 부원 일괄 추가 — 시트 연결 탭의 행 카드 헤더(클릭 확장/최소화) */
+.bulk-row-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 10px;
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.bulk-row-head .member-name {
+	font-size: 0.98rem;
+	font-weight: 800;
+}

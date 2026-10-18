@@ -29,16 +29,59 @@ public sealed class SheetMemberMappingService(
             .Select(u => u.Name)
             .FirstOrDefaultAsync() ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
 
+        var mappings = await db.SheetMemberMappings
+            .Where(m => m.UserId == userId)
+            .ToListAsync();
+        var held = await db.SheetMemberMappings.Where(m => m.UserId != userId)
+            .Select(m => new ValueTuple<int, string, string>(m.SheetDefinitionId, m.TabName, m.RowLabel))
+            .ToListAsync();
+
+        var tabs = await ReadTabLabelsAsync(db, held);
+        return tabs.Select(t => new MemberTabMappingDto(
+                t.SheetId,
+                t.SheetName,
+                t.TabName,
+                mappings.FirstOrDefault(m => m.SheetDefinitionId == t.SheetId && m.TabName == t.TabName)?.RowLabel,
+                ProjectOptions(t.Labels, memberName)))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<string, List<MemberTabMappingDto>>> GetBulkOptionsAsync(IReadOnlyList<string> names)
+    {
+        await currentUser.RequireAdminAsync();
+        var distinct = names
+            .Select(n => n?.Trim() ?? "")
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (distinct.Count == 0) return new Dictionary<string, List<MemberTabMappingDto>>();
+        if (distinct.Count > MemberBulkValidation.MaxRows)
+            throw new RuleViolationException($"이름은 최대 {MemberBulkValidation.MaxRows}개까지 조회할 수 있습니다.");
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var held = await db.SheetMemberMappings
+            .Select(m => new ValueTuple<int, string, string>(m.SheetDefinitionId, m.TabName, m.RowLabel))
+            .ToListAsync();
+
+        var tabs = await ReadTabLabelsAsync(db, held);
+        return distinct.ToDictionary(
+            name => name,
+            name => tabs.Select(t => new MemberTabMappingDto(
+                    t.SheetId, t.SheetName, t.TabName, null, ProjectOptions(t.Labels, name)))
+                .ToList());
+    }
+
+    /// <summary>학기 탭별 연결 가능 행 라벨 — 부원 구간에서 유일하고 held에 없는 것만. 시트를 한 번만 읽는다.</summary>
+    private async Task<List<(int SheetId, string SheetName, string TabName, List<string> Labels)>> ReadTabLabelsAsync(
+        ApplicationDbContext db,
+        IReadOnlyCollection<(int SheetDefinitionId, string TabName, string RowLabel)> held)
+    {
         var sheets = await db.SheetDefinitions
             .Where(s => s.Kind == SheetKind.Attendance)
             .OrderBy(s => s.Id)
             .ToListAsync();
-        var mappings = await db.SheetMemberMappings
-            .Where(m => m.UserId == userId)
-            .ToListAsync();
 
-        var held = await db.SheetMemberMappings.Where(m => m.UserId != userId).ToListAsync();
-        var result = new List<MemberTabMappingDto>();
+        var result = new List<(int, string, string, List<string>)>();
         foreach (var sheet in sheets)
         {
             var tabs = await sheetClient.GetTabsAsync(sheet.SpreadsheetId);
@@ -59,22 +102,17 @@ public sealed class SheetMemberMappingService(
                     .Select(group => group.Key)
                     .Where(label => !held.Any(m => m.SheetDefinitionId == sheet.Id && m.TabName == tab.Name && m.RowLabel == label))
                     .ToList();
-                var options = labels
-                    .Select(label => new SheetRowOptionDto(label, NameOf(label) == memberName))
-                    .OrderByDescending(o => o.Recommended) // 추천 후보를 최상단으로(나머지는 시트 순서 유지)
-                    .ToList();
-
-                result.Add(new MemberTabMappingDto(
-                    sheet.Id,
-                    sheet.Name,
-                    tab.Name,
-                    mappings.FirstOrDefault(m => m.SheetDefinitionId == sheet.Id && m.TabName == tab.Name)?.RowLabel,
-                    options));
+                result.Add((sheet.Id, sheet.Name, tab.Name, labels));
             }
         }
 
         return result;
     }
+
+    private static List<SheetRowOptionDto> ProjectOptions(List<string> labels, string name) =>
+        labels.Select(label => new SheetRowOptionDto(label, NameOf(label) == name))
+            .OrderByDescending(o => o.Recommended) // 추천 후보를 최상단으로(나머지는 시트 순서 유지)
+            .ToList();
 
     public async Task SetMappingAsync(int sheetId, string tabName, string userId, string? rowLabel, bool addNewRow = false)
     {

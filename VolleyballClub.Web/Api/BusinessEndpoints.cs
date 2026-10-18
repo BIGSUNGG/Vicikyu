@@ -51,6 +51,7 @@ public static class BusinessEndpoints
         admin.MapPost("/members/import", MemberImportEndpoint.Preview)
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(2 * MemberBulkValidation.MaxFileBytes));
         admin.MapPost("/members/bulk", async (IMemberService s, MemberBulkRequest request) => Results.Json(await s.AddBulkAsync(request)));
+        admin.MapPost("/members/mapping-options", async (ISheetMemberMappingService s, SheetBulkOptionsRequest request) => Results.Json(await s.GetBulkOptionsAsync(request.Names)));
         admin.MapPost("/members/search", async (IMemberService s, MemberPageRequest request) => { return Results.Json(await s.GetPageAsync(request)); });
         admin.MapGet("/members/{userId}", async (IMemberService s, string userId) => { return Results.Json(await s.GetAsync(userId)); });
         admin.MapPost("/members", async (IMemberService s, MemberCreateRequest request) => { return Results.Json(await s.AddAsync(request)); });
