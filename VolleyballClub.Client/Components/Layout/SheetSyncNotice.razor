@@ -69,7 +69,7 @@
             }
             else
             {
-                <p class="member-meta">이 오류는 여기서 바로 해결할 수 없습니다. 안내 문구의 원인을 확인해 주세요. 팝업을 닫으면 DB 백업(.db)을 내려받습니다.</p>
+                <p class="member-meta">이 오류는 여기서 바로 해결할 수 없습니다. 안내 문구의 원인을 확인해 주세요.</p>
             }
         </section>
     }
@@ -207,8 +207,6 @@
             {
                 failureFlash = false;
                 resyncMessage = null;
-                Snackbar.Add("시트 갱신이 아직 안 됐습니다 — DB 백업을 내려받습니다.", Severity.Warning);
-                await DownloadAsync();
             }
             StateHasChanged();
         });
