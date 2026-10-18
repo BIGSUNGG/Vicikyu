@@ -17,69 +17,75 @@
 }
 @if (statusError is not null) { <p role="alert">@statusError</p> }
 <dialog @ref="dialog" aria-labelledby="sheet-sync-warning-title" data-testid="sheet-sync-dialog">
-    <h2 id="sheet-sync-warning-title">시트 저장 실패 — 해결이 필요합니다</h2>
-    <p>출석·활동 변경은 서버 DB에 보존했습니다.</p>
-    @if ((status?.Pending.Count ?? 0) == 0 && failureFlash)
-    {
-        <p role="status">방금 실패한 저장은 자동 재시도에서 해결된 것 같습니다. 목록을 새로고침해 확인해 주세요.</p>
-    }
-    @foreach (var item in status?.Pending ?? [])
-    {
-        <section class="sheet-pending-item" data-testid="pending-@item.ActivityId">
-            <h3>@item.ActivityDate.ToString("yyyy-MM-dd") · @item.State @(item.Reason == SheetPendingReason.MappingMissing ? "— 시트 행 연결 필요" : "")</h3>
-            @if (!string.IsNullOrEmpty(item.Error))
-            {
-                <p class="miss">@item.Error</p>
-            }
-            @if (item.Reason == SheetPendingReason.MappingMissing)
-            {
-                @foreach (var fix in Fixes(item))
+    <header class="sheet-dialog-head">
+        <h2 id="sheet-sync-warning-title">시트 저장 실패 — 해결이 필요합니다</h2>
+        <p>출석·활동 변경은 서버 DB에 보존했습니다.</p>
+        @if ((status?.Pending.Count ?? 0) == 0 && failureFlash)
+        {
+            <p role="status">방금 실패한 저장은 자동 재시도에서 해결된 것 같습니다. 목록을 새로고침해 확인해 주세요.</p>
+        }
+    </header>
+    <div class="sheet-dialog-list" role="region" aria-label="시트 미반영 목록">
+        @foreach (var item in status?.Pending ?? [])
+        {
+            <section class="sheet-pending-item" data-testid="pending-@item.ActivityId">
+                <h3>@item.ActivityDate.ToString("yyyy-MM-dd") · @item.State @(item.Reason == SheetPendingReason.MappingMissing ? "— 시트 행 연결 필요" : "")</h3>
+                @if (!string.IsNullOrEmpty(item.Error))
                 {
-                    <div class="field" data-testid="fix-@fix.Member.UserId">
-                        <label class="form-label">@fix.Member.Name</label>
-                        @if (fix.Done)
-                        {
-                            <p>연결 완료</p>
-                        }
-                        else if (fix.AddMode)
-                        {
-                            <input class="form-control" maxlength="150" placeholder="새 부원 행 이름" @bind="fix.NewLabel" />
-                            <div class="btn-row">
-                                <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.NewLabel))" @onclick="() => SaveAsync(fix, item)">행 추가·연결</button>
-                                <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => fix.AddMode = false">기존 행 선택</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <select class="form-control" @bind="fix.Selected">
-                                <option value="">행 선택…</option>
-                                @foreach (var option in fix.Options)
-                                {
-                                    <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
-                                }
-                            </select>
-                            <div class="btn-row">
-                                <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.Selected))" @onclick="() => SaveAsync(fix, item)">연결 저장</button>
-                                <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => StartAddRow(fix)">＋ 새 행 추가</button>
-                            </div>
-                        }
-                        @if (fix.Error is not null) { <p role="alert">@fix.Error</p> }
-                    </div>
+                    <p class="miss">@item.Error</p>
                 }
-            }
-            else
-            {
-                <p class="member-meta">이 오류는 여기서 바로 해결할 수 없습니다. 안내 문구의 원인을 확인해 주세요.</p>
-            }
-        </section>
-    }
-    @if (resyncMessage is not null) { <p role="status">@resyncMessage</p> }
-    @if (downloadError is not null) { <p role="alert">@downloadError</p> }
-    <p class="member-meta">백업에는 개인정보·비밀번호 해시·Google 인증정보가 포함됩니다. 안전하게 보관하세요.</p>
-    <div class="btn-row">
-        <button type="button" class="btn-primary" disabled="@downloading" @onclick="DownloadAsync">@(downloading ? "다운로드 중…" : ".db 백업 다운로드")</button>
-        <button type="button" class="btn-secondary" @onclick="CloseAsync">닫기</button>
+                @if (item.Reason == SheetPendingReason.MappingMissing)
+                {
+                    @foreach (var fix in Fixes(item))
+                    {
+                        <div class="field" data-testid="fix-@fix.Member.UserId">
+                            <label class="form-label">@fix.Member.Name</label>
+                            @if (fix.Done)
+                            {
+                                <p>연결 완료</p>
+                            }
+                            else if (fix.AddMode)
+                            {
+                                <input class="form-control" maxlength="150" placeholder="새 부원 행 이름" @bind="fix.NewLabel" />
+                                <div class="btn-row">
+                                    <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.NewLabel))" @onclick="() => SaveAsync(fix, item)">행 추가·연결</button>
+                                    <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => fix.AddMode = false">기존 행 선택</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <select class="form-control" @bind="fix.Selected">
+                                    <option value="">행 선택…</option>
+                                    @foreach (var option in fix.Options)
+                                    {
+                                        <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
+                                    }
+                                </select>
+                                <div class="btn-row">
+                                    <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.Selected))" @onclick="() => SaveAsync(fix, item)">연결 저장</button>
+                                    <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => StartAddRow(fix)">＋ 새 행 추가</button>
+                                </div>
+                            }
+                            @if (fix.Error is not null) { <p role="alert">@fix.Error</p> }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="member-meta">이 오류는 여기서 바로 해결할 수 없습니다. 안내 문구의 원인을 확인해 주세요.</p>
+                }
+            </section>
+        }
+        @if (resyncMessage is not null) { <p role="status">@resyncMessage</p> }
     </div>
+    <footer class="sheet-dialog-foot">
+        @if (downloadError is not null) { <p role="alert">@downloadError</p> }
+        <p class="member-meta">백업에는 개인정보·비밀번호 해시·Google 인증정보가 포함됩니다. 안전하게 보관하세요.</p>
+        <div class="btn-row">
+            <button type="button" class="btn-primary" disabled="@downloading" @onclick="DownloadAsync">@(downloading ? "다운로드 중…" : ".db 백업 다운로드")</button>
+            <button type="button" class="btn-secondary" @onclick="CloseAsync">닫기</button>
+        </div>
+    </footer>
 </dialog>
 
 @code {
