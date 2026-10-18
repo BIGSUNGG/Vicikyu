@@ -390,6 +390,88 @@ async function measure(page, label) {
 		report.cases.push(
 			"mapping-missing: popup inline row link + auto resync success + popup closed + zero downloads",
 		);
+
+		// 시나리오 2b: 팝업에서 새 행 추가(행 추가·연결) → 자동 갱신 → 팝업 닫힘
+		// 실제 사용 시나리오: 시트에 없는 새 부원을 관리자가 추가
+		// 새 부원 생성 (시트에는 없는 이름)
+		const newName = "신규팝업테스트";
+		await api(
+			adminPage,
+			"POST",
+			"/api/admin/members",
+			{
+				StudentNumber: "20269999",
+				Name: newName,
+				Department: "",
+				Password: "Test1234!",
+			},
+			200,
+		);
+		// 생성된 부원의 userId를 상태에서 직접 찾는다
+		const state2b = await api(adminPage, "GET", fixture + "/state");
+		const newMember = state2b.members.find(
+			(m) => m.name === newName || m.studentNumber === "20269999",
+		);
+		assert.ok(
+			newMember,
+			`새 부원 조회 실패: ${JSON.stringify(state2b.members.map((m) => m.name)).slice(0, 100)}`,
+		);
+		// 새 부원 출석 추가 → 시트에 행이 없어 미반영 발생
+		await api(
+			adminPage,
+			"POST",
+			`/api/admin/attendance/${newMember.id}`,
+			undefined,
+			204,
+		);
+		await adminPage.goto(base + "/admin");
+		await adminPage
+			.locator('.dashboard-data[data-load-state="ready"]')
+			.waitFor();
+		await dialog.waitFor({ state: "visible" });
+		const fixBox2b = adminPage.locator(`[data-testid="fix-${newMember.id}"]`);
+		await fixBox2b.waitFor();
+		const downloadsBefore2b = autoDownloads.length;
+		// ＋ 새 행 추가 → 입력창 확인 → 행 추가·연결
+		await fixBox2b.getByRole("button", { name: "＋ 새 행 추가" }).click();
+		const labelInput = fixBox2b.locator("input.form-control");
+		await labelInput.waitFor();
+		assert.equal(
+			await labelInput.inputValue(),
+			newName,
+			"라벨 기본값 = 부원 이름",
+		);
+		await fixBox2b
+			.getByRole("button", { name: "행 추가·연결", exact: true })
+			.click();
+		await dialog.waitFor({ state: "hidden" });
+		assert.equal(
+			(await api(adminPage, "GET", "/api/admin/sheets/sync-status"))
+				.pendingCount,
+			0,
+			"팝업 행 추가 후 펜딩 해소",
+		);
+		assert.equal(
+			autoDownloads.length,
+			downloadsBefore2b,
+			"팝업 행 추가 해결 — 백업 없음",
+		);
+		const after2b = await api(adminPage, "GET", fixture + "/state");
+		const doc2b = after2b.source.documents.find(
+			(d) => d.document === first.spreadsheetId && d.tab.name === "2026-2",
+		);
+		const newRowIdx = doc2b.tab.rows.findIndex((r) => r[0] === newName);
+		assert.ok(newRowIdx >= 0, "시트에 새 행 추가됨");
+		assert.equal(
+			doc2b.tab.rows[newRowIdx][
+				doc2b.tab.rows[1].findIndex((h) => String(h).includes("10. 16"))
+			],
+			"출석",
+			"새 행의 라이브 열 출석 마크",
+		);
+		report.cases.push(
+			"popup row-add: ＋ 새 행 추가 → 행 추가·연결 → auto resync → popup closed + zero downloads",
+		);
 		await adminPage.setViewportSize({ width: 1280, height: 900 });
 		await adminPage.goto(base + "/admin");
 		await adminPage
