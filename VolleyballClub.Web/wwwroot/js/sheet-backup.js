@@ -1,5 +1,11 @@
-export function show(dialog) {
-	if (dialog && !dialog.open) dialog.showModal();
+export function show(dialog, ref) {
+	if (dialog && !dialog.open) {
+		if (ref) {
+			const notify = () => ref.invokeMethodAsync("OnDialogClosedAsync");
+			dialog.addEventListener("close", notify, { once: true });
+		}
+		dialog.showModal();
+	}
 }
 
 export function close(dialog) {

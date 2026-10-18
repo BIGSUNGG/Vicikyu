@@ -92,20 +92,10 @@ public sealed partial class FakeSheetClient
                 for (var c = 0; c < row.Count; c++)
                 {
                     if (mutation.Kind == SheetMutationKind.Delete && c == index) continue;
-                    var shifted = c + (mutation.Kind == SheetMutationKind.Insert && c >= index ? 1
-                        : mutation.Kind == SheetMutationKind.Delete && c > index ? -1 : 0);
-                    if (shifted == c) continue;
                     using var cell = JsonDocument.Parse(row[c]);
                     if (cell.RootElement.TryGetProperty("formulaValue", out var formula))
-                    {
-                        var from = ColumnLetter(c + 1);
-                        var text = formula.GetString()!;
-                        if (!System.Text.RegularExpressions.Regex.IsMatch(text,
-                            $"^=(?:SUM\\(\\$?{from}\\$?\\d+:\\$?{from}\\$?\\d+\\)|COUNTIF\\(\\$?{from}\\$?\\d+:\\$?{from}\\$?\\d+,\\\"출석\\\"\\))$"))
-                            throw new ConflictException("Unsupported fake formula dependency");
-                        row[c] = Raw(System.Text.RegularExpressions.Regex.Replace(text, @"(\$?)[A-Z]+(?=\$?\d)",
-                            match => match.Groups[1].Value + ColumnLetter(shifted + 1)));
-                    }
+                        row[c] = Raw(ManagedSheetEdits.ShiftFormulaReferences(formula.GetString()!,
+                            mutation.ColumnIndex, mutation.Kind == SheetMutationKind.Insert ? 1 : -1));
                 }
         if (mutation.Kind == SheetMutationKind.Insert)
             foreach (var row in values) { while (row.Count < index) row.Add("{}"); row.Insert(index, "{}"); }

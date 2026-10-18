@@ -66,7 +66,11 @@ public sealed partial class SheetSyncService
         var representedLabels = tab.Rows.Skip(headerRow + 1)
             .TakeWhile(r => r.FirstOrDefault()?.Trim() is not ("총 참여자 수" or "탈퇴/퇴출자"))
             .Select(r => r.FirstOrDefault()?.Trim()).ToHashSet();
-        if (requiredIds.Except(mappings.Where(m => representedLabels.Contains(m.RowLabel)).Select(m => m.UserId)).Any())
+        var representable = mappings.Where(m => representedLabels.Contains(m.RowLabel)).Select(m => m.UserId).ToHashSet();
+        // 마감 활동은 전원 매핑 필요(시트 우선 가져오기가 미기록 출석을 지울 수 있다).
+        // 진행 중 활동은 매핑된 부원부터 부분 기록하고 나머지는 계속 펜딩으로 보존한다.
+        var blocked = requiredIds.Where(id => !representable.Contains(id)).ToList();
+        if (blocked.Count > 0 && (!live || representable.Count == 0))
             throw new ConflictException("출석 변경 부원의 시트 행 매핑이 없거나 행을 찾을 수 없어 미반영 상태를 유지합니다.");
         var column = insert ? target.InsertColumn ? target.ColumnIndex : tab.RawValues.Select(r => r.Count).DefaultIfEmpty(1).Max() + 1 : existingColumns.Single();
         var cells = tab.RawValues.Select(r => !insert && r.Count >= column ? r[column - 1] : "{}").ToList();
@@ -104,9 +108,17 @@ public sealed partial class SheetSyncService
             if (!live) activity.SheetExportedAt = KstClock.NowUtc(timeProvider);
             if (activity.SheetSyncRevision == revision)
             {
-                activity.SheetSyncPendingAt = null;
-                activity.SheetSyncError = null;
-                activity.SheetSyncRequiredUserIds.Clear();
+                if (live && blocked.Count > 0)
+                {
+                    // 부분 기록: 이번에 기록한 부원만 요청 목록에서 제거 — 남은 부원은 펜딩 유지.
+                    activity.SheetSyncRequiredUserIds.RemoveAll(id => representable.Contains(id));
+                }
+                else
+                {
+                    activity.SheetSyncPendingAt = null;
+                    activity.SheetSyncError = null;
+                    activity.SheetSyncRequiredUserIds.Clear();
+                }
             }
         }
         if (!insert && source.Kind == kind

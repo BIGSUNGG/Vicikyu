@@ -42,6 +42,47 @@ public sealed class SheetWriteSafetyTests
     }
 
     [Fact]
+    public async Task GetStatusAsync_classifies_mapping_missing_with_unmapped_member_names()
+    {
+        await using var h = await CreateAsync();
+        int id;
+        await using (var db = h.Db.CreateContext())
+        {
+            db.SheetMemberMappings.Remove(await db.SheetMemberMappings.SingleAsync(m => m.UserId == "b"));
+            var a = await db.Activities.SingleAsync();
+            db.Attendances.Add(new Attendance { ActivityId = a.Id, UserId = "b", AttendanceType = AttendanceType.Admin });
+            a.MarkSheetPending(DateTime.UtcNow, "b");
+            await db.SaveChangesAsync(); id = a.Id;
+        }
+
+        var status = await h.Sync.GetStatusAsync();
+
+        var item = Assert.Single(status.Pending);
+        Assert.Equal(SheetPendingReason.MappingMissing, item.Reason);
+        Assert.Equal(h.SheetId, item.SheetId);
+        Assert.Equal("2026-2", item.TabName);
+        var member = Assert.Single(item.UnmappedMembers!);
+        Assert.Equal("b", member.UserId);
+        Assert.Equal("B", member.Name);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_reports_other_when_every_required_member_is_mapped()
+    {
+        await using var h = await CreateAsync();
+        var id = await AddPendingAsync(h, "a");
+        h.Client.BeforeManagedApply = _ => throw new IOException("synthetic credential outage");
+        Assert.False((await h.Sync.PushActivityAsync(id)).Success);
+
+        var status = await h.Sync.GetStatusAsync();
+
+        var item = Assert.Single(status.Pending);
+        Assert.Equal(SheetPendingReason.Other, item.Reason);
+        Assert.Empty(item.UnmappedMembers!);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
     public async Task Pending_survives_journal_save_failed_delivery_and_retry_before_import()
     {
         await using var h = await CreateAsync();
@@ -69,6 +110,87 @@ public sealed class SheetWriteSafetyTests
         Assert.Equal("출석", h.Client.Tabs.Single().Rows[2][1]);
         await using var check = h.Db.CreateContext();
         Assert.Equal("a", (await check.Attendances.SingleAsync()).UserId);
+    }
+
+    [Fact]
+    public async Task Live_partial_write_records_mapped_members_and_keeps_unmapped_pending()
+    {
+        await using var h = await CreateAsync();
+        int id;
+        await using (var db = h.Db.CreateContext())
+        {
+            db.SheetMemberMappings.Remove(await db.SheetMemberMappings.SingleAsync(m => m.UserId == "b"));
+            await db.SaveChangesAsync();
+        }
+        await using (var db = h.Db.CreateContext())
+        {
+            var now = DateTime.UtcNow;
+            var live = new Activity { ActivityDate = new(2026, 10, 2), Status = ActivityStatus.AttendanceOpen, CreatedByUserId = "a",
+                CreatedAt = now, UpdatedAt = now, AttendanceOpenedAt = now };
+            live.Attendances.Add(new Attendance { UserId = "a", AttendanceType = AttendanceType.Otp, CheckedAt = now, CreatedAt = now });
+            live.Attendances.Add(new Attendance { UserId = "b", AttendanceType = AttendanceType.Otp, CheckedAt = now, CreatedAt = now });
+            live.MarkSheetPending(now, "a");
+            live.MarkSheetPending(now, "b");
+            db.Activities.Add(live);
+            await db.SaveChangesAsync();
+            id = live.Id;
+        }
+
+        var first = await h.Sync.PushActivityAsync(id);
+
+        Assert.True(first.Success);
+        await using (var db = h.Db.CreateContext())
+        {
+            var source = await db.ActivitySources.AsNoTracking().SingleAsync(s => s.ActivityId == id);
+            var tab = await h.Client.GetManagedTabAsync("ss-test", "2026-2");
+            var column = tab.ColumnKeys.Single(k => k.Value == source.Id).Key;
+            Assert.Equal("활동 예정", tab.Rows[0][column - 1]);
+            Assert.Equal("출석", tab.Rows[2][column - 1]);
+            Assert.True(tab.Rows[3].Count < column || tab.Rows[3][column - 1] == "");
+        }
+        var status = await h.Sync.GetStatusAsync();
+        Assert.Equal(1, status.PendingCount);
+        Assert.Equal(SheetPendingReason.MappingMissing, status.Pending[0].Reason);
+        Assert.Equal("b", status.Pending[0].UnmappedMembers!.Single().UserId);
+
+        await h.SeedMappingAsync("2026-2", "B", "b");
+        var second = await h.Sync.PushActivityAsync(id);
+
+        Assert.True(second.Success);
+        Assert.Equal(0, (await h.Sync.GetStatusAsync()).PendingCount);
+        await using (var db = h.Db.CreateContext())
+        {
+            var source = await db.ActivitySources.AsNoTracking().SingleAsync(s => s.ActivityId == id);
+            var tab = await h.Client.GetManagedTabAsync("ss-test", "2026-2");
+            var column = tab.ColumnKeys.Single(k => k.Value == source.Id).Key;
+            Assert.Equal("출석", tab.Rows[2][column - 1]);
+            Assert.Equal("출석", tab.Rows[3][column - 1]);
+            var activity = await db.Activities.SingleAsync(a => a.Id == id);
+            Assert.Null(activity.SheetSyncPendingAt);
+            Assert.Empty(activity.SheetSyncRequiredUserIds);
+        }
+    }
+
+    [Fact]
+    public async Task Closed_activity_still_requires_full_mapping_before_export()
+    {
+        await using var h = await CreateAsync();
+        int id;
+        await using (var db = h.Db.CreateContext())
+        {
+            db.SheetMemberMappings.Remove(await db.SheetMemberMappings.SingleAsync(m => m.UserId == "b"));
+            var a = await db.Activities.SingleAsync();
+            a.Attendances.Add(new Attendance { UserId = "b", AttendanceType = AttendanceType.Admin });
+            a.MarkSheetPending(DateTime.UtcNow, "b");
+            await db.SaveChangesAsync();
+            id = a.Id;
+        }
+
+        var push = await h.Sync.PushActivityAsync(id);
+
+        Assert.False(push.Success);
+        Assert.Contains("매핑", push.Error);
+        Assert.Equal(1, (await h.Sync.GetStatusAsync()).PendingCount);
     }
 
     [Fact]

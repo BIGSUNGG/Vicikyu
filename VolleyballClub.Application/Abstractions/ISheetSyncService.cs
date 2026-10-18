@@ -14,7 +14,21 @@ public sealed record SheetPushResult(bool Success, bool Written, string? Error);
 /// <summary>시트 미반영 현황 — 관리자 알림·백업 다운로드 판단용.</summary>
 public sealed record SheetSyncStatusDto(int PendingCount, IReadOnlyList<SheetPendingActivityDto> Pending, bool RecoveryRequired = false);
 
-public sealed record SheetPendingActivityDto(int ActivityId, DateOnly ActivityDate, string State, string? Error, DateTime? PendingSince = null);
+public sealed record SheetPendingActivityDto(
+    int ActivityId,
+    DateOnly ActivityDate,
+    string State,
+    string? Error,
+    DateTime? PendingSince = null,
+    SheetPendingReason Reason = SheetPendingReason.Other,
+    int? SheetId = null,
+    string? TabName = null,
+    IReadOnlyList<SheetUnmappedMemberDto>? UnmappedMembers = null);
+
+/// <summary>MappingMissing면 팝업에서 행 연결/추가로 즉시 해결할 수 있다. Other는 안내 문구+백업.</summary>
+public enum SheetPendingReason { MappingMissing, Other }
+
+public sealed record SheetUnmappedMemberDto(string UserId, string Name);
 
 public interface ISheetSyncService
 {

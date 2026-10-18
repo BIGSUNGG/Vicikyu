@@ -254,8 +254,7 @@ async function measure(page, label) {
 			204,
 		);
 		const toggle = `/api/admin/activities/${encodeURIComponent(completed.key)}/members/${member.id}`;
-		const [download, response] = await Promise.all([
-			adminPage.waitForEvent("download"),
+		const [response] = await Promise.all([
 			adminPage.waitForResponse(
 				(r) => r.url() === base + toggle && r.request().method() === "PUT",
 			),
@@ -267,23 +266,129 @@ async function measure(page, label) {
 		]);
 		assert.equal(response.status(), 204);
 		assert.equal(response.headers()["x-sheet-sync-failed"], "true");
-		await inspectBackup(download, "admin-failure-auto");
+		assert.equal(
+			autoDownloads.length,
+			0,
+			"no immediate backup download — popup first",
+		);
 		const dialog = adminPage.locator('[data-testid="sheet-sync-dialog"]');
 		await dialog.waitFor({ state: "visible" });
 		for (let i = 0; i < 4; i++) await adminPage.keyboard.press("Tab");
 		await measure(adminPage, "desktop-admin-failure");
 		await adminPage.setViewportSize({ width: 390, height: 844 });
 		await measure(adminPage, "mobile-admin-failure");
-		await adminPage.keyboard.press("Escape");
+		await adminPage.setViewportSize({ width: 1280, height: 900 });
+		await dialog.getByRole("button", { name: "닫기", exact: true }).click();
 		await dialog.waitFor({ state: "hidden" });
+		// 일회성 결함: 목록 새로고침의 동기화 재시도로 이미 해소됐다 — 백업 없음(팝업 닫힘 후에도 갱신 가능)
+		await adminPage.waitForTimeout(1500);
+		assert.equal(
+			autoDownloads.length,
+			0,
+			"transient failure self-healed — no backup download",
+		);
+		assert.equal(
+			(await api(adminPage, "GET", "/api/admin/sheets/sync-status"))
+				.pendingCount,
+			0,
+			"retry drained pending after popup close",
+		);
 		report.cases.push(
-			"admin failure: committed DB + response flag + automatic standalone .db + accessible native popup",
+			"transient admin failure: popup guidance, no immediate download, self-healed retry, zero backups",
 		);
 		await api(adminPage, "POST", "/api/admin/sheets/resync");
 		assert.equal(
 			(await api(adminPage, "GET", "/api/admin/sheets/sync-status"))
 				.pendingCount,
 			0,
+		);
+
+		// 시나리오 2: 매핑 누락 → 팝업 인라인 해결(행 연결) → 자동 갱신 → 팝업 닫힘 + 백업 없음
+		const pre = await api(adminPage, "GET", fixture + "/state");
+		const today = pre.activities.find((x) => x.activityDate === "2026-10-16");
+		const attended = new Set(
+			pre.attendances
+				.filter((x) => x.activityId === today.id)
+				.map((x) => x.userId),
+		);
+		const unmappedTarget = pre.members.find(
+			(u) => u.studentNumber !== "admin" && !attended.has(u.id),
+		);
+		assert.ok(unmappedTarget, "오늘 미출석 부원이 매핑 해제 대상");
+		await api(
+			adminPage,
+			"PUT",
+			`/api/admin/members/${unmappedTarget.id}/mappings`,
+			{
+				SheetId: first.id,
+				TabName: "2026-2",
+				RowLabel: null,
+				AddNewRow: false,
+			},
+			204,
+		);
+		const quickAdd = await api(
+			adminPage,
+			"POST",
+			`/api/admin/attendance/${unmappedTarget.id}`,
+			undefined,
+			204,
+		);
+		assert.equal(quickAdd, null);
+		// 원시 fetch는 ApiHttp 이벤트를 건드리지 않는다 — 대시보드 폴링이 펜딩을 감지해 팝업을 띄운다
+		await adminPage.goto(base + "/admin");
+		await adminPage
+			.locator('.dashboard-data[data-load-state="ready"]')
+			.waitFor();
+		await dialog.waitFor({ state: "visible" });
+		const fixBox = adminPage.locator(
+			`[data-testid="fix-${unmappedTarget.id}"]`,
+		);
+		await fixBox.waitFor();
+		await measure(adminPage, "desktop-mapping-fix");
+		const downloadsBeforeFix = autoDownloads.length;
+		await fixBox.locator("select").selectOption(unmappedTarget.name);
+		await fixBox
+			.getByRole("button", { name: "연결 저장", exact: true })
+			.click();
+		await dialog.waitFor({ state: "hidden" });
+		assert.equal(
+			(await api(adminPage, "GET", "/api/admin/sheets/sync-status"))
+				.pendingCount,
+			0,
+		);
+		assert.equal(
+			autoDownloads.length,
+			downloadsBeforeFix,
+			"resolved in popup — no backup download",
+		);
+		const afterFix = await api(adminPage, "GET", fixture + "/state");
+		const fixedToday = afterFix.activities.find(
+			(x) => x.activityDate === "2026-10-16",
+		);
+		assert.ok(
+			afterFix.attendances.some(
+				(a) => a.activityId === fixedToday.id && a.userId === unmappedTarget.id,
+			),
+			"DB 출석 보존",
+		);
+		const firstDoc = afterFix.source.documents.find(
+			(d) => d.document === first.spreadsheetId && d.tab.name === "2026-2",
+		);
+		const fixedRow = firstDoc.tab.rows.findIndex(
+			(r) => r[0] === unmappedTarget.name,
+		);
+		const todayColumn = firstDoc.tab.rows[1].findIndex((h) =>
+			String(h).includes("10. 16"),
+		);
+		assert.ok(fixedRow >= 0 && todayColumn >= 0, "행·열 위치 확인");
+		assert.equal(
+			firstDoc.tab.rows[fixedRow][todayColumn],
+			"출석",
+			"실시트(합성) 라이브 열 출석 마크",
+		);
+		report.cases.push(
+			"mapping-missing: popup inline row link + auto resync success + popup closed + zero downloads",
 		);
 		await adminPage.setViewportSize({ width: 1280, height: 900 });
 		await adminPage.goto(base + "/admin");
@@ -351,10 +456,15 @@ async function measure(page, label) {
 				.click(),
 		]);
 		await inspectBackup(manual, "member-failure-admin-download");
+		const [closeBackup] = await Promise.all([
+			adminPage.waitForEvent("download"),
+			dialog.getByRole("button", { name: "닫기", exact: true }).click(),
+		]);
+		await dialog.waitFor({ state: "hidden" });
+		await inspectBackup(closeBackup, "member-failure-close");
 		report.cases.push(
-			"member failure: successful check-in, no member DB access/download, dashboard warning popup, admin-only backup",
+			"member failure: successful check-in, no member DB access/download, dashboard popup, admin-only backups (manual + close-triggered)",
 		);
-		await dialog.getByRole("button", { name: "닫기", exact: true }).click();
 		await api(adminPage, "POST", "/api/admin/sheets/resync");
 		assert.equal(
 			(await api(adminPage, "GET", "/api/admin/sheets/sync-status"))

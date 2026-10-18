@@ -2,6 +2,7 @@ using System.Text.Json;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Web.Verification;
 
@@ -126,26 +127,16 @@ internal sealed class MutableActivitySheets : ISheetClient
                     : mutation.Kind == SheetMutationKind.Delete && key.Key > mutation.ColumnIndex ? -1 : 0);
                 keys[position] = key.Value;
             }
-            // Sheets rewrites relative totals when their columns move; preserve typed formula cells.
+            // Sheets rewrites all A1 references when columns move; preserve typed formula cells.
             if (mutation.Kind is SheetMutationKind.Insert or SheetMutationKind.Delete)
                 foreach (var row in values)
                     for (var c = 0; c < row.Count; c++)
                     {
                         if (mutation.Kind == SheetMutationKind.Delete && c == index) continue;
-                        var shifted = c + (mutation.Kind == SheetMutationKind.Insert && c >= index ? 1
-                            : mutation.Kind == SheetMutationKind.Delete && c > index ? -1 : 0);
-                        if (shifted == c) continue;
                         using var cell = JsonDocument.Parse(row[c]);
                         if (cell.RootElement.TryGetProperty("formulaValue", out var formula))
-                        {
-                            var text = formula.GetString()!;
-                            var from = ColumnLetter(c + 1);
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(text,
-                                $"^=(?:SUM\\(\\$?{from}\\$?\\d+:\\$?{from}\\$?\\d+\\)|COUNTIF\\(\\$?{from}\\$?\\d+:\\$?{from}\\$?\\d+,\\\"출석\\\"\\))$"))
-                                throw new ConflictException("Unsupported synthetic formula dependency");
-                            row[c] = Raw(System.Text.RegularExpressions.Regex.Replace(text, @"(\$?)[A-Z]+(?=\$?\d)",
-                                match => match.Groups[1].Value + ColumnLetter(shifted + 1)));
-                        }
+                            row[c] = Raw(ManagedSheetEdits.ShiftFormulaReferences(formula.GetString()!,
+                                mutation.ColumnIndex, mutation.Kind == SheetMutationKind.Insert ? 1 : -1));
                     }
             if (mutation.Kind == SheetMutationKind.Insert)
                 foreach (var row in values) { while (row.Count < index) row.Add("{}"); row.Insert(index, "{}"); }

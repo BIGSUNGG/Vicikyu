@@ -145,18 +145,25 @@ public sealed partial class GoogleSheetClient
             throw new ConflictException("이 탭의 이름 지정 범위/외부 메타데이터는 안전한 열 복구를 지원하지 않습니다.");
         foreach (var tab in workbook.Sheets)
             foreach (var grid in tab.Data ?? [])
-                foreach (var row in grid.RowData ?? [])
+            {
+                var baseRow = grid.StartRow ?? 0;
+                for (var r = 0; r < (grid.RowData?.Count ?? 0); r++)
+                {
+                    var row = grid.RowData![r];
                     for (var c = 0; c < (row.Values?.Count ?? 0); c++)
                     {
                         var formula = row.Values![c].UserEnteredValue?.FormulaValue;
                         if (formula is null) continue;
                         var column = (grid.StartColumn ?? 0) + c + 1;
                         var own = tab.Properties.Title == tabName;
-                        if (own && (column == ownedFormulaColumn || ManagedSheetEdits.IsOwnColumnTotal(formula, column))) continue;
+                        if (own && (column == ownedFormulaColumn || ManagedSheetEdits.IsOwnColumnTotal(formula, column)
+                                || ManagedSheetEdits.IsLocallyBoundFormula(formula, baseRow + r + 1, column))) continue;
                         if (!own && !formula.Contains("'" + tabName.Replace("'", "''") + "'!", StringComparison.OrdinalIgnoreCase)
                             && !formula.Contains(tabName + "!", StringComparison.OrdinalIgnoreCase)) continue;
                         throw new ConflictException("출석 집계 외의 수식 의존성이 있습니다. 열 변경 전에 수식 의존성을 해소하세요.");
                     }
+                }
+            }
     }
 
     public async Task ApplyManagedMutationAsync(string spreadsheetId, ManagedSheetTab expected,
@@ -206,13 +213,12 @@ public sealed partial class GoogleSheetClient
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             for (var r = 0; r < Math.Max(expected.RawCellData?.Count ?? 0, mutation.RawValues.Count); r++)
             {
+                // InheritFromBefore는 이전 열의 전체 CellData를 상속한다 — 값만 교체해 동일하게 유지한다.
                 var previous = expected.RawCellData is { } data && r < data.Count && mutation.ColumnIndex > 1 && data[r].Count >= mutation.ColumnIndex - 1
                     ? JsonSerializer.Deserialize<CellData>(data[r][mutation.ColumnIndex - 2], options) : null;
-                rows.Add(new RowData { Values = new List<CellData> { new()
-                {
-                    UserEnteredValue = r < mutation.RawValues.Count ? Decode(mutation.RawValues[r]) : null,
-                    UserEnteredFormat = previous?.UserEnteredFormat, DataValidation = previous?.DataValidation
-                } } });
+                previous ??= new CellData();
+                previous.UserEnteredValue = r < mutation.RawValues.Count ? Decode(mutation.RawValues[r]) : null;
+                rows.Add(new RowData { Values = [previous] });
             }
             requests.Add(new Request { UpdateCells = new UpdateCellsRequest
             {

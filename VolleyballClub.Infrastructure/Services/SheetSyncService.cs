@@ -334,7 +334,8 @@ public sealed partial class SheetSyncService(
             .SetProperty(a => a.SheetSyncError, error), ct);
     }
 
-    /// <summary>시트에 아직 반영되지 않은 활동/출석 현황(관리자 알림·백업 판단).</summary>
+    /// <summary>시트에 아직 반영되지 않은 활동/출석 현황(관리자 알림·백업 판단).
+    /// 대상 탭 기준으로 미매핑 부원이 있으면 MappingMissing로 분류해 팝업 인라인 해결 대상으로 삼는다.</summary>
     public async Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -342,9 +343,32 @@ public sealed partial class SheetSyncService(
             .Where(a => a.SheetSyncPendingAt != null
                 || (a.Status == ActivityStatus.ActivityClosed && a.SheetExportedAt == null))
             .OrderBy(a => a.ActivityDate).ToListAsync(ct);
-        return new SheetSyncStatusDto(pending.Count, pending.Select(a => new SheetPendingActivityDto(
-            a.Id, a.ActivityDate, a.Status == ActivityStatus.ActivityClosed ? "마감 미기록" : "진행 중", a.SheetSyncError,
-            a.SheetSyncPendingAt)).ToList(), await db.SheetEditJournals.AnyAsync(ct));
+        var names = await db.Users.ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+        var items = new List<SheetPendingActivityDto>();
+        foreach (var a in pending)
+        {
+            var source = await db.ActivitySources.AsNoTracking().SingleOrDefaultAsync(s => s.ActivityId == a.Id, ct);
+            SheetDefinition? sheet = source is not null
+                ? await db.SheetDefinitions.AsNoTracking().SingleOrDefaultAsync(s => s.Id == source.SheetDefinitionId, ct)
+                : await db.SheetDefinitions.AsNoTracking().SingleOrDefaultAsync(s => s.Kind == SheetKind.Attendance, ct);
+            var tabName = source?.TabName ?? resolver.ResolveByDate(a.ActivityDate)?.TabName;
+            var required = a.SheetSyncRequiredUserIds.Distinct().ToList();
+            List<SheetUnmappedMemberDto>? unmapped = null;
+            if (required.Count > 0 && sheet is not null && tabName is not null)
+            {
+                var mapped = await db.SheetMemberMappings.AsNoTracking()
+                    .Where(m => m.SheetDefinitionId == sheet.Id && m.TabName == tabName)
+                    .Select(m => m.UserId).ToHashSetAsync(ct);
+                unmapped = required.Where(id => !mapped.Contains(id) && names.ContainsKey(id))
+                    .Select(id => new SheetUnmappedMemberDto(id, names[id])).ToList();
+            }
+            items.Add(new SheetPendingActivityDto(
+                a.Id, a.ActivityDate, a.Status == ActivityStatus.ActivityClosed ? "마감 미기록" : "진행 중", a.SheetSyncError,
+                a.SheetSyncPendingAt,
+                unmapped is { Count: > 0 } ? SheetPendingReason.MappingMissing : SheetPendingReason.Other,
+                sheet?.Id, tabName, unmapped));
+        }
+        return new SheetSyncStatusDto(pending.Count, items, await db.SheetEditJournals.AnyAsync(ct));
     }
 
     public async Task<bool> RemoveCancelledActivityAsync(int activityId, CancellationToken ct = default)

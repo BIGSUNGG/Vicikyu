@@ -1,6 +1,7 @@
 @implements IAsyncDisposable
 @inject ApiHttp Api
 @inject SheetSyncClient Sheets
+@inject SheetMemberMappingClient MappingSvc
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 @inject Microsoft.Extensions.Logging.ILogger<SheetSyncNotice> Logger
@@ -11,21 +12,72 @@
     <section class="card" role="alert" data-testid="sheet-sync-warning">
         <p>시트 미반영 @(status!.PendingCount)건 — 모두 저장될 때까지 DB 값을 유지합니다.</p>
         @if (status.RecoveryRequired) { <p>시트 복구 기록을 확인해야 합니다. 추가 동기화를 중단한 상태입니다.</p> }
-        <button type="button" class="btn-danger" @onclick="Show">경고·백업 다운로드</button>
+        <button type="button" class="btn-danger" @onclick="Show">경고 확인·해결</button>
     </section>
 }
 @if (statusError is not null) { <p role="alert">@statusError</p> }
 <dialog @ref="dialog" aria-labelledby="sheet-sync-warning-title" data-testid="sheet-sync-dialog">
-    <h2 id="sheet-sync-warning-title">시트 저장 실패 · DB 백업 필요</h2>
-    <p>출석·활동 변경은 서버 DB에 보존했습니다. 시트 갱신으로 재시도해 주세요.</p>
+    <h2 id="sheet-sync-warning-title">시트 저장 실패 — 해결이 필요합니다</h2>
+    <p>출석·활동 변경은 서버 DB에 보존했습니다.</p>
+    @if ((status?.Pending.Count ?? 0) == 0 && failureFlash)
+    {
+        <p role="status">방금 실패한 저장은 자동 재시도에서 해결된 것 같습니다. 목록을 새로고침해 확인해 주세요.</p>
+    }
     @foreach (var item in status?.Pending ?? [])
     {
-        <p>@item.ActivityDate.ToString("yyyy-MM-dd") · @item.State: @item.Error</p>
+        <section class="sheet-pending-item" data-testid="pending-@item.ActivityId">
+            <h3>@item.ActivityDate.ToString("yyyy-MM-dd") · @item.State @(item.Reason == SheetPendingReason.MappingMissing ? "— 시트 행 연결 필요" : "")</h3>
+            @if (!string.IsNullOrEmpty(item.Error))
+            {
+                <p class="miss">@item.Error</p>
+            }
+            @if (item.Reason == SheetPendingReason.MappingMissing)
+            {
+                @foreach (var fix in Fixes(item))
+                {
+                    <div class="field" data-testid="fix-@fix.Member.UserId">
+                        <label class="form-label">@fix.Member.Name</label>
+                        @if (fix.Done)
+                        {
+                            <p>연결 완료</p>
+                        }
+                        else if (fix.AddMode)
+                        {
+                            <input class="form-control" maxlength="150" placeholder="새 부원 행 이름" @bind="fix.NewLabel" />
+                            <div class="btn-row">
+                                <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.NewLabel))" @onclick="() => SaveAsync(fix, item)">행 추가·연결</button>
+                                <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => fix.AddMode = false">기존 행 선택</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <select class="form-control" @bind="fix.Selected">
+                                <option value="">행 선택…</option>
+                                @foreach (var option in fix.Options)
+                                {
+                                    <option value="@option.RowLabel">@(option.Recommended ? "★ " : "")@option.RowLabel</option>
+                                }
+                            </select>
+                            <div class="btn-row">
+                                <button type="button" class="btn-primary" disabled="@(fix.Busy || string.IsNullOrWhiteSpace(fix.Selected))" @onclick="() => SaveAsync(fix, item)">연결 저장</button>
+                                <button type="button" class="btn-secondary" disabled="@fix.Busy" @onclick="() => StartAddRow(fix)">＋ 새 행 추가</button>
+                            </div>
+                        }
+                        @if (fix.Error is not null) { <p role="alert">@fix.Error</p> }
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="member-meta">이 오류는 여기서 바로 해결할 수 없습니다. 안내 문구의 원인을 확인해 주세요. 팝업을 닫으면 DB 백업(.db)을 내려받습니다.</p>
+            }
+        </section>
     }
-    <p>백업에는 개인정보·비밀번호 해시·Google 인증정보가 포함됩니다. 안전하게 보관하세요.</p>
+    @if (resyncMessage is not null) { <p role="status">@resyncMessage</p> }
     @if (downloadError is not null) { <p role="alert">@downloadError</p> }
+    <p class="member-meta">백업에는 개인정보·비밀번호 해시·Google 인증정보가 포함됩니다. 안전하게 보관하세요.</p>
     <div class="btn-row">
-        <button type="button" class="btn-primary" disabled="@downloading" @onclick="DownloadAsync">@(downloading ? "백업 다운로드 중…" : ".db 백업 다운로드")</button>
+        <button type="button" class="btn-primary" disabled="@downloading" @onclick="DownloadAsync">@(downloading ? "다운로드 중…" : ".db 백업 다운로드")</button>
         <button type="button" class="btn-secondary" @onclick="CloseAsync">닫기</button>
     </div>
 </dialog>
@@ -36,14 +88,34 @@
     private SheetSyncStatusDto? status;
     private ElementReference dialog;
     private IJSObjectReference? module;
+    private DotNetObjectReference<SheetSyncNotice>? selfRef;
     private Task? polling;
     private string? shown;
     private string? statusError;
     private string? downloadError;
+    private string? resyncMessage;
     private bool showRequested;
+    private bool failureFlash;
     private bool downloading;
     private bool disposed;
+    private bool closeHandled;
+    private List<MemberFix> fixes = [];
     private bool HasPending => status is { PendingCount: > 0 } or { RecoveryRequired: true };
+
+    private sealed class MemberFix
+    {
+        public required SheetUnmappedMemberDto Member { get; init; }
+        public List<SheetRowOptionDto> Options { get; set; } = [];
+        public string? Selected { get; set; }
+        public string NewLabel { get; set; } = "";
+        public bool AddMode { get; set; }
+        public bool Busy { get; set; }
+        public bool Done { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private IEnumerable<MemberFix> Fixes(SheetPendingActivityDto item) =>
+        fixes.Where(f => item.UnmappedMembers?.Any(m => m.UserId == f.Member.UserId) == true);
 
     protected override async Task OnInitializedAsync()
     {
@@ -59,12 +131,37 @@
             status = await Sheets.GetStatusAsync();
             statusError = null;
             var signature = string.Join(";", status.Pending.Select(p => $"{p.ActivityId}:{p.PendingSince:O}")) + status.RecoveryRequired;
-            if (HasPending && Watch && signature != shown) { shown = signature; showRequested = true; }
+            if (HasPending && Watch && signature != shown) { shown = signature; await OpenFixesAsync(); showRequested = true; }
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "시트 미반영 상태 조회 실패");
             statusError = "시트 미반영 상태를 확인하지 못했습니다. 연결을 확인하고 다시 불러와 주세요.";
+        }
+    }
+
+    private async Task OpenFixesAsync()
+    {
+        var needed = (status?.Pending ?? []).Where(p => p.Reason == SheetPendingReason.MappingMissing)
+            .SelectMany(p => p.UnmappedMembers ?? []).GroupBy(m => m.UserId).Select(g => g.First()).ToList();
+        fixes.RemoveAll(f => f.Done || needed.All(m => m.UserId != f.Member.UserId));
+        foreach (var member in needed.Where(m => fixes.All(f => f.Member.UserId != m.UserId)))
+            fixes.Add(new MemberFix { Member = member });
+        foreach (var fix in fixes.Where(f => f.Options.Count == 0))
+        {
+            try
+            {
+                var tabs = await MappingSvc.GetForMemberAsync(fix.Member.UserId);
+                var item = status!.Pending.FirstOrDefault(p => p.UnmappedMembers?.Any(m => m.UserId == fix.Member.UserId) == true);
+                var tab = tabs.FirstOrDefault(t => item is not null && t.SheetId == item.SheetId && t.TabName == item.TabName)
+                    ?? tabs.FirstOrDefault(t => t.CurrentRowLabel is not null);
+                fix.Options = tab?.Options.ToList() ?? [];
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "부원 행 옵션 조회 실패: {UserId}", fix.Member.UserId);
+                fix.Error = "시트 행 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.";
+            }
         }
     }
 
@@ -85,23 +182,95 @@
     {
         if (!showRequested || disposed) return;
         showRequested = false;
-        await (await ModuleAsync()).InvokeVoidAsync("show", dialog);
+        closeHandled = false;
+        selfRef ??= DotNetObjectReference.Create(this);
+        await (await ModuleAsync()).InvokeVoidAsync("show", dialog, selfRef);
     }
 
-    private void Show() => showRequested = true;
+    private void Show()
+    {
+        showRequested = true;
+        _ = OpenFixesAsync();
+    }
+
     private async Task CloseAsync() => await (await ModuleAsync()).InvokeVoidAsync("close", dialog);
+
+    [Microsoft.JSInterop.JSInvokable]
+    public async Task OnDialogClosedAsync()
+    {
+        if (disposed || closeHandled) return;
+        closeHandled = true;
+        await InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            if (HasPending)
+            {
+                failureFlash = false;
+                resyncMessage = null;
+                Snackbar.Add("시트 갱신이 아직 안 됐습니다 — DB 백업을 내려받습니다.", Severity.Warning);
+                await DownloadAsync();
+            }
+            StateHasChanged();
+        });
+    }
 
     private async Task OnWriteFailedAsync()
     {
         if (disposed) return;
         await InvokeAsync(async () =>
         {
+            failureFlash = true;
             await LoadAsync();
+            await OpenFixesAsync();
             showRequested = true;
-            Snackbar.Add("시트 저장에 실패했습니다. DB는 보존됐으며 백업 다운로드를 시도합니다.", Severity.Error);
-            await DownloadAsync();
+            Snackbar.Add("시트 저장에 실패했습니다. DB는 보존됐습니다.", Severity.Error);
             StateHasChanged();
         });
+    }
+
+    private void StartAddRow(MemberFix fix)
+    {
+        fix.AddMode = true;
+        fix.NewLabel = fix.Member.Name;
+        fix.Error = null;
+    }
+
+    private async Task SaveAsync(MemberFix fix, SheetPendingActivityDto item)
+    {
+        if (fix.Busy) return;
+        fix.Busy = true; fix.Error = null; resyncMessage = "시트 갱신 재시도 중…";
+        try
+        {
+            await MappingSvc.SetMappingAsync(item.SheetId!.Value, item.TabName!, fix.Member.UserId,
+                fix.AddMode ? fix.NewLabel.Trim() : fix.Selected, fix.AddMode);
+            var report = await Sheets.ResyncAsync();
+            await LoadAsync();
+            await OpenFixesAsync();
+            if (!HasPending)
+            {
+                fix.Done = true;
+                Snackbar.Add("매핑 저장·시트 갱신 완료 — 미반영이 없습니다.", Severity.Success);
+                await CloseAsync();
+            }
+            else
+            {
+                resyncMessage = $"갱신 재시도 결과: 가져옴 {report.ImportedActivities}건·내보냄 {report.ExportedColumns}건 — 아직 미반이 남습니다.";
+                fix.Done = status!.Pending.All(p => p.UnmappedMembers?.Any(m => m.UserId == fix.Member.UserId) != true);
+            }
+        }
+        catch (AppException ex)
+        {
+            fix.Error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "팝업 매핑 저장 실패");
+            fix.Error = "저장하지 못했습니다. 시트 상태를 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            fix.Busy = false;
+        }
     }
 
     private async Task DownloadAsync()
@@ -125,6 +294,7 @@
         stop.Cancel();
         if (polling is not null) await polling;
         stop.Dispose();
+        selfRef?.Dispose();
         if (module is not null) await module.DisposeAsync();
     }
 }
