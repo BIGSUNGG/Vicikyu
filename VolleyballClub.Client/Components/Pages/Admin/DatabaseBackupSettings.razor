@@ -26,8 +26,8 @@
         {
             <div role="group" aria-labelledby="database-confirm-title" data-testid="database-confirmation">
                 <h3 class="card-title" id="database-confirm-title">현재 DB 전체를 교체할까요?</h3>
-                <p>@file?.Name 파일로 현재 데이터가 교체됩니다. 복원 파일의 관리자 로그인 정보를 알고 있는지 확인하세요.</p>
-                <label><input type="checkbox" data-testid="database-import-acknowledge" @bind="acknowledged" /> 전체 교체와 재로그인을 확인했습니다.</label>
+                <p class="member-meta">@file?.Name 파일로 현재 데이터가 교체됩니다. 복원 파일의 관리자 로그인 정보를 알고 있는지 확인하세요.</p>
+                <label class="member-meta"><input type="checkbox" data-testid="database-import-acknowledge" @bind="acknowledged" /> 전체 교체와 재로그인을 확인했습니다.</label>
                 <div class="btn-row">
                     <button type="button" class="btn-danger" data-testid="database-import-confirm" disabled="@(!acknowledged || busy)" @onclick="RestoreAsync">전체 교체 실행</button>
                     <button type="button" class="btn-secondary" data-testid="database-import-cancel" @onclick="Cancel">취소</button>
@@ -35,8 +35,8 @@
             </div>
         }
     </fieldset>
-    @if (busy) { <p role="status" data-testid="database-status">DB 검증·자동 백업·복원 중… 창을 닫지 마세요.</p> }
-    @if (error is not null) { <p role="alert" data-testid="database-error">@error</p> }
+    @if (busy) { <p class="member-meta" role="status" data-testid="database-status">DB 검증·자동 백업·복원 중… 창을 닫지 마세요.</p> }
+    @if (error is not null) { <p class="text-danger" role="alert" data-testid="database-error">@error</p> }
 </section>
 
 @code {

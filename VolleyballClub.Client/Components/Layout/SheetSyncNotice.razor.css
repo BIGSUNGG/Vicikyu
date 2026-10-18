@@ -11,6 +11,37 @@ dialog {
 dialog::backdrop {
 	background: rgb(0 0 0 / 45%);
 }
+/* 타이포그래피 — UA 기본값(h2 1.5em·h3 1.17em 굵게, p 1em 보통)은 앱 본문 대비 투박하다.
+   앱 스케일과 동일하게: 팝업 제목=page-title 계열(900/-0.02em), 항목 제목=card-title 계열(0.84rem/800),
+   본문=0.84rem/600, 오류=text-danger 계열(0.76rem/700). */
+h2 {
+	font-size: 1.05rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+	margin: 0 0 10px;
+}
+h3 {
+	font-size: 0.84rem;
+	font-weight: 800;
+	color: var(--vb-muted);
+	margin: 0 0 6px;
+}
 p {
 	overflow-wrap: anywhere;
+}
+/* member-meta(미세 인쇄물)는 글로벌 스타일을 그대로 쓴다 — 크기 오버라이드에서 제외 */
+p:not(.member-meta) {
+	font-size: 0.84rem;
+	font-weight: 600;
+	margin: 0 0 8px;
+}
+p.miss {
+	font-size: 0.76rem;
+	font-weight: 700;
+	color: var(--vb-danger);
+}
+/* 경고 섹션 본문 — 알림 문구는 카드 본문보다 한 단계 무겁게(0.84rem/700) */
+section[role="alert"] p {
+	font-weight: 700;
+	margin: 0 0 10px;
 }
