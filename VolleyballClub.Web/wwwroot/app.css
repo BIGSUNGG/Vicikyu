@@ -2129,6 +2129,15 @@ button.court-head {
 	visibility: hidden;
 }
 
+/* 출석 관리 — 하단 일괄 저장 버튼 바 */
+.attendance-save-row {
+	display: flex;
+	justify-content: center;
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 2px dashed var(--vb-border);
+}
+
 .admin-load-status {
 	position: absolute;
 	width: 1px;

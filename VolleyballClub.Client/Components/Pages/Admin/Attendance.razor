@@ -1,7 +1,10 @@
 @page "/admin/attendance"
 @attribute [Authorize(Roles = "ADMIN")]
+@implements IAsyncDisposable
 
 @inject AttendanceClient AttendanceSvc
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 @inject ISnackbar Snackbar
 @inject Microsoft.Extensions.Logging.ILogger<Attendance> Logger
 @using Microsoft.Extensions.Logging
@@ -65,19 +68,40 @@
                 }
                 <AttendanceMemberList Members="visibleMembers" OnToggled="ToggleAsync" />
             </div>
+            <div class="attendance-save-row">
+                <button type="button" class="btn-primary" data-testid="attendance-save"
+                        disabled="@(isSaving || teamConfirm is not null || pendingCount == 0)"
+                        @onclick="SaveAsync">
+                    @(isSaving ? "저장 중…" : pendingCount == 0 ? "저장" : $"변경 {pendingCount}건 저장")
+                </button>
+            </div>
         }
     </div>
 </div>
 
-@if (confirmTarget is not null)
+@if (leaveTarget is not null)
 {
-    <div class="confirm-overlay" @onclick="CancelConfirm">
+    <div class="confirm-overlay" @onclick="() => leaveTarget = null">
         <div class="confirm-box" @onclick:stopPropagation>
-            <h3>출석 취소</h3>
-            <p>@confirmTarget.Name 님의 출석을 취소하시겠습니까?</p>
+            <h3>저장하지 않은 변경</h3>
+            <p>출석 변경 @(pendingCount)건이 아직 저장되지 않았습니다. 이 페이지를 벗어나면 변경이 사라집니다.</p>
             <div class="btn-row">
-                <button type="button" class="btn-ghost" @onclick="CancelConfirm">아니오</button>
-                <button type="button" class="btn-primary" @onclick="ConfirmCancelAsync">취소하기</button>
+                <button type="button" class="btn-ghost" @onclick="() => leaveTarget = null">계속 편집</button>
+                <button type="button" class="btn-danger" @onclick="ConfirmLeaveAsync">나가기</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (teamConfirm is not null)
+{
+    <div class="confirm-overlay" @onclick="CancelTeamConfirm">
+        <div class="confirm-box" @onclick:stopPropagation>
+            <h3>팀 편성 영향 확인</h3>
+            <p>다음 부원의 출석 취소는 팀에서도 제외됩니다: @(string.Join(", ", teamConfirm.Select(m => m.Name)))</p>
+            <div class="btn-row">
+                <button type="button" class="btn-ghost" @onclick="CancelTeamConfirm">취소 유지</button>
+                <button type="button" class="btn-primary" @onclick="ConfirmTeamImpactAsync">팀에서도 제외하고 취소</button>
             </div>
         </div>
     </div>
@@ -87,14 +111,25 @@
     private bool isLoading = true;
     private bool hasLoaded;
     private bool isRefreshing;
+    private bool isSaving;
+    private bool leaving;
     private string? loadError;
     private int loadGeneration;
     private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
     private List<AttendanceMemberDto> members = [];
+    /// <summary>마지막 로드/저장 시점의 출석 여부 — 화면 토글과의 diff로 미저장 변경을 추적한다.</summary>
+    private Dictionary<string, bool> savedState = [];
     private string search = "";
     private bool searched;
-    private AttendanceMemberDto? confirmTarget;
+    private string? leaveTarget;
+    private List<AttendanceMemberDto>? teamConfirm;
     private int attendedCount;
+    private IDisposable? navGuard;
+    private IJSObjectReference? guardModule;
+    private bool unloadGuardOn;
+    private bool disposed;
+
+    private int pendingCount => members.Count(m => savedState.TryGetValue(m.UserId, out var saved) && saved != m.IsAttended);
 
     private List<AttendanceMemberDto> visibleMembers => searched
         ? members.Where(m => m.Name.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase)
@@ -102,6 +137,68 @@
         : members;
 
     protected override Task OnInitializedAsync() => ReadAsync();
+
+    protected override void OnInitialized()
+    {
+        // 미저장 변경이 있는 상태의 내부 내비게이션을 가로채 이탈 확인창을 띄운다.
+        navGuard = Navigation.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        navGuard?.Dispose();
+        try
+        {
+            if (guardModule is not null)
+            {
+                if (unloadGuardOn) await guardModule.InvokeVoidAsync("disable");
+                await guardModule.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        if (disposed || leaving || pendingCount == 0) return ValueTask.CompletedTask;
+        context.PreventNavigation();
+        leaveTarget = context.TargetLocation;
+        // 이 콜백은 자동 재렌더가 없다 — 확인창을 그리기 위해 직접 렌더를 요청한다
+        InvokeAsync(StateHasChanged);
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task ConfirmLeaveAsync()
+    {
+        var target = leaveTarget;
+        leaveTarget = null;
+        if (target is null) return;
+        leaving = true; // 가드 통과 — 미저장 변경 폐기 후 이동
+        await SetUnloadGuardAsync(enabled: false);
+        Navigation.NavigateTo(target);
+    }
+
+    private async Task SetUnloadGuardAsync(bool enabled)
+    {
+        if (guardModule is null && !enabled) return;
+        try
+        {
+            guardModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/attendance-guard.js");
+            await guardModule.InvokeVoidAsync(enabled ? "enable" : "disable");
+            unloadGuardOn = enabled;
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>미저장 변경 유무에 맞춰 새로고침·닫기 가드를 켜고 끈다.</summary>
+    private Task SyncUnloadGuardAsync()
+    {
+        var need = pendingCount > 0;
+        return need == unloadGuardOn ? Task.CompletedTask : SetUnloadGuardAsync(need);
+    }
 
     private Task ReadAsync() => LoadAsync(showSkeleton: true);
 
@@ -120,6 +217,7 @@
             var loadedCount = loaded.Count(m => m.IsAttended);
             if (generation != loadGeneration) return;
             members = loaded;
+            savedState = loaded.ToDictionary(m => m.UserId, m => m.IsAttended);
             attendedCount = loadedCount;
             hasLoaded = true;
         }
@@ -142,6 +240,7 @@
             {
                 isLoading = false;
                 isRefreshing = false;
+                await SyncUnloadGuardAsync();
             }
         }
     }
@@ -162,59 +261,116 @@
         attendedCount = members.Count(m => m.IsAttended);
     }
 
+    /// <summary>토글은 화면 상태만 바꾼다 — DB 저장은 하단 저장 버튼에서 일괄 수행.</summary>
     private async Task ToggleAsync((AttendanceMemberDto Member, bool Checked) toggle)
     {
-        var (member, isChecked) = toggle;
-        try
-        {
-            if (isChecked)
-            {
-                await AttendanceSvc.AdminAddAsync(member.UserId);
-                Snackbar.Add($"{member.Name} 출석 처리 완료", Severity.Success);
-                MarkAttended(member.UserId, true);
-                return;
-            }
-            else
-            {
-                confirmTarget = member;
-                return;
-            }
-        }
-        catch (ConflictException ex) when (ex.Message.Contains("팀 편성이 완료"))
-        {
-            // 팀 편성 완료 상태 — 확인 받고 재시도
-            confirmTarget = member;
-            return;
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-
-        await LoadAsync();
+        MarkAttended(toggle.Member.UserId, toggle.Checked);
+        await SyncUnloadGuardAsync();
     }
 
-    private void CancelConfirm() => confirmTarget = null;
-
-    private async Task ConfirmCancelAsync()
+    /// <summary>미저장 변경 전체를 저장한다. 부원별 성공/실패가 서로 격리되고, 팀 편성 영향 취소는 확인 후 재시도한다.</summary>
+    private async Task SaveAsync()
     {
-        if (confirmTarget is null)
-        {
-            return;
-        }
+        if (isSaving || teamConfirm is not null) return;
+        var changes = members
+            .Where(m => savedState.TryGetValue(m.UserId, out var saved) && saved != m.IsAttended)
+            .Select(m => (Member: m, Now: m.IsAttended))
+            .ToList();
+        if (changes.Count == 0) return;
 
-        var target = confirmTarget;
-        confirmTarget = null;
+        isSaving = true;
         try
         {
-            await AttendanceSvc.AdminCancelAsync(target.UserId, confirmTeamImpact: true);
-            Snackbar.Add($"{target.Name} 출석 취소", Severity.Success);
-            MarkAttended(target.UserId, false);
+            var teamImpact = new List<AttendanceMemberDto>();
+            var failures = new List<string>();
+            var saved = 0;
+            foreach (var change in changes)
+            {
+                try
+                {
+                    if (change.Now)
+                    {
+                        await AttendanceSvc.AdminAddAsync(change.Member.UserId);
+                    }
+                    else
+                    {
+                        await AttendanceSvc.AdminCancelAsync(change.Member.UserId);
+                    }
+                    savedState[change.Member.UserId] = change.Now;
+                    saved++;
+                }
+                catch (ConflictException ex) when (!change.Now && ex.Message.Contains("팀 편성이 완료"))
+                {
+                    // 팀 편성 영향 — 확인창을 띄우고 승인되면 confirmTeamImpact로 재시도한다.
+                    teamImpact.Add(change.Member);
+                }
+                catch (AppException ex)
+                {
+                    failures.Add($"{change.Member.Name}: {ex.Message}");
+                }
+                catch (Exception)
+                {
+                    failures.Add($"{change.Member.Name}: 네트워크 오류로 저장하지 못했습니다.");
+                }
+            }
+
+            if (teamImpact.Count > 0)
+            {
+                teamConfirm = teamImpact;
+            }
+            ReportSaveResult(saved, failures);
         }
-        catch (AppException ex)
+        finally
         {
-            Snackbar.Add(ex.Message, Severity.Error);
-            await LoadAsync();
+            isSaving = false;
+            await SyncUnloadGuardAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void CancelTeamConfirm() => teamConfirm = null;
+
+    private async Task ConfirmTeamImpactAsync()
+    {
+        var targets = teamConfirm;
+        teamConfirm = null;
+        if (targets is null) return;
+
+        var failures = new List<string>();
+        var saved = 0;
+        foreach (var member in targets)
+        {
+            try
+            {
+                await AttendanceSvc.AdminCancelAsync(member.UserId, confirmTeamImpact: true);
+                savedState[member.UserId] = false;
+                saved++;
+            }
+            catch (AppException ex)
+            {
+                failures.Add($"{member.Name}: {ex.Message}");
+            }
+            catch (Exception)
+            {
+                failures.Add($"{member.Name}: 네트워크 오류로 저장하지 못했습니다.");
+            }
+        }
+        ReportSaveResult(saved, failures);
+        await SyncUnloadGuardAsync();
+    }
+
+    private static string Summarize(List<string> failures) =>
+        string.Join(" · ", failures.Take(3)) + (failures.Count > 3 ? $" 외 {failures.Count - 3}건" : "");
+
+    private void ReportSaveResult(int saved, List<string> failures)
+    {
+        if (saved > 0)
+        {
+            Snackbar.Add($"출석 {saved}건 저장 완료", Severity.Success);
+        }
+        if (failures.Count > 0)
+        {
+            Snackbar.Add($"저장 실패 — {Summarize(failures)}", Severity.Error);
         }
     }
 }

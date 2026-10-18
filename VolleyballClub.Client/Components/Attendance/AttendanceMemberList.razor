@@ -8,9 +8,9 @@ else
         @foreach (var member in Members)
         {
             <label class="member-row @(member.IsAttended ? "" : "unattended")" @key="member.UserId">
-                @* 네이티브 토글을 막고 상태로만 제어 — 확인 취소/실패 시 뒤집힌 채 남는 것을 방지 *@
+                @* 네이티브 토글은 그대로 두고 클릭값을 반전해 알린다 — 토글은 화면 전용, 저장은 하단 버튼에서만 *@
                 <input type="checkbox" checked="@member.IsAttended"
-                       @onclick="() => ToggleAsync(member, !member.IsAttended)" @onclick:preventDefault />
+                       @onclick="() => ToggleAsync(member, !member.IsAttended)" />
                 <div>
                     <div class="member-name">@member.Name</div>
                     <div class="member-meta">@member.StudentNumber · @member.Department</div>
