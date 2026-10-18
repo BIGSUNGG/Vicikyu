@@ -196,8 +196,15 @@ public sealed partial class GoogleSheetClient
                 string? formula = null;
                 using (var doc = JsonDocument.Parse(expected.RawValues[end][c]))
                     if (doc.RootElement.TryGetProperty("formulaValue", out var found)) formula = found.GetString();
-                totals.Add(formula is null ? null
-                    : new CellData { UserEnteredValue = new ExtendedValue { FormulaValue = MemberRowEdits.ExpandTotal(formula, c + 1, start + 1, end) } });
+                if (formula is null)
+                {
+                    // 수식 없는 셀(라벨 등)은 원본 값을 유지한다 — null은 API에서 셀을 지우는 의미다.
+                    totals.Add(new CellData { UserEnteredValue = Decode(expected.RawValues[end][c]) });
+                }
+                else
+                {
+                    totals.Add(new CellData { UserEnteredValue = new ExtendedValue { FormulaValue = MemberRowEdits.ExpandTotal(formula, c + 1, start + 1, end) } });
+                }
             }
             requests.Add(new Request { UpdateCells = new UpdateCellsRequest
             {

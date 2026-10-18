@@ -21,16 +21,22 @@ internal static class MemberRowEdits
             for (var c = 0; c < before.RawValues[r].Count; c++)
                 if (JsonNode.Parse(before.RawValues[r][c])?["formulaValue"]?.GetValue<string>() is { } formula)
                 {
-                    if (r != end || before.Rows[end][0].Trim() != "총 참여자 수") Unsupported();
+                    // 행 삽입은 부원 행의 가로 수식(같은 행 참조)에 영향을 주지 않는다 — 통과.
+                    // 통합 행(총 참여자 수)의 세로 집계만 범위 확장이 필요하다.
+                    if (r != end) continue;
+                    if (before.Rows[end][0].Trim() != "총 참여자 수") Unsupported();
                     ExpandTotal(formula, c + 1, start + 1, end);
                 }
     }
 
     internal static string ExpandTotal(string formula, int column, int first, int last)
     {
-        var name = ManagedSheetEdits.ColumnLetter(column);
-        var pattern = $"^(=SUM\\(\\$?{name}\\$?{first}:\\$?{name}\\$?){last}(\\))$|^(=COUNTIF\\(\\$?{name}\\$?{first}:\\$?{name}\\$?){last}(,\"출석\"\\))$";
-        var match = Regex.Match(formula, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // 행 삽입은 행 범위 끝만 +1한다 — 열 참조는 그대로 둔다(어떤 열을 참조하든 무관).
+        var sumPattern = @"^(=SUM\(\$?[A-Za-z]{1,3}\$?" + first + @":\$?[A-Za-z]{1,3}\$?)" + last + @"(\))$";
+        var countifTail = "(,\"출석\"\\))$";
+        var countifPattern = @"^(=COUNTIF\(\$?[A-Za-z]{1,3}\$?" + first + @":\$?[A-Za-z]{1,3}\$?)" + last + countifTail;
+        var match = Regex.Match(formula, sumPattern + "|" + countifPattern,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!match.Success) Unsupported();
         return match.Groups[1].Success ? match.Groups[1].Value + (last + 1) + match.Groups[2].Value
             : match.Groups[3].Value + (last + 1) + match.Groups[4].Value;
@@ -48,17 +54,18 @@ internal static class MemberRowEdits
             return cells ? node["userEnteredValue"]?["stringValue"]?.GetValue<string>() ?? ""
                 : node["stringValue"]?.GetValue<string>() ?? "";
         }).ToList()).ToList())).Start;
-        foreach (var row in grid)
-            for (var c = 0; c < row.Count; c++)
+        // 통합 행(삽입 지점)의 세로 집계만 범위 확장한다 — 부원 행의 가로 수식은 그대로 둔다.
+        var totalsGrid = grid.ElementAtOrDefault(index);
+        for (var c = 0; totalsGrid is not null && c < totalsGrid.Count; c++)
+        {
+            var node = JsonNode.Parse(totalsGrid[c])!.AsObject();
+            var value = cells ? node["userEnteredValue"] : node;
+            if (value?["formulaValue"]?.GetValue<string>() is { } formula)
             {
-                var node = JsonNode.Parse(row[c])!.AsObject();
-                var value = cells ? node["userEnteredValue"] : node;
-                if (value?["formulaValue"]?.GetValue<string>() is { } formula)
-                {
-                    value["formulaValue"] = ExpandTotal(formula, c + 1, start + 1, index);
-                    row[c] = node.ToJsonString();
-                }
+                value["formulaValue"] = ExpandTotal(formula, c + 1, start + 1, index);
+                totalsGrid[c] = node.ToJsonString();
             }
+        }
         var inserted = new List<string>();
         if (cells)
             foreach (var raw in grid[index - 1])

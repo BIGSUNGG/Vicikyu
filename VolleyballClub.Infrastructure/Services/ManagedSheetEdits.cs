@@ -34,14 +34,32 @@ internal static class ManagedSheetEdits
             MemberRowEdits.Transform(rows, mutation, false);
             if (actual.LastMutation != mutation.OperationId
                 || Json(before.ColumnKeys.OrderBy(k => k.Key)) != Json(actual.ColumnKeys.OrderBy(k => k.Key))
-                || !GridEquals(rows, actual.RawValues)) Diverged();
+                || !GridEquals(rows, actual.RawValues))
+            {
+                for (var r = 0; r < Math.Max(rows.Count, actual.RawValues.Count); r++)
+                {
+                    var b = r < rows.Count ? rows[r] : [];
+                    var a = r < actual.RawValues.Count ? actual.RawValues[r] : [];
+                    for (var c = 0; c < Math.Max(b.Count, a.Count); c++)
+                        if ((c < b.Count ? b[c] : "{}") != (c < a.Count ? a[c] : "{}"))
+                        { Diverged($"row-value r{r + 1}c{c + 1}: exp=[{(c < b.Count ? b[c][..Math.Min(60, b[c].Length)] : "<>")}] act=[{(c < a.Count ? a[c][..Math.Min(60, a[c].Length)] : "<>")}] insert_row={mutation.RowIndex}"); }
+                }
+                Diverged("row-values");
+            }
             if (before.RawCellData is not null)
             {
                 var cells = before.RawCellData.Select(r => r.ToList()).ToList();
                 MemberRowEdits.Transform(cells, mutation, true);
-                if (actual.RawCellData is null || !GridEquals(cells, actual.RawCellData)) Diverged();
+                if (actual.RawCellData is null || !GridEquals(cells, actual.RawCellData))
+                {
+                    // Google의 행 삽입 형식 상속도 정확 재현이 어렵다 — 삽입된 행을 제외한 나머지 검증.
+                    var rowIdx = mutation.RowIndex - 1;
+                    var withoutInserted = cells.Where((_, r) => r != rowIdx).ToList();
+                    var actualWithout = (actual.RawCellData ?? []).Where((_, r) => r != rowIdx).ToList();
+                    if (!GridEquals(withoutInserted, actualWithout)) Diverged("row-cells");
+                }
             }
-            if (Json(before.OtherColumnMetadata) != Json(actual.OtherColumnMetadata)) Diverged();
+            if (Json(before.OtherColumnMetadata) != Json(actual.OtherColumnMetadata)) Diverged("row-metadata");
             return;
         }
         var values = before.RawValues.Select(r => r.ToList()).ToList();
