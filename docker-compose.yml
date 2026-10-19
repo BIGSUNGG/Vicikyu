@@ -1,10 +1,17 @@
 services:
+  redis:
+    image: redis:8-alpine
+    # 캐시는 휘발성 — 재시작 시 비어 있어도 기능에 영향 없음(전체 읽기가 원본을 다시 채운다)
+
   web:
     build: .
+    depends_on:
+      - redis
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: >-
         Data Source=/data/VolleyballClub.db
+      ConnectionStrings__Redis: redis:6379
       Seed__AdminPassword: "Admin1234!"
     volumes:
       - vbdata:/data

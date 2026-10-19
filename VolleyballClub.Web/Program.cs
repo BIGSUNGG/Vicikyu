@@ -36,6 +36,26 @@ builder.Services.AddInfrastructure(builder.Configuration);
 if (builder.Environment.IsEnvironment(VerificationEnvironment.Name))
     VerificationEnvironment.Configure(builder);
 
+// Redis 캐시(필수 의존) — 시트 원본 읽기 지연 해소. 합성 환경(Testing/Verification)은 시트 페이크를
+// 쓰므로 연결하지 않는다(xUnit은 라이브 Redis 없이 통과해야 한다). 실제 환경에선 연결 실패 시 기동이 중단된다.
+if (!builder.Environment.IsEnvironment("Testing") && !builder.Environment.IsEnvironment(VerificationEnvironment.Name))
+{
+    var redisOptions = StackExchange.Redis.ConfigurationOptions.Parse(
+        builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379");
+    redisOptions.AbortOnConnectFail = true; // 필수 의존 — 기동 시 연결 실패면 즉시 실패
+    try
+    {
+        builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
+            await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(redisOptions));
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            $"Redis({string.Join(",", redisOptions.EndPoints)}) 연결 실패 — Redis는 필수 의존입니다. " +
+            "docker-compose의 redis 서비스 기동 또는 ConnectionStrings:Redis 설정을 확인하세요.", ex);
+    }
+}
+
 builder.Services.AddMudServices();
 builder.Services.ConfigureApplicationCookie(options =>
 {

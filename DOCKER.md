@@ -7,7 +7,7 @@ Web(ASP.NET API + Blazor WebAssembly 정적 자산) + SQLite를 동일 출처·�
 | 파일 | 역할 |
 | --- | --- |
 | `Dockerfile` | Client 포함 Web 앱 멀티스테이지 빌드(sdk:10.0 → aspnet:10.0) |
-| `docker-compose.yml` | `web`(호스트 5122 → 컨테이너 8080) + SQLite 데이터 볼륨 `vbdata` |
+| `docker-compose.yml` | `web`(호스트 5122 → 컨테이너 8080) + `redis`(시트 탭 읽기 캐시, 휘발성) + SQLite 데이터 볼륨 `vbdata` |
 | `.dockerignore` | 빌드 컨텍스트 제외(bin/obj, Tests, Design 등) |
 
 - 호스트 포트 5121은 로컬 개발 서버(`dotnet run`) 전용 — 컨테이너는 5122를 사용해 충돌 방지
