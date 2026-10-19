@@ -15,7 +15,7 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Import_parses_managed_snapshot_not_stale_initial_values()
     {
-        await using var h = new Host(); await h.Seed();
+        await using var h = new Host(); await h.Seed(sync: false);
         h.Sheets.BeforeManagedRead = (_, _) =>
         {
             h.Sheets.BeforeManagedRead = null;
@@ -23,6 +23,7 @@ public sealed partial class AdminActivityManagementTests
             rows[1][1] = "26. 09. 02. 수"; rows[2][1] = "출석";
             h.Sheets.SetTab("first", new("2026-2", rows));
         };
+        await h.Sync.SyncAsync();
         var completed = await h.Completed();
         Assert.Equal(new DateOnly(2026, 9, 2), completed.Date);
         Assert.Equal(1, completed.AttendanceCount);
@@ -58,7 +59,7 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Duplicate_source_keys_in_one_tab_reject_before_any_domain_import()
     {
-        await using var h = new Host(); await h.Seed();
+        await using var h = new Host(); await h.Seed(sync: false);
         var tab = await h.Sheets.GetManagedTabAsync("first", "2026-2");
         h.Sheets.SetManagedTab("first", tab with { ColumnKeys = new Dictionary<int, string> { [2] = "duplicate", [3] = "duplicate" } });
         await Assert.ThrowsAsync<ConflictException>(() => h.Sync.SyncAsync());
@@ -127,9 +128,10 @@ public sealed partial class AdminActivityManagementTests
     [InlineData(SheetDayKind.Scheduled)]
     public async Task Unmapped_sheet_attendance_blocks_state_demotion_even_with_zero_database_count(SheetDayKind kind)
     {
-        await using var h = new Host(); await h.Seed(map: false);
+        await using var h = new Host(); await h.Seed(map: false, sync: false);
         var rows = h.Sheets.Documents["first"][0].Rows.Select(r => r.ToList()).ToList(); rows[2][1] = "출석";
         h.Sheets.SetTab("first", new("2026-2", rows));
+        await h.Sync.SyncAsync();
         var completed = await h.Completed(); Assert.Equal(0, completed.AttendanceCount);
         var before = await Snapshot(h); var writes = h.Sheets.ManagedWrites.Count;
         await Assert.ThrowsAsync<ConflictException>(() => h.Service.EditAsync(completed.Key, new(completed.Date, kind)));
@@ -216,10 +218,10 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Actual_sheet_read_failure_surfaces_without_empty_list_or_domain_changes()
     {
-        await using var h = new Host(); await h.Seed();
+        await using var h = new Host(); await h.Seed(sync: false);
         var failure = new IOException("actual managed read failure");
         h.Sheets.BeforeManagedRead = (_, _) => throw failure;
-        Assert.Same(failure, await Assert.ThrowsAsync<IOException>(() => h.List()));
+        Assert.Same(failure, await Assert.ThrowsAsync<IOException>(() => h.Sync.SyncAsync()));
         await using var db = h.Db.CreateContext(); Assert.Empty(await db.ActivitySources.ToListAsync()); Assert.Empty(await db.Activities.ToListAsync());
     }
 

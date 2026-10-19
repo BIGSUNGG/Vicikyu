@@ -12,8 +12,9 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Legacy_blank_dates_stay_visible_without_completed_denominator_and_explicit_empty_completion_round_trips()
     {
-        await using var h = new Host(); await h.Seed(tab: "2026-1");
+        await using var h = new Host(); await h.Seed(tab: "2026-1", sync: false);
         h.Sheets.SetTab("first", new("2026-1", [["부원", "26. 03. 01. 일", "26. 03. 02. 월 활동 완료"], ["A", "", ""]]));
+        await h.Sync.SyncAsync();
         var rows = await h.List();
         var blank = rows.Single(r => r.Date.Day == 1); var completed = rows.Single(r => r.Date.Day == 2);
         Assert.Equal(SheetDayKind.Scheduled, blank.Kind); Assert.Null(blank.ActivityId); Assert.False(blank.CanEditAttendance);
@@ -112,11 +113,12 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task One_member_toggle_preserves_another_mapped_members_newer_manual_mark_and_resync_imports_it()
     {
-        await using var h = new Host(); await h.Seed();
+        await using var h = new Host(); await h.Seed(sync: false);
         var rows = h.Sheets.Documents["first"][0].Rows.Select(r => r.ToList()).ToList();
         rows.Insert(3, ["B", "", "", ""]); h.Sheets.SetTab("first", new("2026-2", rows));
         await using (var db = h.Db.CreateContext())
         { db.SheetMemberMappings.Add(new SheetMemberMapping { SheetDefinitionId = h.SheetId, TabName = "2026-2", UserId = "admin", RowLabel = "B" }); await db.SaveChangesAsync(); }
+        await h.Sync.SyncAsync();
         var row = await h.Completed();
         rows = h.Sheets.Documents["first"][0].Rows.Select(r => r.ToList()).ToList();
         while (rows[3].Count < 2) rows[3].Add("");
@@ -157,7 +159,7 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Upgrade_binds_unique_exported_app_history_preserving_original_otp_attendance_and_unmapped_member()
     {
-        await using var h = new Host(); await h.Seed();
+        await using var h = new Host(); await h.Seed(sync: false);
         var rows = h.Sheets.Documents["first"][0].Rows.Select(r => r.ToList()).ToList(); rows[2][1] = "출석"; h.Sheets.SetTab("first", new("2026-2", rows));
         var app = await h.App(new(2026, 9, 1)); var originalTime = new DateTime(2026, 9, 1, 9, 1, 2, DateTimeKind.Utc);
         await using (var db = h.Db.CreateContext())
@@ -166,6 +168,7 @@ public sealed partial class AdminActivityManagementTests
                 new Attendance { ActivityId = app.Id, UserId = "unmapped", AttendanceType = AttendanceType.Admin, CheckedAt = originalTime });
             await db.SaveChangesAsync();
         }
+        await h.Sync.SyncAsync();
         var row = (await h.List()).Single(r => r.Kind == SheetDayKind.Completed);
         Assert.Equal(app.Id, row.ActivityId); Assert.Equal($"app:{app.Id}", row.Key); Assert.Equal(2, row.AttendanceCount);
         var member = await h.Service.GetMemberActivitiesAsync("a");
@@ -179,17 +182,18 @@ public sealed partial class AdminActivityManagementTests
     [Fact]
     public async Task Upgrade_partial_import_retry_reconnects_remaining_tab_without_duplicate_history()
     {
-        await using var h = new Host(); await h.Seed(tab: "2026-1");
+        await using var h = new Host(); await h.Seed(tab: "2026-1", sync: false);
         h.Sheets.SetTab("first", new("2026-1", [["부원", "26. 03. 01. 활동 완료"], ["A", ""]]));
         h.Sheets.Documents["first"].Add(new("2026-2", [["활동 상태", "활동 완료"], ["부원", "26. 09. 01."], ["A", ""]]));
         var spring = await h.App(new(2026, 3, 1)); var autumn = await h.App(new(2026, 9, 1));
         var bindings = 0;
         h.Sheets.BeforeManagedApply = mutation =>
         { if (mutation.Kind == SheetMutationKind.Bind && ++bindings == 2) throw new IOException("second tab unavailable"); };
-        await Assert.ThrowsAsync<IOException>(() => h.List());
+        await Assert.ThrowsAsync<IOException>(() => h.Sync.SyncAsync());
         await using (var db = h.Db.CreateContext())
         { Assert.Equal(spring.Id, (await db.ActivitySources.SingleAsync()).ActivityId); Assert.Equal(2, await db.Activities.CountAsync()); }
         h.Sheets.BeforeManagedApply = null;
+        await h.Sync.SyncAsync(); // 부분 실패 재시도 — 프로덕션의 '다시 가져오기'에 해당한다
         var rows = await h.List(); Assert.Equal(2, rows.Count);
         Assert.Contains(rows, r => r.ActivityId == spring.Id); Assert.Contains(rows, r => r.ActivityId == autumn.Id);
         await using var verify = h.Db.CreateContext(); Assert.Equal(2, await verify.Activities.CountAsync());
@@ -201,9 +205,9 @@ public sealed partial class AdminActivityManagementTests
     [InlineData(false, true)]
     public async Task Upgrade_ambiguous_app_or_source_history_conflicts_instead_of_duplicate_counts(bool multipleApps, bool multipleDocuments)
     {
-        await using var h = new Host(); await h.Seed(); if (multipleDocuments) await h.Seed("second");
+        await using var h = new Host(); await h.Seed(sync: false); if (multipleDocuments) await h.Seed("second", sync: false);
         await h.App(new(2026, 9, 1)); if (multipleApps) await h.App(new(2026, 9, 1));
-        await Assert.ThrowsAsync<ConflictException>(() => h.List());
+        await Assert.ThrowsAsync<ConflictException>(() => h.Sync.SyncAsync());
         await using var db = h.Db.CreateContext(); Assert.Empty(await db.ActivitySources.ToListAsync()); Assert.Empty(await db.Attendances.ToListAsync());
         Assert.Equal(multipleApps ? 2 : 1, await db.Activities.CountAsync()); Assert.Empty(h.Sheets.ManagedWrites);
     }

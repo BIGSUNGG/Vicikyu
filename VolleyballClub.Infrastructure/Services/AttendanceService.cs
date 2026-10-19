@@ -82,9 +82,15 @@ public class AttendanceService(
         }
         finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
 
-        // 즉시 시트 반영 — 원격 I/O는 AttendanceCommitGate를 절대 잡지 않는다(Gate→AttendanceCommitGate 순서만 허용).
-        // 실패해도 출석은 유효: 미반영(pending)으로 보존되고 관리자 화면에 알림이 뜬다.
-        await sheetSync.PushActivityAsync(activityId);
+        // 시트 반영은 응답 뒤에서 — 부원 체크인 응답을 원격 I/O가 지연시키지 않는다.
+        // PushActivityAsync는 실패를 스스로 미반영(pending)으로 보존한다(관리자 화면 알림).
+        // scoped 서비스지만 의존은 모두 앱 수명 싱글턴이고 Dispose가 없어 요청 스코프 종료 후에도 안전하다.
+        // 원격 I/O는 AttendanceCommitGate를 절대 잡지 않는다(Gate→AttendanceCommitGate 순서만 허용).
+        _ = Task.Run(async () =>
+        {
+            try { await sheetSync.PushActivityAsync(activityId, CancellationToken.None); }
+            catch (Exception ex) when (ex is ObjectDisposedException) { /* 앱 종료 중 — pending 보존으로 다음 기동에 재시도 */ }
+        });
         return checkedAt;
     }
 

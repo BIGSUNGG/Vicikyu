@@ -28,7 +28,8 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
     public async Task<IReadOnlyList<ManagedActivityDto>> GetActivitiesAsync(CancellationToken ct = default)
     {
         await currentUser.RequireAdminAsync();
-        await sync.SyncAsync(ct);
+        // 시트→DB 전체 동기화는 요청당 7~9탭 라이브 읽기로 수십 초가 걸린다 — 조회 경로에서 제거하고
+        // 기동 시 동기화·대시보드 '다시 가져오기'(Resync)에서만 수행한다(수동 시트 편집은 그때 반영).
         await ManagedSheetEdits.Gate.WaitAsync(ct);
         try
         {
@@ -364,17 +365,19 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
 
     public async Task<MemberActivityListDto> GetMemberActivitiesAsync(string userId, CancellationToken ct = default)
     {
-        await currentUser.RequireAdminAsync();
-        var activities = await GetActivitiesAsync(ct);
-        await using var db = await factory.CreateDbContextAsync(ct);
-        if (!await db.Users.AnyAsync(u => u.Id == userId, ct)) throw new NotFoundException("부원을 찾을 수 없습니다.");
-        var attendance = await db.Attendances.Where(a => a.UserId == userId).Select(a => new { a.ActivityId, a.Activity!.ActivityDate }).ToListAsync(ct);
-        var teams = await db.TeamMembers.Where(m => m.UserId == userId).Select(m => m.Team!.ActivityId).ToListAsync(ct);
-        var today = KstClock.Today(clock);
-        var (from, to) = await SemesterPeriodResolver.GetCurrentRangeAsync(db, today);
-        return new(userId, attendance.Count(a => a.ActivityDate.Year == today.Year && a.ActivityDate.Month == today.Month),
-            attendance.Count(a => a.ActivityDate >= from && a.ActivityDate <= to), attendance.Count,
-            activities.Select(a => new MemberActivityRowDto(a.Key, a.ActivityId, a.Date, a.SourceLabel, a.StateText,
-                attendance.Any(x => x.ActivityId == a.ActivityId), a.CanEditAttendance, a.ActivityId is { } id && teams.Contains(id))).ToList());
+        // GetActivitiesAsync 재호출 대신 같은 잠금·DB 맥락에서 목록을 직접 구성한다 — 부원 출석 기록은 DB 데이터뿐이다.
+        return await Locked<MemberActivityListDto>(async db =>
+        {
+            if (!await db.Users.AnyAsync(u => u.Id == userId, ct)) throw new NotFoundException("부원을 찾을 수 없습니다.");
+            var activities = await ListAsync(db, ct);
+            var attendance = await db.Attendances.Where(a => a.UserId == userId).Select(a => new { a.ActivityId, a.Activity!.ActivityDate }).ToListAsync(ct);
+            var teams = await db.TeamMembers.Where(m => m.UserId == userId).Select(m => m.Team!.ActivityId).ToListAsync(ct);
+            var today = KstClock.Today(clock);
+            var (from, to) = await SemesterPeriodResolver.GetCurrentRangeAsync(db, today);
+            return new(userId, attendance.Count(a => a.ActivityDate.Year == today.Year && a.ActivityDate.Month == today.Month),
+                attendance.Count(a => a.ActivityDate >= from && a.ActivityDate <= to), attendance.Count,
+                activities.Select(a => new MemberActivityRowDto(a.Key, a.ActivityId, a.Date, a.SourceLabel, a.StateText,
+                    attendance.Any(x => x.ActivityId == a.ActivityId), a.CanEditAttendance, a.ActivityId is { } id && teams.Contains(id))).ToList());
+        }, ct);
     }
 }

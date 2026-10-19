@@ -26,7 +26,7 @@ public sealed partial class AdminActivityManagementTests
             Sync = new(Db.Factory, Sheets, formats, Clock);
             Service = new(Db.Factory, Sheets, formats, Current, Sync, Clock);
         }
-        public async Task<int> Seed(string document = "first", string tab = "2026-2", bool map = true)
+        public async Task<int> Seed(string document = "first", string tab = "2026-2", bool map = true, bool sync = true)
         {
             await using var db = Db.CreateContext();
             foreach (var id in new[] { "admin", "a", "unmapped" })
@@ -41,6 +41,10 @@ public sealed partial class AdminActivityManagementTests
               ["부원", "26. 09. 01. 화", "26. 09. 08. 화", "26. 09. 15. 화"],
               ["A", "", "", ""], ["총 참여자 수", "=COUNTIF(B3:B3,\"출석\")"] ])];
             if (document == "first") SheetId = sheet.Id;
+            // 프로덕션의 기동 동기화(Program.cs SyncAsync) 모델 — 시드 후 시트→DB 를 반영한다.
+            // GetActivitiesAsync는 더 이상 조회마다 임포트하지 않는다(기동·재동기화 시에만).
+            // sync:false는 첫 임포트 시점 자체가 검증 대상인 테스트(충돌·부분 실패)용.
+            if (sync) await Sync.SyncAsync();
             return sheet.Id;
         }
         public Task<IReadOnlyList<ManagedActivityDto>> List() => Service.GetActivitiesAsync();
@@ -260,10 +264,12 @@ public sealed partial class AdminActivityManagementTests
         var original = h.Sheets.Documents["first"][0]; var rows = original.Rows.Select(r => r.ToList()).ToList();
         rows[1][1] = "26. 09. 02. 수";
         h.Sheets.SetTab("first", new SheetTab("2026-2", rows));
+        await h.Sync.SyncAsync();
         var moved = (await h.List()).Single(r => r.Key == row.Key);
         Assert.Equal(new DateOnly(2026, 9, 2), moved.Date); Assert.Equal(row.ActivityId, moved.ActivityId);
         var tab = await h.Sheets.GetManagedTabAsync("first", "2026-2");
         await h.Sheets.ApplyManagedMutationAsync("first", tab, new("external-delete", SheetMutationKind.Delete, 2, row.Key, []));
+        await h.Sync.SyncAsync();
         var remaining = await h.List();
         Assert.Contains(remaining, r => r.ActivityId == app.Id && r.Date == row.Date);
         Assert.Contains(remaining, r => r.ActivityId == row.ActivityId && r.SourceLabel.Contains("원본 삭제") && !r.CanEditAttendance);
