@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -97,7 +96,6 @@ public static class DbInitializer
             ?? throw new InvalidOperationException("Seed password 'Seed:AdminPassword' not found.");
         var timeProvider = sp.GetRequiredService<TimeProvider>();
         var now = KstClock.NowUtc(timeProvider);
-        var today = KstClock.Today(timeProvider);
 
         // 관리자
         var admin = new ApplicationUser
@@ -113,110 +111,5 @@ public static class DbInitializer
         };
         await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "ADMIN");
-
-        // 일반 부원 15명
-        var memberSeed = new (string Name, string Department)[]
-        {
-            ("김민수", "컴퓨터공학과"),
-            ("박지훈", "경영학과"),
-            ("이정우", "체육학과"),
-            ("홍길동", "국어국문학과"),
-            ("최민호", "전자공학과"),
-            ("이서준", "화학과"),
-            ("김수진", "심리학과"),
-            ("박민수", "기계공학과"),
-            ("정우성", "사회학과"),
-            ("윤태호", "수학과"),
-            ("김지훈", "법학과"),
-            ("최수진", "생명공학과"),
-            ("박서준", "경제학과"),
-            ("이민호", "정보통신공학과"),
-            ("정태영", "철학과"),
-        };
-
-        var members = new List<ApplicationUser>();
-        for (var i = 0; i < memberSeed.Length; i++)
-        {
-            var (name, department) = memberSeed[i];
-            var studentNumber = $"2025120{i + 1:00}";
-            var user = new ApplicationUser
-            {
-                UserName = studentNumber,
-                StudentNumber = studentNumber,
-                Name = name,
-                Department = department,
-                Color = NextColor(),
-                JoinedAt = new DateTime(2026, 3, 2, 0, 0, 0, DateTimeKind.Utc),
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
-            await userManager.CreateAsync(user, "Member1234!");
-            await userManager.AddToRoleAsync(user, "MEMBER");
-            members.Add(user);
-        }
-
-        // 오늘 활동 + 출석 샘플(팀 편성 즉시 테스트 가능)
-        var activity = new Activity
-        {
-            ActivityDate = today,
-            Status = ActivityStatus.AttendanceOpen,
-            OtpCode = RandomNumberGenerator.GetInt32(1000, 10000).ToString(),
-            AttendanceOpenedAt = now.AddHours(-1),
-            CreatedByUserId = admin.Id,
-            CreatedAt = now.AddHours(-1),
-            UpdatedAt = now,
-        };
-        db.Activities.Add(activity);
-        await db.SaveChangesAsync();
-
-        var baseTime = new DateTime(today, new TimeOnly(18, 2), DateTimeKind.Utc);
-        var minutes = new[] { 3, 5, 7, 9, 12, 14, 16, 19, 22, 25, 28, 31 };
-        for (var i = 0; i < 12 && i < members.Count; i++)
-        {
-            db.Attendances.Add(new Attendance
-            {
-                ActivityId = activity.Id,
-                UserId = members[i].Id,
-                AttendanceType = i % 4 == 0 ? AttendanceType.Admin : AttendanceType.Otp,
-                CheckedAt = baseTime.AddMinutes(minutes[i]),
-                CreatedAt = baseTime.AddMinutes(minutes[i]),
-            });
-        }
-
-        // 학기 + 회비 기간 샘플 — 학기 관리에서 바로 보이는 기본 행
-        var (semStart, semEnd) = SemesterPeriodResolver.DefaultRange(today);
-        var semesterLabel = SemesterPeriodResolver.DefaultLabel(today);
-        db.SemesterPeriods.Add(new SemesterPeriod
-        {
-            Name = semesterLabel,
-            StartDate = semStart,
-            EndDate = semEnd,
-            CreatedAt = now,
-        });
-        var feePeriod = new FeePeriod
-        {
-            Name = semesterLabel,
-            StartDate = semStart,
-            EndDate = semEnd,
-            FeeAmount = 30_000,
-            CreatedAt = now,
-        };
-        db.FeePeriods.Add(feePeriod);
-        await db.SaveChangesAsync();
-
-        for (var i = 0; i < members.Count; i++)
-        {
-            db.FeePayments.Add(new FeePayment
-            {
-                FeePeriodId = feePeriod.Id,
-                UserId = members[i].Id,
-                IsPaid = i < 11,
-                PaidAt = i < 11 ? now.AddDays(-(i + 2)) : null,
-                UpdatedByUserId = admin.Id,
-                UpdatedAt = now,
-            });
-        }
-
-        await db.SaveChangesAsync();
     }
 }
