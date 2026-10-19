@@ -1,3 +1,35 @@
-.bulk-fields { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
-.bulk-row { margin-top: 14px; }
-input[type="file"] { max-width: 100%; }
+.bulk-fields {
+	border: 0;
+	padding: 0;
+	margin: 14px 0 0;
+	min-width: 0;
+}
+.bulk-row {
+	margin-top: 14px;
+}
+input[type="file"] {
+	max-width: 100%;
+}
+
+/* 행 카드 헤더 — 접기/펼치기 버튼과 (접힌 행의) 작은 삭제 버튼을 한 줄에 둔다 */
+.bulk-row-bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.bulk-row-bar .bulk-row-head {
+	flex: 1;
+	min-width: 0;
+}
+.bulk-row > .segment {
+	margin-top: 12px;
+}
+
+/* 접힌 행 헤더 우측의 작은 ✕ 삭제 버튼 — btn-secondary의 width:100%를 되돌린다 */
+.bulk-row-close {
+	flex: none;
+	width: auto;
+	padding: 2px 9px;
+	font-size: 0.8rem;
+	line-height: 1.4;
+}
