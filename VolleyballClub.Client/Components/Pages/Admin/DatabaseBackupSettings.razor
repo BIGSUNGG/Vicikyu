@@ -5,38 +5,44 @@
 
 <section class="card settings-card" data-testid="database-backup" aria-labelledby="database-backup-title" aria-busy="@(busy ? "true" : "false")">
     <h2 class="card-title" id="database-backup-title">DB 백업·복원</h2>
-    <p class="member-meta">백업에는 모든 계정의 비밀번호 해시와 Google 인증정보 등 민감정보가 포함될 수 있습니다. 암호화되지 않은 파일이므로 안전하게 보관하세요.</p>
-    @if (!busy)
-    {
-        <a class="btn-secondary" href="/api/admin/database/export" download data-testid="database-export">DB 내보내기 (.db)</a>
-    }
-    <p class="member-meta">가져오기는 계정·활동·설정 전체를 교체합니다. 현재 앱과 동일한 DB 스키마만 지원하며 최대 64MB입니다. 서버 DB 폴더의 database-backups에 교체 전 자동 백업을 보관합니다.</p>
-    <p class="member-meta">복원 중에는 잠시 이용이 중단되며, 완료 후 복원 파일의 계정으로 다시 로그인해야 합니다. 기존 Google 시트 자동 동기화는 유지되므로 서버 재시작 시 일부 기록이 시트 내용으로 다시 바뀔 수 있습니다.</p>
-    <fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
-        <div class="field">
-            <label class="form-label" for="database-import-file">가져올 DB 파일</label>
-            <InputFile id="database-import-file" data-testid="database-import-file" accept=".db" OnChange="SelectFile" />
-        </div>
-        @if (file is not null && !confirming)
+    <section class="db-group" aria-labelledby="db-export-title">
+        <h3 class="card-title" id="db-export-title">백업 — 내보내기</h3>
+        <p class="member-meta">백업에는 모든 계정의 비밀번호 해시와 Google 인증정보 등 민감정보가 포함될 수 있습니다. 암호화되지 않은 파일이므로 안전하게 보관하세요.</p>
+        @if (!busy)
         {
-            <p class="member-meta">선택한 파일: @file.Name</p>
-            <button type="button" class="btn-danger" data-testid="database-import-review" @onclick="Review">전체 복원 확인</button>
+            <a class="btn-secondary" href="/api/admin/database/export" download data-testid="database-export">DB 내보내기 (.db)</a>
         }
-        @if (confirming)
-        {
-            <div role="group" aria-labelledby="database-confirm-title" data-testid="database-confirmation">
-                <h3 class="card-title" id="database-confirm-title">현재 DB 전체를 교체할까요?</h3>
-                <p class="member-meta">@file?.Name 파일로 현재 데이터가 교체됩니다. 복원 파일의 관리자 로그인 정보를 알고 있는지 확인하세요.</p>
-                <label class="member-meta"><input type="checkbox" data-testid="database-import-acknowledge" @bind="acknowledged" /> 전체 교체와 재로그인을 확인했습니다.</label>
-                <div class="btn-row">
-                    <button type="button" class="btn-danger" data-testid="database-import-confirm" disabled="@(!acknowledged || busy)" @onclick="RestoreAsync">전체 교체 실행</button>
-                    <button type="button" class="btn-secondary" data-testid="database-import-cancel" @onclick="Cancel">취소</button>
-                </div>
+    </section>
+    <section class="db-group" aria-labelledby="db-import-title">
+        <h3 class="card-title" id="db-import-title">복원 — 가져오기</h3>
+        <p class="member-meta">가져오기는 계정·활동·설정 전체를 교체합니다. 현재 앱과 동일한 DB 스키마만 지원하며 최대 64MB입니다. 서버 DB 폴더의 database-backups에 교체 전 자동 백업을 보관합니다.</p>
+        <p class="member-meta">복원 중에는 잠시 이용이 중단되며, 완료 후 복원 파일의 계정으로 다시 로그인해야 합니다. 기존 Google 시트 자동 동기화는 유지되므로 서버 재시작 시 일부 기록이 시트 내용으로 다시 바뀔 수 있습니다.</p>
+        <fieldset disabled="@busy" style="border:0;padding:0;min-width:0">
+            <div class="field">
+                <label class="form-label" for="database-import-file">가져올 DB 파일</label>
+                <InputFile id="database-import-file" data-testid="database-import-file" accept=".db" OnChange="SelectFile" />
             </div>
-        }
-    </fieldset>
-    @if (busy) { <p class="member-meta" role="status" data-testid="database-status">DB 검증·자동 백업·복원 중… 창을 닫지 마세요.</p> }
-    @if (error is not null) { <p class="text-danger" role="alert" data-testid="database-error">@error</p> }
+            @if (file is not null && !confirming)
+            {
+                <p class="member-meta">선택한 파일: @file.Name</p>
+                <button type="button" class="btn-danger" data-testid="database-import-review" @onclick="Review">전체 복원 확인</button>
+            }
+            @if (confirming)
+            {
+                <div role="group" aria-labelledby="database-confirm-title" data-testid="database-confirmation">
+                    <h3 class="card-title" id="database-confirm-title">현재 DB 전체를 교체할까요?</h3>
+                    <p class="member-meta">@file?.Name 파일로 현재 데이터가 교체됩니다. 복원 파일의 관리자 로그인 정보를 알고 있는지 확인하세요.</p>
+                    <label class="member-meta"><input type="checkbox" data-testid="database-import-acknowledge" @bind="acknowledged" /> 전체 교체와 재로그인을 확인했습니다.</label>
+                    <div class="btn-row">
+                        <button type="button" class="btn-danger" data-testid="database-import-confirm" disabled="@(!acknowledged || busy)" @onclick="RestoreAsync">전체 교체 실행</button>
+                        <button type="button" class="btn-secondary" data-testid="database-import-cancel" @onclick="Cancel">취소</button>
+                    </div>
+                </div>
+            }
+        </fieldset>
+        @if (busy) { <p class="member-meta" role="status" data-testid="database-status">DB 검증·자동 백업·복원 중… 창을 닫지 마세요.</p> }
+        @if (error is not null) { <p class="text-danger" role="alert" data-testid="database-error">@error</p> }
+    </section>
 </section>
 
 @code {

@@ -1,0 +1,12 @@
+/* 설정 DB 백업·복원 — 백업/복원 두 하위 그룹으로 구조화.
+   .settings-card는 넓은 화면에서 2단 그리드이므로 그룹은 항상 전체 폭으로 스팬한다.
+   그룹 구분은 시트 팝업의 .sheet-pending-item + .sheet-pending-item 패턴과 동일(2px 보더·1rem 간격). */
+.db-group {
+	grid-column: 1 / -1;
+}
+
+.db-group + .db-group {
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 2px solid var(--vb-border);
+}
