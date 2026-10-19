@@ -48,7 +48,7 @@ public class Activity
 
     public string CreatedByUserId { get; set; } = "";
 
-    /// <summary>시트 가져오기로 생성된 활동의 CreatedByUserId 값 — 해당 학기 탭에 매핑된 부원만 미출석으로 계산하는 판별에 쓰인다.</summary>
+    /// <summary>시트 가져오기로 생성된 활동의 CreatedByUserId 값 — 동기화 재연결·삭제 판별에 쓰인다.</summary>
     public const string SheetImportCreator = "sheet-import";
 
     public DateTime CreatedAt { get; set; }

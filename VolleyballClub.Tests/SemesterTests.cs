@@ -2,6 +2,7 @@ using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
+using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -135,8 +136,9 @@ public class SemesterTests
     [Fact]
     public async Task Calendar_MarksMissedHeldActivitiesOnly()
     {
-        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())); // 고정 시각 2026-10-01 KST
         var member = await host.SeedUserAsync("김민수", "202512001");
+        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
 
         await SeedHeldActivityAsync(host.Db, "2026-09-25"); // 마감 활동, 미출석 → 표시
         await SeedHeldActivityAsync(host.Db, "2026-09-26", member); // 마감 활동, 출석 → 초록
@@ -156,8 +158,9 @@ public class SemesterTests
     [Fact]
     public async Task Calendar_ShowsScheduledAndNoActivityDays()
     {
-        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())); // 고정 시각 2026-10-01 KST
         var member = await host.SeedUserAsync("김민수", "202512001");
+        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
 
         await SeedHeldActivityAsync(host.Db, "2026-10-16"); // 마감 활동, 미출석 — 마크보다 우선
         await using (var ctx = host.Db.CreateContext())

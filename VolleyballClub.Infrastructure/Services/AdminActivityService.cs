@@ -312,8 +312,18 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
     {
         var rows = await ListAsync(db, ct);
         var row = rows.SingleOrDefault(r => r.Key == key) ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
+        // 그 활동 날짜의 학기 탭에 매핑된 부원만 나열한다 — 당시 부원이 아니었던 부원은 미출석 행에 보이지 않는다.
+        // 어느 탭에도 속하지 않는 날짜(방학)의 활동은 귀속 부원이 없다.
+        var tabName = row.TabName ?? resolver.ResolveByDate(row.Date)?.TabName;
+        if (tabName is null) return [];
+        var sheetIds = await db.SheetDefinitions.Where(s => s.Kind == SheetKind.Attendance).Select(s => s.Id).ToListAsync(ct);
+        var memberIds = await db.SheetMemberMappings.AsNoTracking()
+            .Where(m => m.TabName == tabName && sheetIds.Contains(m.SheetDefinitionId)
+                && (row.SheetId == null || m.SheetDefinitionId == row.SheetId))
+            .Select(m => m.UserId)
+            .ToListAsync(ct);
         var attendance = await db.Attendances.Where(a => a.ActivityId == row.ActivityId).ToDictionaryAsync(a => a.UserId, ct);
-        var users = await db.Users.OrderBy(u => u.Name).ToListAsync(ct);
+        var users = await db.Users.Where(u => memberIds.Contains(u.Id)).OrderBy(u => u.Name).ToListAsync(ct);
         return users.Select(u => { var a = attendance.GetValueOrDefault(u.Id); return new AttendanceMemberDto(u.Id, u.Name, u.StudentNumber,
             u.Department, a is not null, a?.CheckedAt, a?.AttendanceType, a?.Id ?? 0); }).ToList();
     }, ct);
@@ -374,10 +384,16 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
             var teams = await db.TeamMembers.Where(m => m.UserId == userId).Select(m => m.Team!.ActivityId).ToListAsync(ct);
             var today = KstClock.Today(clock);
             var (from, to) = await SemesterPeriodResolver.GetCurrentRangeAsync(db, today);
+            // 부원이 매핑된 학기 활동과 실제 출석한 활동만 나타낸다 — 비회원 학기의 미출석 행은 제외한다
+            var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, resolver, userId, ct);
+            var attendedActivityIds = attendance.Select(x => x.ActivityId).ToHashSet();
             return new(userId, attendance.Count(a => a.ActivityDate.Year == today.Year && a.ActivityDate.Month == today.Month),
                 attendance.Count(a => a.ActivityDate >= from && a.ActivityDate <= to), attendance.Count,
-                activities.Select(a => new MemberActivityRowDto(a.Key, a.ActivityId, a.Date, a.SourceLabel, a.StateText,
-                    attendance.Any(x => x.ActivityId == a.ActivityId), a.CanEditAttendance, a.ActivityId is { } id && teams.Contains(id))).ToList());
+                activities
+                    .Where(a => MemberActivityAttribution.IsAttributed(a.Date, mappedPeriods)
+                        || a.ActivityId is { } id && attendedActivityIds.Contains(id))
+                    .Select(a => new MemberActivityRowDto(a.Key, a.ActivityId, a.Date, a.SourceLabel, a.StateText,
+                        attendance.Any(x => x.ActivityId == a.ActivityId), a.CanEditAttendance, a.ActivityId is { } tid && teams.Contains(tid))).ToList());
         }, ct);
     }
 }

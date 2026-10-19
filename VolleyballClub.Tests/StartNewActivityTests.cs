@@ -3,6 +3,7 @@ using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
+using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
 
@@ -122,8 +123,9 @@ public sealed class StartNewActivityTests
     [Fact]
     public async Task Calendar_MissesSameDateSessionsOnce()
     {
-        await using var host = new ServiceHost();
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
         var member = await host.SeedUserAsync("민수", "202610002");
+        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
         var date = Domain.KstClock.Today(host.Time);
         await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);
         await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);

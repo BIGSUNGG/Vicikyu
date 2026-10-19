@@ -141,7 +141,8 @@ public sealed partial class AdminActivityManagementTests
         Assert.Equal(edited, resynced); Assert.Equal(row.ActivityId, edited.ActivityId); Assert.Equal(2, edited.AttendanceCount);
         var member = await h.Service.GetMemberActivitiesAsync("unmapped");
         Assert.Equal(1, member.TotalCount); Assert.Equal(1, member.SemesterCount); Assert.Equal(0, member.MonthCount);
-        Assert.Equal(3, member.Items.Count); Assert.True(member.Items.Single(r => r.Key == row.Key).IsAttended);
+        // 매핑 없는 부원에게는 실제 출석한 활동 행만 나타난다(비회원 학기의 미출석 행 제외)
+        Assert.Single(member.Items); Assert.True(member.Items.Single(r => r.Key == row.Key).IsAttended);
         await using var verify = h.Db.CreateContext();
         Assert.All(await verify.Attendances.ToListAsync(), a => Assert.Equal(AttendanceType.Admin, a.AttendanceType));
     }

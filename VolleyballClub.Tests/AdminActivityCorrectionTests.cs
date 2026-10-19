@@ -89,6 +89,28 @@ public sealed partial class AdminActivityManagementTests
     }
 
     [Fact]
+    public async Task Member_rows_and_day_members_are_scoped_to_mapped_semester_tab()
+    {
+        await using var h = new Host(); await h.Seed();
+        // 같은 시트에 2026-1 탭 완료 열 추가 — 'a'는 2026-2 탭에만 매핑되어 있다
+        h.Sheets.Documents["first"].Add(new SheetTab("2026-1",
+            [["활동 상태", "활동 완료"], ["부원", "26. 03. 02. 월"], ["A", ""]]));
+        await h.Sync.SyncAsync();
+        var rows = await h.List();
+        var spring = rows.Single(r => r.Date == new DateOnly(2026, 3, 2)); // 2026-1 완료 — 'a' 미매핑 학기
+        var autumn = rows.Single(r => r.Date == new DateOnly(2026, 9, 1) && r.Kind == SheetDayKind.Completed); // 2026-2 완료
+
+        // 부원 상세 활동 목록: 미매핑 학기 활동 행은 나타나지 않는다
+        var details = await h.Service.GetMemberActivitiesAsync("a");
+        Assert.DoesNotContain(details.Items, r => r.Date == new DateOnly(2026, 3, 2));
+        Assert.Contains(details.Items, r => r.Date == new DateOnly(2026, 9, 1));
+
+        // 일별 부원 목록: 그 활동의 학기 탭에 매핑된 부원만 나열된다
+        Assert.Empty(await h.Service.GetMembersAsync(spring.Key));
+        Assert.Equal("a", (await h.Service.GetMembersAsync(autumn.Key)).Single().UserId);
+    }
+
+    [Fact]
     public async Task One_failed_pending_export_does_not_detach_the_next_successful_export()
     {
         await using var h = new Host(); await h.Seed(); await h.List();

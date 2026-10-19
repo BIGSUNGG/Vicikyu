@@ -234,14 +234,18 @@ public class AttendanceService(
                 .ToListAsync())
             .ToHashSet();
 
-        // 출석 추가 후보 — 현재 학기의 시작된 활동(이미 출석한 활동은 화면에서 비활성 표시)
+        // 출석 추가 후보 — 현재 학기의 시작된 활동(이미 출석한 활동은 화면에서 비활성 표시).
+        // 미매핑 학기 활동은 제외 — 추가가 어차피 행 매핑 검증(SetAttendanceAsync)에서 거부된다.
         var attendedIds = records.Select(x => x.ActivityId).ToHashSet();
-        var candidates = await db.Activities.AsNoTracking()
+        var candidatePeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
+        var candidates = (await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
             .OrderByDescending(a => a.ActivityDate)
             .ThenByDescending(a => a.Id)
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
-            .ToListAsync();
+            .ToListAsync())
+            .Where(a => MemberActivityAttribution.IsAttributed(a.ActivityDate, candidatePeriods))
+            .ToList();
 
         return new MemberAttendanceAdminDto(
             userId,
@@ -307,7 +311,7 @@ public class AttendanceService(
 
         var activityIdsByDate = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
-            .Select(a => new { a.Id, a.ActivityDate, a.Status, a.CreatedByUserId })
+            .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync();
 
         // 같은 날 여러 세션이면 하루 치로 병합한다(BuildWeeks의 날짜 딕셔너리 중복 방지)
@@ -318,13 +322,13 @@ public class AttendanceService(
 
         // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
         // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지).
-        // 시트 가져오기 활동은 그 학기 탭에 매핑된 부원만 결석으로 표시한다(비회원 학기 제외)
+        // 부원이 매핑된 학기의 활동만 결석으로 표시한다(비회원·방학 학기 제외)
         var attendedDates = myAttendances.Select(x => x.ActivityDate).ToHashSet();
-        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
+        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
         days.AddRange(activityIdsByDate
             .Where(a => a.Status == ActivityStatus.ActivityClosed
                 && !attendedDates.Contains(a.ActivityDate)
-                && CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
+                && MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
             .GroupBy(a => a.ActivityDate)
             .Select(g => new CalendarDayDto(g.Key, CalendarDayKind.Missed, null)));
 
@@ -350,27 +354,6 @@ public class AttendanceService(
         return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount, scope);
     }
 
-    /// <summary>이 부원이 시트 탭에 매핑된 학기 기간 목록 — 매핑은 곧 '그 학기에 부원이었다'의 판별 근거.</summary>
-    private async Task<List<(DateOnly From, DateOnly To)>> GetMappedPeriodsAsync(ApplicationDbContext db, string userId)
-    {
-        var tabNames = await db.SheetMemberMappings.AsNoTracking()
-            .Where(m => m.UserId == userId)
-            .Select(m => m.TabName)
-            .ToListAsync();
-
-        return tabNames
-            .Select(formatResolver.ResolveByTabName)
-            .Where(format => format is not null)
-            .Select(format => (format!.From, format.To))
-            .ToList();
-    }
-
-    /// <summary>미출석 계산 대상 활동인지 — 앱 활동은 항상 대상,
-    /// 시트 가져오기 활동은 그 학기 탭에 매핑된 부원만 대상(비회원 학기의 과거 활동은 미출석에서 제외).</summary>
-    private static bool CountsForUser(string createdByUserId, DateOnly activityDate, List<(DateOnly From, DateOnly To)> mappedPeriods) =>
-        createdByUserId != Activity.SheetImportCreator
-        || mappedPeriods.Any(p => activityDate >= p.From && activityDate <= p.To);
-
     /// <summary>현재 학기 범위 DTO — 학기 행이 없으면 기본 규칙 범위에 Name=null.</summary>
     private async Task<SemesterScopeDto> GetCurrentSemesterScopeAsync(ApplicationDbContext db)
     {
@@ -393,7 +376,7 @@ public class AttendanceService(
 
         var activities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
-            .Select(a => new { a.Id, a.ActivityDate, a.Status, a.CreatedByUserId })
+            .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync();
 
         var myAttendances = await db.Attendances.AsNoTracking()
@@ -401,11 +384,11 @@ public class AttendanceService(
             .Select(x => new { x.ActivityId, x.CheckedAt })
             .ToListAsync();
 
-        // 시트 가져오기 활동 중 이 부원이 매핑되지 않은 학기는 비회원 기간 — 미출석으로 표시하지 않는다
+        // 부원이 매핑된 학기의 활동과 실제 출석한 활동만 표시한다(비회원 학기는 미출석으로 표시하지 않는다)
         var attendedIds = myAttendances.Select(x => x.ActivityId).ToHashSet();
-        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
+        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
         var visible = activities
-            .Where(a => attendedIds.Contains(a.Id) || CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
+            .Where(a => attendedIds.Contains(a.Id) || MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
             .ToList();
 
         var records = visible
@@ -432,15 +415,14 @@ public class AttendanceService(
         var scope = await GetCurrentSemesterScopeAsync(db);
         var (semStart, semEnd) = (scope.Start, scope.End);
 
-        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모.
-        // 시트 가져오기 활동 중 이 부원이 매핑되지 않은 학기는 비회원 기간 — 분모에서도 제외한다
+        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모 — 부원이 매핑된 학기의 활동만 센다(비회원·방학 학기 제외)
         var semesterActivities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
-            .Select(a => new { a.Id, a.ActivityDate, a.CreatedByUserId })
+            .Select(a => new { a.Id, a.ActivityDate })
             .ToListAsync();
-        var mappedPeriods = await GetMappedPeriodsAsync(db, userId);
+        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
         var countedActivities = semesterActivities
-            .Where(a => CountsForUser(a.CreatedByUserId, a.ActivityDate, mappedPeriods))
+            .Where(a => MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
             .Select(a => a.Id)
             .ToList();
 

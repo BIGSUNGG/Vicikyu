@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
+using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -11,8 +12,9 @@ public class RecordsTests
     [Fact]
     public async Task Records_ListsAllMonthActivities_LatestFirst_WithEvents()
     {
-        await using var host = new ServiceHost();
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
         var alice = await host.SeedUserAsync("김민수", "202512001");
+        await host.SeedManagedSheetAsync(alice); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
 
         // 다른 달 활동은 제외
         await host.SeedActivityAsync(new DateOnly(2026, 9, 30), ActivityStatus.ActivityClosed);
@@ -43,8 +45,9 @@ public class RecordsTests
     [Fact]
     public async Task Records_AreScopedToRequestingUser()
     {
-        await using var host = new ServiceHost();
+        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
         var alice = await host.SeedUserAsync("김민수", "202512001");
+        await host.SeedManagedSheetAsync(alice); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
         var bob = await host.SeedUserAsync("박지훈", "202512002");
 
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
