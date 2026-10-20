@@ -214,7 +214,46 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
         return (index, true, cells);
     }
 
-    public Task<ManagedActivityDto> EditAsync(string key, ActivityEditRequest request, CancellationToken ct = default) => Locked(async db =>
+    /// 변경 저장 1회 = 활동 편집 적용 후 출석 일괄 적용(변경 저장 화면 흐름). 출석은 편집 이후 상태(예: 완료 전환 직후)를 기준으로 검증한다.
+    /// 잠금 순서 규칙(ManagedSheetEdits.Gate → AttendanceCommitGate)을 지키고, 시트 푸시는 잠금 밖에서 1회만 한다.
+    public Task<ManagedActivityDto> EditAsync(string key, ActivityEditRequest request, CancellationToken ct = default)
+    {
+        if (request.Attendances is not { Count: > 0 }) return Locked(db => EditCoreAsync(db, key, request, ct), ct);
+        return SaveWithAttendancesAsync(key, request, ct);
+    }
+
+    private async Task<ManagedActivityDto> SaveWithAttendancesAsync(string key, ActivityEditRequest request, CancellationToken ct)
+    {
+        var result = await Locked(async db =>
+        {
+            // 편집이 먼저 커밋되므로 출석 적용 가능성은 커밋 전에 검증한다 — 사후 실패는 부분 적용이 되기 때문이다.
+            var s = await Source(db, key, request.SheetId, request.TabName);
+            var kindAfter = request.Kind ?? s.Kind;
+            if (kindAfter == SheetDayKind.NoActivity)
+                throw new ConflictException("활동 없음 상태에서는 출석을 변경할 수 없습니다.");
+            // 예정 복귀는 편집 커밋에서 액티비티를 제거한다 — 커밋 후 출석 루프가 실패해 부분 적용이 되므로 커밋 전에 거부한다.
+            // (진행 중 활동의 kind:null 출석 저장은 여기서 걸리지 않는다.)
+            if (request.Kind == SheetDayKind.Scheduled)
+                throw new ConflictException("예정으로 변경하는 저장에는 출석 변경을 포함할 수 없습니다. 상태만 먼저 저장하세요.");
+            if (kindAfter != SheetDayKind.Completed && !Editable(s.Activity))
+                throw new ConflictException("완료·진행 중 활동만 출석을 변경할 수 있습니다. 상태를 활동 완료로 먼저 선택하세요.");
+            var dto = await EditCoreAsync(db, key, request, ct);
+            await ManagedSheetEdits.AttendanceCommitGate.WaitAsync(ct);
+            try
+            {
+                foreach (var attendance in request.Attendances!)
+                    await SetAttendanceCoreAsync(db, dto.Key, attendance.UserId, new(attendance.IsAttended, ConfirmTeamImpact: true), ct);
+            }
+            finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+            // 출석 반영 후의 최신 상태를 반환한다 — dto는 편집 직후 스냅샷이라 출석 수가 낡아 있다.
+            var activityId = dto.ActivityId;
+            return (await ListAsync(db, ct)).Single(r => r.Key == dto.Key || r.ActivityId == activityId && activityId != null);
+        }, ct);
+        if (result.ActivityId is { } activityId) await sync.PushActivityAsync(activityId, ct);
+        return result;
+    }
+
+    private async Task<ManagedActivityDto> EditCoreAsync(ApplicationDbContext db, string key, ActivityEditRequest request, CancellationToken ct)
     {
         var s = await Source(db, key, request.SheetId, request.TabName);
         var kind = request.Kind ?? s.Kind;
@@ -261,7 +300,7 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
             await AuditAsync(db, s, AdminAction.SettingChange, "수정");
         });
         return (await ListAsync(db, ct)).Single(r => r.Key == s.Id || r.ActivityId == s.ActivityId && s.ActivityId != null);
-    }, ct);
+    }
 
     private Activity Completed(DateOnly date)
     {
@@ -331,12 +370,21 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
     public async Task SetAttendanceAsync(string key, string userId, ActivityAttendanceRequest request, CancellationToken ct = default)
     {
         await currentUser.RequireAdminAsync();
-        int activityId;
         await ManagedSheetEdits.AttendanceCommitGate.WaitAsync(ct);
+        int activityId;
         try
         {
             await using var db = await factory.CreateDbContextAsync(ct);
-            var source = await db.ActivitySources.Include(s => s.Activity).ThenInclude(a => a!.Attendances)
+            activityId = await SetAttendanceCoreAsync(db, key, userId, request, ct);
+        }
+        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
+        await sync.PushActivityAsync(activityId, ct);
+    }
+
+    /// 단일 부원 출석 적용(잠금·푸시 없는 코어) — 호출자가 AttendanceCommitGate를 잡은 상태로 호출해야 한다. 활동 Id를 반환한다.
+    private async Task<int> SetAttendanceCoreAsync(ApplicationDbContext db, string key, string userId, ActivityAttendanceRequest request, CancellationToken ct)
+    {
+        var source = await db.ActivitySources.Include(s => s.Activity).ThenInclude(a => a!.Attendances)
                 .SingleOrDefaultAsync(s => s.Id == key, ct);
             var activity = source?.Activity;
             if (key.StartsWith("app:") && int.TryParse(key[4..], out var id))
@@ -367,10 +415,7 @@ public sealed class AdminActivityService(IDbContextFactory<ApplicationDbContext>
                 Action = request.IsAttended ? AdminAction.AttendanceAdd : AdminAction.AttendanceRemove, TargetType = "User", TargetId = userId,
                 Details = $"{member.Name} {a.ActivityDate:yyyy-MM-dd} 출석 {(request.IsAttended ? "추가" : "취소")}", CreatedAt = now });
             await db.SaveChangesAsync(ct);
-            activityId = a.Id;
-        }
-        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
-        await sync.PushActivityAsync(activityId, ct);
+            return a.Id;
     }
 
     public async Task<MemberActivityListDto> GetMemberActivitiesAsync(string userId, CancellationToken ct = default)

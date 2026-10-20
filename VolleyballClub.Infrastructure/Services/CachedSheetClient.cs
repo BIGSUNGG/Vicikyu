@@ -94,7 +94,7 @@ public sealed class CachedSheetClient(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "시트 탭 캐시 무효화 실패 — TTL({Ttl}) 후 자동 만료: {SpreadsheetId}",
-                RedisSheetTabCache.Ttl, spreadsheetId);
+                MemorySheetTabCache.Ttl, spreadsheetId);
         }
     }
 }

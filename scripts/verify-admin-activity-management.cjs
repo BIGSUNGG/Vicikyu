@@ -5,6 +5,11 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+// 비JSON 본문은 즉시 실패가 검증 의도 — throw 그대로 두되 오류 맥락을 붙인다.
+function parseJson(text, what) {
+  try { return JSON.parse(text); }
+  catch (e) { throw new Error(`${what}: invalid JSON (${e.message}): ${text.slice(0, 200)}`); }
+}
 const root = path.resolve(__dirname, '..');
 const out = path.join(root, 'artifacts/admin-activity-management/browser');
 fs.mkdirSync(out, { recursive: true });
@@ -59,10 +64,11 @@ async function api(method, resource, body, expected = 200) {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const response = await fetch(resource, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
-    return { status: response.status, data: text ? JSON.parse(text) : null };
+    return { status: response.status, text };
   }, { method, resource, body });
-  assert.equal(result.status, expected, `${method} ${resource}: ${JSON.stringify(result.data)}`);
-  return result.data;
+  const data = result.text ? parseJson(result.text, `${method} ${resource} → ${result.status}`) : null;
+  assert.equal(result.status, expected, `${method} ${resource}: ${result.text?.slice(0, 300)}`);
+  return data;
 }
 const fixture = '/api/verification/activity-management';
 const state = () => api('GET', `${fixture}/state`);
@@ -89,9 +95,19 @@ async function action(method, url, perform, expected = 200) {
   return response.status() === 204 ? null : response.json();
 }
 async function select(key) {
-  await row(key).getByRole('button', { name: /수정$/ }).click();
+  await row(key).locator('.activity-summary').click();
   await page.locator('.activity-members[data-load-state="ready"]').waitFor();
-  assert.equal(await page.locator('.activity-edit').getAttribute('data-activity-key'), key);
+  assert.equal(await row(key).locator('.activity-summary').getAttribute('aria-expanded'), 'true', 'row expanded');
+}
+async function collapse(key) {
+  await row(key).locator('.activity-summary').click();
+  await page.waitForFunction(k => {
+    const el = document.querySelector(`.activity-list [data-activity-key="${k}"] .activity-summary`);
+    return el && el.getAttribute('aria-expanded') === 'false';
+  }, key);
+}
+async function pendingToggles(n) {
+  await page.getByText(`${n}건의 출석 변경이 저장 대기 중입니다.`).waitFor();
 }
 async function create(target, date, kind, reason) {
   await page.locator('#activity-create-target').selectOption({ label: target });
@@ -126,7 +142,7 @@ function assertAttendance(s, sourceId, userId, attended) {
 async function measure(label, dialog = false) {
   const measurement = await page.evaluate(({ dialog }) => {
     const rect = element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
-    const selectors = dialog ? ['[role="dialog"]'] : ['.app-shell', '.activity-list', '.activity-edit', '.member-attendance'];
+    const selectors = dialog ? ['[role="dialog"]'] : ['.app-shell', '.activity-list', '.activity-edit-panel', '.member-attendance'];
     const boxes = selectors.flatMap(selector => [...document.querySelectorAll(selector)].map(element => ({ selector, ...rect(element) })));
     const modal = document.querySelector('[role="dialog"]');
     return { viewport: { width: innerWidth, height: innerHeight }, scrollWidth: document.scrollingElement.scrollWidth,
@@ -227,20 +243,56 @@ async function verify() {
   caseDone('date/reason/status persisted on reload + real resync; empty completed conversion', { changed });
 
   const memberSwitch = () => page.locator(`.activity-members [data-user-id="${member.id}"] [role="switch"]`);
-  const toggleUrl = `${resource(editable.key)}/members/${member.id}`;
-  await memberSwitch().focus();
-  await action('PUT', toggleUrl, () => page.keyboard.press('Space'), 204);
+  // 로컬 토글: 클릭·키보드 모두 화면 표시만 바뀌고 DB·시트는 그대로다.
+  await memberSwitch().click();
+  await pendingToggles(1);
+  assert.equal(await memberSwitch().isChecked(), true, 'switch visual on');
+  assert.ok((await page.locator(`.activity-members [data-user-id="${member.id}"]`).textContent()).includes('출석'), 'row meta shows attendance');
+  assertAttendance(await state(), editedSourceId, member.id, false);
+  assert.equal((await activities()).find(x => x.key === editable.key).attendanceCount, 0, 'list count unchanged before save');
+  // 변경 저장 1회로 출석이 DB·시트에 반영된다.
+  await action('PUT', resource(editable.key), () => page.getByRole('button', { name: '변경 저장', exact: true }).click());
   assertAttendance(await state(), editedSourceId, member.id, true);
   assert.equal((await activities()).find(x => x.key === editable.key).attendanceCount, 1);
+  // 출석자가 있는 상태에서 없음 전환은 서버가 거부한다(기존 규칙).
   await edit(editable.key, '2026-10-28', 2, '', 409);
   await page.locator('.activity-write-error[role="alert"]').waitFor();
   assertAttendance(await state(), editedSourceId, member.id, true);
+  // 미저장 출석 변경 + 없음 전환도 사전 검증으로 거부된다(부분 적용 없음).
+  await page.locator('#activity-edit-state').selectOption('');
   await memberSwitch().click();
-  await dialogMeasure('desktop-attendance-dialog');
-  await action('PUT', toggleUrl, () => page.getByRole('dialog').getByRole('button', { name: '출석 취소 확인', exact: true }).click(), 204);
+  await pendingToggles(1);
+  await edit(editable.key, '2026-10-28', 2, '', 409);
+  await page.locator('.activity-write-error[role="alert"]').waitFor();
+  assertAttendance(await state(), editedSourceId, member.id, true, 'no partial apply');
+  // 저장 실패 후 재시도: 토글 off + 저장으로 해제(확인 다이얼로그 없음).
+  await page.locator('#activity-edit-state').selectOption('');
+  await memberSwitch().click();
+  await pendingToggles(1);
+  await action('PUT', resource(editable.key), () => page.getByRole('button', { name: '변경 저장', exact: true }).click());
   assertAttendance(await state(), editedSourceId, member.id, false);
   assert.equal((await activities()).find(x => x.key === editable.key).attendanceCount, 0);
-  caseDone('activity editor keyboard on/off / count / server refuses none with attendance', { memberId: member.id });
+  caseDone('local-only toggle / one-shot save / server refuses none with pending attendance', { memberId: member.id });
+
+  // 예정 활동: 완료 선택만으로 출석 잠금이 즉시 풀리고, 상태 전환+출석이 한 번의 저장으로 반영된다.
+  await select(scheduled.key);
+  assert.equal(await page.locator('.activity-members [role="switch"]:enabled').count(), 0, 'scheduled locked');
+  await page.locator('#activity-edit-state').selectOption('0');
+  await page.waitForFunction(() => {
+    const first = document.querySelector('.activity-members [role="switch"]');
+    return first && !first.disabled;
+  });
+  await memberSwitch().click();
+  await pendingToggles(1);
+  await action('PUT', resource(scheduled.key), () => page.getByRole('button', { name: '변경 저장', exact: true }).click());
+  assertAttendance(await state(), sourceId(scheduled.key), member.id, true);
+  const scheduledDone = (await activities()).find(x => x.key === scheduled.key);
+  assert.equal(scheduledDone.kind, 0); assert.equal(scheduledDone.attendanceCount, 1);
+  // 펼친 행은 재클릭으로 접힌다 — 닫기 버튼은 존재하지 않는다.
+  assert.equal(await page.getByRole('button', { name: '닫기', exact: true }).count(), 0, 'no close button');
+  await collapse(scheduled.key);
+  assert.equal(await page.locator('.activity-edit-panel').count(), 0, 'panel removed on collapse');
+  caseDone('status dropdown unlocks attendance instantly / batch complete+attend / row collapse', { scheduledDone });
 
   await goto(`/admin/members/${member.id}`);
   await page.getByRole('link', { name: '출석 기록', exact: true }).click();
@@ -249,6 +301,8 @@ async function verify() {
   assert.deepEqual(beforeStats.items.map(x => x.date), beforeStats.items.map(x => x.date).sort().reverse());
   for (const record of beforeStats.items.filter(x => !x.canEditAttendance))
     assert.equal(await memberRow(record.key).getByRole('switch').isDisabled(), true);
+  // 부원 상세 페이지는 즉시 저장 방식을 그대로 쓴다(범위 밖 페이지) — 단일 출석 API로 검증.
+  const toggleUrl = `${resource(editable.key)}/members/${member.id}`;
   await action('PUT', toggleUrl, () => memberRow(editable.key).getByRole('switch').click(), 204);
   assertAttendance(await state(), editedSourceId, member.id, true);
   const afterStats = await api('GET', `/api/admin/members/${member.id}/activities`);
@@ -262,8 +316,9 @@ async function verify() {
 
   await goto('/admin/activities'); await ready();
   await select(initialCompleted.key);
-  await action('PUT', `${resource(initialCompleted.key)}/members/${member.id}`,
-    () => page.locator(`.activity-members [data-user-id="${member.id}"] [role="switch"]`).click(), 204);
+  await page.locator(`.activity-members [data-user-id="${member.id}"] [role="switch"]`).click();
+  await pendingToggles(1);
+  await action('PUT', resource(initialCompleted.key), () => page.getByRole('button', { name: '변경 저장', exact: true }).click());
   assertAttendance(await state(), deletedSourceId, member.id, true);
   await measure('mobile-activities');
   const beforeDelete = await state();
@@ -287,7 +342,7 @@ async function verify() {
   assert.deepEqual(s.teamMembers, beforeDelete.teamMembers.filter(x => !deletedTeams.includes(x.teamId)));
   assert.deepEqual(s.members, beforeDelete.members); assert.deepEqual(s.semesters, beforeDelete.semesters);
   const relativeValues = raw => raw.map(value => {
-    const cell = JSON.parse(value);
+    const cell = parseJson(value, 'source cell');
     if (cell.formulaValue) cell.formulaValue = cell.formulaValue.replace(/(\$?)[A-Z]+(?=\$?\d)/g, '$1COLUMN');
     return cell;
   });
@@ -325,15 +380,16 @@ async function verify() {
   await page.locator('.attendance-card[data-load-state="ready"]').waitFor();
   const oldRow = page.locator('.attendance-card .member-row').filter({ hasText: member.studentNumber });
   const todayBefore = await state();
+  // 이 페이지도 지연 저장 모델 — 토글 후 '변경 저장' 1회로 취소·재등록이 반영된다.
   await oldRow.locator('input[type="checkbox"]').click();
-  await page.locator('.confirm-box').waitFor();
-  await action('DELETE', `/api/admin/attendance/${member.id}`, () => page.getByRole('button', { name: '취소하기', exact: true }).click(), 204);
-  await action('POST', `/api/admin/attendance/${member.id}`, () => oldRow.locator('input[type="checkbox"]').click(), 204);
+  await action('DELETE', `/api/admin/attendance/${member.id}`, () => page.locator('[data-testid="attendance-save"]').click(), 204);
+  await oldRow.locator('input[type="checkbox"]').click();
+  await action('POST', `/api/admin/attendance/${member.id}`, () => page.locator('[data-testid="attendance-save"]').click(), 204);
   const todayAfter = await state();
   const today = todayAfter.activities.find(x => x.activityDate === '2026-10-16');
   assert.equal(todayAfter.attendances.some(x => x.activityId === today.id && x.userId === member.id), true);
   assert.equal(todayAfter.attendances.length, todayBefore.attendances.length);
-  caseDone('existing /admin/attendance old UI remove+add flow remains functional', { activityId: today.id });
+  caseDone('existing /admin/attendance deferred-save toggle flow remains functional', { activityId: today.id });
   report.finalState = todayAfter;
   assert.ok(report.wasmResponses > 0, 'actual WASM binary loaded');
   assert.deepEqual(report.browserErrors, [], 'no JS errors or server circuits');

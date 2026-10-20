@@ -3,7 +3,7 @@ using VolleyballClub.Application.Dtos;
 namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>시트 탭 원본 전체 읽기(ISheetClient.GetTabsAsync, tabNames=null) 결과의 캐시 저장소.
-/// CachedSheetClient가 사용하고 Redis 구현은 RedisSheetTabCache. 원격 Google Sheets API 지연을
+/// CachedSheetClient가 사용하고 메모리 구현은 MemorySheetTabCache. 원격 Google Sheets API 지연을
 /// 흡수하기 위한 투명 최적화 계층이다 — 캐시 오류는 읽기·쓰기 기능을 해쳐서는 안 된다.</summary>
 public interface ISheetTabCache
 {

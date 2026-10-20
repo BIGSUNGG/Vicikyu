@@ -45,9 +45,8 @@ public static class DependencyInjection
         services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
         services.AddSingleton(TimeProvider.System);
         // 시트 원본 읽기 캐시 — GoogleSheetClient 앞에 데코레이터로 조립한다(원본 클라이언트는 무변경).
-        // IConnectionMultiplexer는 Web Program.cs에서 기동 시 연결해 등록한다(필수 의존 — 실패 시 기동 중단).
         services.AddSingleton<GoogleSheetClient>();
-        services.AddSingleton<ISheetTabCache, RedisSheetTabCache>();
+        services.AddSingleton<ISheetTabCache, MemorySheetTabCache>();
         services.AddSingleton<ISheetClient>(sp => new CachedSheetClient(
             sp.GetRequiredService<GoogleSheetClient>(),
             sp.GetRequiredService<ISheetTabCache>(),

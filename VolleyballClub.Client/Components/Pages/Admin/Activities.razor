@@ -90,121 +90,123 @@
         }
         @foreach (var activity in activities)
         {
-            <div class="member-row" @key="activity.Key" data-activity-key="@activity.Key">
-                <div class="activity-description">
-                    <div class="member-name">@activity.Date.ToString("yyyy.MM.dd") · @activity.StateText</div>
-                    <div class="member-meta">@activity.SourceLabel · 출석 @activity.AttendanceCount 명</div>
+            var isExpanded = selectedKey == activity.Key;
+            <div class="member-row activity-item" @key="activity.Key" data-activity-key="@activity.Key">
+                <div class="activity-summary" role="button" tabindex="0"
+                     aria-expanded="@(isExpanded ? "true" : "false")"
+                     aria-label="@($"{activity.Date:yyyy.MM.dd} {activity.SourceLabel} 활동 편집 {(isExpanded ? "접기" : "펼치기")}")"
+                     @onclick="() => ToggleRowAsync(activity)"
+                     @onkeydown="(e) => RowKeyDown(e, activity)" @onkeydown:preventDefault>
+                    <div class="activity-description">
+                        <div class="member-name">@activity.Date.ToString("yyyy.MM.dd") · @activity.StateText</div>
+                        <div class="member-meta">@activity.SourceLabel · 출석 @activity.AttendanceCount 명</div>
+                    </div>
+                    <span class="activity-chevron" aria-hidden="true">▾</span>
                 </div>
-                <button type="button" class="filter-btn @(selectedKey == activity.Key ? "active" : "")" disabled="@busy"
-                        aria-label="@($"{activity.Date:yyyy.MM.dd} {activity.SourceLabel} 수정")" @onclick="() => SelectAsync(activity)">수정</button>
+                @if (isExpanded && selected is not null)
+                {
+                    <div class="activity-edit-panel">
+                        <h3 class="sec-title">활동 수정 — @selected.Date.ToString("yyyy.MM.dd")</h3>
+                        <p class="member-meta">@selected.SourceLabel · 현재 @selected.StateText</p>
+                        <EditForm Model="editForm" OnValidSubmit="SaveAsync">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+                            <fieldset disabled="@(busy || loading || loadError is not null)">
+                                @if (selected.SheetId is null)
+                                {
+                                    <div class="field">
+                                        <label class="form-label" for="activity-edit-target">앱 활동 연결 대상 시트 / 탭</label>
+                                        <InputSelect id="activity-edit-target" class="form-control" @bind-Value="editForm.Target" required>
+                                            <option value="">대상 선택…</option>
+                                            @for (var i = 0; i < targets.Count; i++)
+                                            {
+                                                <option value="@i">@targets[i].SheetName / @targets[i].TabName</option>
+                                            }
+                                        </InputSelect>
+                                    </div>
+                                }
+                                <div class="activity-fields">
+                                    <div class="field">
+                                        <label class="form-label" for="activity-edit-date">날짜</label>
+                                        <InputDate id="activity-edit-date" class="form-control" @bind-Value="editForm.Date" required />
+                                    </div>
+                                    <div class="field">
+                                        <label class="form-label" for="activity-edit-state">상태 변경</label>
+                                        <InputSelect id="activity-edit-state" class="form-control" @bind-Value="editForm.State">
+                                            <option value="">현재 상태 유지 (@selected.StateText)</option>
+                                            <option value="1">활동 예정</option>
+                                            <option value="0">활동 완료</option>
+                                            <option value="2">활동 없음</option>
+                                        </InputSelect>
+                                    </div>
+                                </div>
+                                <p class="member-meta">출석자가 있으면 예정·없음 전환이 거부됩니다. 완료 전환 시 운영 활동이 종료되고 팀 편성이 해제됩니다.</p>
+                                @if (editForm.State == "2" || (editForm.State == "" && selected.Kind == SheetDayKind.NoActivity))
+                                {
+                                    <div class="field">
+                                        <label class="form-label" for="activity-edit-reason">사유 (선택, 500자 이하)</label>
+                                        <InputText id="activity-edit-reason" class="form-control" @bind-Value="editForm.Reason" maxlength="500" />
+                                    </div>
+                                }
+                                <h4 class="sec-title">부원 출석</h4>
+                                <p class="member-meta">체크는 화면 표시만 바뀌고 '변경 저장'을 누를 때 활동 상태와 함께 한 번에 저장됩니다. 완료(또는 완료로 변경 중) 활동만 수정할 수 있고, 출석 해제 시 팀 편성에서도 제외됩니다.</p>
+                                <div class="activity-members" aria-busy="@(membersLoading ? "true" : "false")" data-load-state="@(membersLoading ? "loading" : membersError is not null ? "error" : "ready")">
+                                    @if (membersLoading)
+                                    {
+                                        <span role="status" class="admin-load-status">부원 출석을 불러오는 중…</span>
+                                        <div aria-hidden="true"><div class="member-row"><span class="loading-placeholder">&nbsp;</span></div></div>
+                                    }
+                                    else if (membersError is not null)
+                                    {
+                                        <div role="alert"><p>@membersError</p><button type="button" class="btn-primary" disabled="@busy" @onclick="ReloadMembersAsync">다시 불러오기</button></div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in members)
+                                        {
+                                            var attended = EffectiveAttendance(item);
+                                            <div class="member-row" @key="item.UserId" data-user-id="@item.UserId">
+                                                <input type="checkbox" role="switch" checked="@attended"
+                                                       aria-label="@($"{selected.Date:yyyy.MM.dd} {item.Name} 출석")"
+                                                       disabled="@(busy || loading || loadError is not null || !AttendanceEditable)"
+                                                       @onchange="() => ToggleLocalAttendance(item)" />
+                                                <div class="activity-description"><div class="member-name">@item.Name</div><div class="member-meta">@item.StudentNumber · @item.Department · @(attended ? "출석" : "미출석")</div></div>
+                                            </div>
+                                        }
+                                        @if (members.Count == 0)
+                                        {
+                                            <p class="member-meta">등록된 부원이 없습니다.</p>
+                                        }
+                                    }
+                                </div>
+                                @if (attendanceOverrides.Count > 0)
+                                {
+                                    <p class="member-meta" role="status">@(attendanceOverrides.Count)건의 출석 변경이 저장 대기 중입니다.</p>
+                                }
+                                <div class="btn-row activity-edit-actions">
+                                    <button type="submit" class="btn-primary">변경 저장</button>
+                                    <button type="button" class="btn-danger" @onclick="() => showDelete = true">활동 삭제</button>
+                                </div>
+                            </fieldset>
+                        </EditForm>
+                    </div>
+                }
             </div>
         }
     }
 </div>
 
-@if (selected is not null)
-{
-    <div class="card activity-edit" data-activity-key="@selected.Key">
-        <h2 class="card-title">활동 수정 — @selected.Date.ToString("yyyy.MM.dd")</h2>
-        <p class="member-meta">@selected.SourceLabel · 현재 @selected.StateText</p>
-        <EditForm Model="editForm" OnValidSubmit="SaveAsync">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
-            <fieldset disabled="@(busy || loading || loadError is not null)">
-                @if (selected.SheetId is null)
-                {
-                    <div class="field">
-                        <label class="form-label" for="activity-edit-target">앱 활동 연결 대상 시트 / 탭</label>
-                        <InputSelect id="activity-edit-target" class="form-control" @bind-Value="editForm.Target" required>
-                            <option value="">대상 선택…</option>
-                            @for (var i = 0; i < targets.Count; i++)
-                            {
-                                <option value="@i">@targets[i].SheetName / @targets[i].TabName</option>
-                            }
-                        </InputSelect>
-                    </div>
-                }
-                <div class="activity-fields">
-                    <div class="field">
-                        <label class="form-label" for="activity-edit-date">날짜</label>
-                        <InputDate id="activity-edit-date" class="form-control" @bind-Value="editForm.Date" required />
-                    </div>
-                    <div class="field">
-                        <label class="form-label" for="activity-edit-state">상태 변경</label>
-                        <InputSelect id="activity-edit-state" class="form-control" @bind-Value="editForm.State">
-                            <option value="">현재 상태 유지 (@selected.StateText)</option>
-                            <option value="1">활동 예정</option>
-                            <option value="0">활동 완료</option>
-                            <option value="2">활동 없음</option>
-                        </InputSelect>
-                    </div>
-                </div>
-                <p class="member-meta">출석자가 있으면 예정·없음 전환이 거부됩니다. 완료 전환 시 운영 활동이 종료되고 팀 편성이 해제됩니다.</p>
-                @if (editForm.State == "2" || (editForm.State == "" && selected.Kind == SheetDayKind.NoActivity))
-                {
-                    <div class="field">
-                        <label class="form-label" for="activity-edit-reason">사유 (선택, 500자 이하)</label>
-                        <InputText id="activity-edit-reason" class="form-control" @bind-Value="editForm.Reason" maxlength="500" />
-                    </div>
-                }
-                <div class="btn-row">
-                    <button type="button" class="btn-ghost" @onclick="CloseEditor">닫기</button>
-                    <button type="submit" class="btn-primary">변경 저장</button>
-                    <button type="button" class="btn-danger" @onclick="() => showDelete = true">활동 삭제</button>
-                </div>
-            </fieldset>
-        </EditForm>
-        <h3>부원 출석</h3>
-        <p class="member-meta">진행 중·완료된 활동만 수정할 수 있습니다. 예정·없음은 수정할 수 없습니다.</p>
-        <div class="activity-members" aria-busy="@(membersLoading ? "true" : "false")" data-load-state="@(membersLoading ? "loading" : membersError is not null ? "error" : "ready")">
-            @if (membersLoading)
-            {
-                <span role="status" class="admin-load-status">부원 출석을 불러오는 중…</span>
-                <div aria-hidden="true"><div class="member-row"><span class="loading-placeholder">&nbsp;</span></div></div>
-            }
-            else if (membersError is not null)
-            {
-                <div role="alert"><p>@membersError</p><button type="button" class="btn-primary" disabled="@busy" @onclick="ReloadMembersAsync">다시 불러오기</button></div>
-            }
-            else
-            {
-                @foreach (var item in members)
-                {
-                    <div class="member-row" @key="item.UserId" data-user-id="@item.UserId">
-                        <input type="checkbox" role="switch" checked="@item.IsAttended" aria-checked="@(item.IsAttended ? "true" : "false")"
-                               aria-label="@($"{selected.Date:yyyy.MM.dd} {item.Name} 출석")"
-                               disabled="@(busy || loading || loadError is not null || !selected.CanEditAttendance)"
-                               @onclick="() => ToggleAttendanceAsync(item)" @onclick:preventDefault />
-                        <div class="activity-description"><div class="member-name">@item.Name</div><div class="member-meta">@item.StudentNumber · @item.Department · @(item.IsAttended ? "출석" : "미출석")</div></div>
-                    </div>
-                }
-                @if (members.Count == 0)
-                {
-                    <p class="member-meta">등록된 부원이 없습니다.</p>
-                }
-            }
-        </div>
-    </div>
-}
-
-@if (showDelete || confirmAttendance is not null)
+@if (showDelete)
 {
     <div class="confirm-overlay" @onkeydown="DialogKeyDown">
         <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="activity-confirm-heading">
             <MudFocusTrap>
-                <h3 id="activity-confirm-heading">@(showDelete ? "활동 삭제" : "출석 취소")</h3>
+                <h3 id="activity-confirm-heading">활동 삭제</h3>
                 <p>@selected?.Date.ToString("yyyy.MM.dd") · @selected?.SourceLabel</p>
-                @if (showDelete)
-                {
-                    <p>활동과 출석·게스트·팀 및 연결된 시트 날짜 열을 삭제합니다. 되돌릴 수 없습니다.</p>
-                }
-                else
-                {
-                    <p>@confirmAttendance?.Name 님의 출석을 취소합니다. 팀 편성이 있으면 팀에서도 제외됩니다.</p>
-                }
+                <p>활동과 출석·게스트·팀 및 연결된 시트 날짜 열을 삭제합니다. 되돌릴 수 없습니다.</p>
                 <div class="btn-row">
                     <button type="button" class="btn-ghost" disabled="@busy" @onclick="CancelConfirmation">취소</button>
-                    <button type="button" class="btn-danger" disabled="@busy" @onclick="ApproveConfirmationAsync">@(showDelete ? "삭제" : "출석 취소 확인")</button>
+                    <button type="button" class="btn-danger" disabled="@busy" @onclick="ApproveConfirmationAsync">삭제</button>
                 </div>
             </MudFocusTrap>
         </div>
@@ -222,7 +224,15 @@
     private bool loading = true, membersLoading, busy, disposed, showDelete;
     private string? loadError, membersError, writeError;
     private int loadGeneration, memberGeneration;
-    private AttendanceMemberDto? confirmAttendance;
+    private readonly Dictionary<string, bool> attendanceOverrides = [];
+
+    /// 저장 전 로컬 상태(드롭다운 선택 포함)를 반영한 실효 상태 — 완료 선택만으로 출석 편집 잠금이 풀린다.
+    private SheetDayKind EffectiveKind => selected is null ? SheetDayKind.Scheduled
+        : string.IsNullOrEmpty(editForm.State) ? selected.Kind : Enum.Parse<SheetDayKind>(editForm.State);
+    private bool AttendanceEditable => selected is not null && !membersLoading && membersError is null
+        && (selected.CanEditAttendance || EffectiveKind == SheetDayKind.Completed);
+    private bool EffectiveAttendance(AttendanceMemberDto item) =>
+        attendanceOverrides.TryGetValue(item.UserId, out var attended) ? attended : item.IsAttended;
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -283,9 +293,23 @@
         selected = activity;
         selectedKey = activity.Key;
         editForm = new ActivityForm { Date = activity.Date, State = "", Reason = activity.Reason ?? "" };
+        attendanceOverrides.Clear();
         writeError = null;
         CancelConfirmation();
         await ReloadMembersAsync();
+    }
+
+    /// 행 클릭 토글 — 펼쳐진 행이면 접고(미저장 출석 변경은 폐기), 아니면 해당 행을 펼친다.
+    private Task ToggleRowAsync(ManagedActivityDto activity)
+    {
+        if (busy) return Task.CompletedTask;
+        if (selectedKey == activity.Key) { CloseEditor(); return Task.CompletedTask; }
+        return SelectAsync(activity);
+    }
+
+    private void RowKeyDown(KeyboardEventArgs e, ManagedActivityDto activity)
+    {
+        if (e.Key is "Enter" or " " or "Spacebar") ToggleRowAsync(activity);
     }
 
     private void CloseEditor()
@@ -294,6 +318,7 @@
         selected = null;
         selectedKey = null;
         members = [];
+        attendanceOverrides.Clear();
         membersLoading = false;
         CancelConfirmation();
     }
@@ -307,7 +332,11 @@
         try
         {
             var loaded = await ActivitySvc.GetMembersAsync(key);
-            if (!disposed && generation == memberGeneration && key == selectedKey) members = loaded;
+            if (!disposed && generation == memberGeneration && key == selectedKey)
+            {
+                members = loaded;
+                attendanceOverrides.Clear(); // 서버 상태 기준으로 재시작 — 로컬 토글은 새로 입력한다.
+            }
         }
         catch (Exception ex)
         {
@@ -369,41 +398,36 @@
             writeError = "앱 활동의 대상 시트 / 탭을 선택하세요.";
             return Task.CompletedTask;
         }
-        var request = new ActivityEditRequest(editForm.Date, string.IsNullOrEmpty(editForm.State) ? null : Enum.Parse<SheetDayKind>(editForm.State), editForm.Reason, target?.SheetId, target?.TabName);
+        // 출석 변경이 있으면 활동 정보와 한 번의 저장으로 원자 적용한다(서버가 완료 전환 직후의 출석 수정도 허용).
+        IReadOnlyList<ActivityAttendanceSetRequest>? attendances = attendanceOverrides.Count > 0
+            ? members.Select(m => new ActivityAttendanceSetRequest(m.UserId, EffectiveAttendance(m))).ToList()
+            : null;
+        var request = new ActivityEditRequest(editForm.Date, string.IsNullOrEmpty(editForm.State) ? null : Enum.Parse<SheetDayKind>(editForm.State), editForm.Reason, target?.SheetId, target?.TabName, attendances);
         return RunWriteAsync(async () =>
         {
             var updated = await ActivitySvc.EditAsync(activity.Key, request);
             if (disposed) return;
             selectedKey = updated.Key;
             editForm.State = "";
+            attendanceOverrides.Clear();
         });
     }
 
-    private Task ToggleAttendanceAsync(AttendanceMemberDto item)
+    /// 출석 체크는 화면 표시만 바꾼다 — 실제 저장은 변경 저장 1회에서 이루어진다.
+    private void ToggleLocalAttendance(AttendanceMemberDto item)
     {
-        if (busy || loading || membersLoading || loadError is not null || selected?.CanEditAttendance != true) return Task.CompletedTask;
-        if (item.IsAttended)
-        {
-            confirmAttendance = item;
-            return Task.CompletedTask;
-        }
-        return SetAttendanceAsync(item, false);
-    }
-
-    private Task SetAttendanceAsync(AttendanceMemberDto item, bool confirmed)
-    {
-        if (selectedKey is not { } key) return Task.CompletedTask;
-        return RunWriteAsync(() => ActivitySvc.SetAttendanceAsync(key, item.UserId, new(!item.IsAttended, confirmed)));
+        if (busy || loading || membersLoading || loadError is not null || !AttendanceEditable) return;
+        attendanceOverrides[item.UserId] = !EffectiveAttendance(item);
     }
 
     private Task ApproveConfirmationAsync()
     {
-        if (showDelete && selectedKey is { } key)
-            return RunWriteAsync(async () => { await ActivitySvc.DeleteAsync(key); if (!disposed) CloseEditor(); });
-        return confirmAttendance is { } item ? SetAttendanceAsync(item, true) : Task.CompletedTask;
+        return showDelete && selectedKey is { } key
+            ? RunWriteAsync(async () => { await ActivitySvc.DeleteAsync(key); if (!disposed) CloseEditor(); })
+            : Task.CompletedTask;
     }
 
-    private void CancelConfirmation() { showDelete = false; confirmAttendance = null; }
+    private void CancelConfirmation() { showDelete = false; }
     private void DialogKeyDown(KeyboardEventArgs e) { if (e.Key == "Escape" && !busy) CancelConfirmation(); }
 
     private sealed class ActivityForm

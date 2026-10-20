@@ -1572,6 +1572,41 @@ button.court-head {
 	margin-bottom: 10px;
 }
 
+/* 활동 목록 아코디언 — 행 자체가 확장/축소 토글이고 펼치면 편집 패널이 행 안에 인라인으로 열린다 */
+.activity-item {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0;
+}
+.activity-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	cursor: pointer;
+	border-radius: 12px;
+}
+.activity-summary:focus-visible {
+	outline: 3px solid #f0c648;
+	outline-offset: 2px;
+}
+.activity-chevron {
+	color: var(--vb-muted);
+	font-size: 0.9rem;
+	transition: transform 0.15s ease-out;
+}
+.activity-summary[aria-expanded="true"] .activity-chevron {
+	transform: rotate(180deg);
+}
+.activity-edit-panel {
+	width: 100%;
+	margin-top: 8px;
+	padding-top: 4px;
+	border-top: 2px dashed var(--vb-border);
+}
+.activity-edit-actions {
+	margin-top: 10px;
+}
+
 .filter-btn {
 	flex: 1;
 	border: 2px solid var(--vb-border);

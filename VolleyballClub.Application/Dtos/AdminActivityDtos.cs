@@ -7,7 +7,10 @@ public record ManagedActivityDto(string Key, int? ActivityId, int? SheetId, stri
     ActivityStatus? Status, string StateText, bool CanEditAttendance, int AttendanceCount);
 public record ActivityCreateRequest(int SheetId, string TabName, DateOnly Date, SheetDayKind Kind, string? Reason = null);
 // Null Kind preserves the operational state as well as the source kind.
-public record ActivityEditRequest(DateOnly Date, SheetDayKind? Kind = null, string? Reason = null, int? SheetId = null, string? TabName = null);
+// Attendances(선택)는 변경 저장 1회로 활동 정보와 출석 변경을 원자 적용한다 — null이면 출석 변경 없음(기존 의미 그대로).
+public record ActivityEditRequest(DateOnly Date, SheetDayKind? Kind = null, string? Reason = null, int? SheetId = null, string? TabName = null,
+    IReadOnlyList<ActivityAttendanceSetRequest>? Attendances = null);
+public record ActivityAttendanceSetRequest(string UserId, bool IsAttended);
 public record ActivityAttendanceRequest(bool IsAttended, bool ConfirmTeamImpact = false);
 public record MemberActivityRowDto(string Key, int? ActivityId, DateOnly Date, string SourceLabel,
     string StateText, bool IsAttended, bool CanEditAttendance, bool HasTeam);

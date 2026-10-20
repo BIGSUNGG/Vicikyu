@@ -104,7 +104,7 @@ dotnet ef database update --project VolleyballClub.Infrastructure --startup-proj
 # 로컬 개발 DB 초기화(DB 삭제 → 마이그레이션 재적용, 시드는 다음 기동 때 자동)
 powershell scripts/reset-db.ps1
 
-# 실행(Development — 자동 마이그레이션+시드, Redis 6379 필수)
+# 실행(Development — 자동 마이그레이션+시드)
 dotnet run --project VolleyballClub.Web   # http://localhost:5121
 ```
 
