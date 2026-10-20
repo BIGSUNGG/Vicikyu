@@ -84,6 +84,73 @@ tailscale funnel --https=443 off            # 터널 중지
 - 접속 확인: `curl -s -o /dev/null -w "%{http_code}" https://<url>/Account/Login` → `200`
 - 주의: 공개 상태에서는 기본 시드 비밀번호가 아닌 강한 `Seed__AdminPassword`를 사용할 것
 
+## 서비스 이전 — 다른 PC로 복사
+
+레지스트리 없이 로컬 빌드로 운영하므로 **이미지 + SQLite 볼륨 + 구글 시크릿** 3종과 리포지토리를 함께 전달한다. `docker export`는 포트·볼륨·env가 누락되므로 사용하지 않는다.
+
+| 전달물 | 내용 | 비고 |
+| --- | --- | --- |
+| `vicikyu-web.tar` | Docker 이미지 | `docker save`로 추출 |
+| `vbdata.tar` | SQLite 데이터 볼륨 | 부원·활동·계정 전부 |
+| `.secrets/vicikyu-sa.json` | 구글 서비스계정 | `.gitignore`되어 git 전달 불가 — USB/scp로 직접 복사 |
+| 리포지토리 | `git clone` 또는 복사 | `docker-compose.yml` 실행용 |
+
+### 원본 PC — 백업
+
+```powershell
+cd C:\Projects\Vicikyu
+
+docker volume ls                     # vicikyu_vbdata 확인
+docker images                        # vicikyu-web:latest 확인
+
+# SQLite WAL 무결성을 위해 쓰기 정지 후 백업 (down -v 절대 금지 — 데이터 삭제)
+docker compose stop web
+
+docker save -o vicikyu-web.tar vicikyu-web:latest
+
+docker run --rm -v vicikyu_vbdata:/data -v ${PWD}:/backup alpine `
+  tar cvf /backup/vbdata.tar -C /data .
+
+# 원본 서비스 복구(계속 운영할 경우)
+docker compose start web
+```
+
+### 새 PC — 복원
+
+```powershell
+docker info                          # Docker Desktop 실행 확인
+
+# 리포지토리 준비 후 루트에서 (폴더명은 달라도 됨 — -p vicikyu가 프로젝트명 고정)
+git clone <리포지토리>
+cd Vicikyu
+
+# 시크릿 배치 — compose가 /config/vicikyu-sa.json:ro로 마운트
+mkdir .secrets; copy <전달경로>\vicikyu-sa.json .secrets\
+
+docker load -i vicikyu-web.tar
+
+# 볼륨 생성 + 복원 (이름이 vicikyu_vbdata여야 compose가 찾음)
+docker volume create vicikyu_vbdata
+docker run --rm -v vicikyu_vbdata:/data -v ${PWD}:/backup alpine `
+  sh -c "cd /data && tar xvf /backup/vbdata.tar"
+
+# 기동 — --build를 붙이면 재빌드되므로 로드한 이미지를 쓸 때는 붙이지 않음
+docker compose -p vicikyu up -d
+```
+
+폴더명이 달라지면 compose가 `<폴더명>_vbdata` 새 빈 볼륨을 만들어 **초기화된 것처럼 보이는** 가장 흔한 사고가 발생한다. 항상 `-p vicikyu`로 고정한다.
+
+### 검증
+
+```powershell
+docker compose -p vicikyu ps        # web: Up
+docker compose -p vicikyu logs web  # 마이그레이션 적용 없음 확인
+```
+
+- <http://localhost:5122/Account/Login> — **기존 계정**으로 로그인되는지 확인 (새 시드 admin이 아니라)
+- 부원 수·최근 활동이 원본과 일치하는지 대조
+- LAN 접속: 방화벽 규칙(위 netsh 명령), 외부 공개: Tailscale Funnel(위 절) — 장비명이 달라지므로 공개 URL도 달라짐
+
 ## 문제 해결
 
 | 증상 | 원인 · 조치 |
@@ -91,3 +158,4 @@ tailscale funnel --https=443 off            # 터널 중지
 | `docker compose up` 시 daemon 연결 실패 | Docker Desktop 미실행 → 실행 후 `docker info`로 확인 |
 | 5122 포트 접속 불가(LAN) | Windows 방화벽 규칙 추가 (위 netsh 명령) · 기존 5121 규칙이 funnel/LAN 용도라면 5122로 재생성 |
 | DB 초기화 후 재시작 | `docker compose down -v && docker compose up -d --build` (시드부터 재생성) |
+| 이전 후 부원·계정이 없음(초기화처럼 보임) | 프로젝트명 불일치로 새 빈 볼륨 생성 → `docker volume ls` 확인 후 위 «서비스 이전» 절로 복원 |
