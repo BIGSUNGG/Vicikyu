@@ -90,10 +90,26 @@ tailscale funnel --https=443 off            # 터널 중지
 
 | 전달물 | 내용 | 비고 |
 | --- | --- | --- |
-| `vicikyu-web.tar` | Docker 이미지 | `docker save`로 추출 |
+| `vicikyu-web.tar` | Docker 이미지 | `docker save`로 추출 — **동일 아키텍처(amd64) 대상만**, arm64는 아래 참고 |
 | `vbdata.tar` | SQLite 데이터 볼륨 | 부원·활동·계정 전부 |
 | `.secrets/vicikyu-sa.json` | 구글 서비스계정 | `.gitignore`되어 git 전달 불가 — USB/scp로 직접 복사 |
 | 리포지토리 | `git clone` 또는 복사 | `docker-compose.yml` 실행용 |
+
+### ARM 대상 — Raspberry Pi 등 arm64
+
+Windows에서 빌드한 이미지는 amd64라 Pi에서 실행되지 않는다. **볼륨·시크릿·리포지토리는 위 절차 그대로** 전달하고 이미지만 아래 둘 중 하나로 바꾼다.
+
+```bash
+# 방법 1: Pi에서 직접 재빌드 (느림, ~10-25분)
+docker compose -p vicikyu up -d --build
+
+# 방법 2: 원본 Windows PC에서 크로스빌드 후 docker save (이후 절차 동일)
+docker buildx build --platform linux/arm64 -t vicikyu-web:latest .
+```
+
+- OS는 64비트 필수: `uname -m` → `aarch64` 확인. Dockerfile·compose는 수정 불필요
+- SQLite WAL을 SD카드에 두면 마모·전원 단절 손상 위험 — **USB3 SSD 부팅 권장**, 불가 시 고내구 A2 카드 + 종료 전 `docker compose stop web`
+- Pi에서 Development 기동 시 마이그레이션+시드에 1~2분 소요될 수 있음 (정상)
 
 ### 원본 PC — 백업
 
