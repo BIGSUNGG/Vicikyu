@@ -415,3 +415,6 @@ FodyWeavers.xsd
 
 # Google service account key (secret)
 .secrets/
+
+# Ops script backups (DB + secrets + tunnel token — never commit)
+backups/

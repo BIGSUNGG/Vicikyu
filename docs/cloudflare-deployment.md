@@ -1,6 +1,6 @@
 # Cloudflare 실서비스 배포 (vicikyu.site)
 
-개인 테스트용 Tailscale Funnel(`start.ps1`)과 별도의 **실서비스 경로**.
+개인 테스트용 Tailscale Funnel(`scripts/run.ps1 -Funnel`)과 별도의 **실서비스 경로**.
 Cloudflare는 ASP.NET을 실행하지 않으므로, 앱은 기존처럼 이 PC의 Docker(호스트 5122)에서
 구동되고 Cloudflare Tunnel이 `https://vicikyu.site`로 외부에 공개한다.
 서버 PC가 꺼지면 서비스도 중단된다(Funnel과 동일).
@@ -25,12 +25,12 @@ Cloudflare는 ASP.NET을 실행하지 않으므로, 앱은 기존처럼 이 PC�
 ## 기동 · 중지
 
 ```powershell
-.\scripts\start-cloudflare.ps1   # Docker web 기동 + cloudflared 서비스 등록·시작
+.\scripts\run.ps1               # Docker web 기동 + cloudflared 서비스 등록·시작 + 헬스체크
 Stop-Service cloudflared         # 터널 중지 (web 컨테이너는 유지)
 ```
 
 cloudflared는 Windows 서비스로 등록되어 PC 재부팅 후에도 자동 기동된다.
-Docker web이 꺼져 있으면 `docker compose up -d`(또는 start.ps1)로 기동한다.
+Docker web이 꺼져 있어도 run.ps1이 자동으로 기동한다.
 
 ## 확인
 

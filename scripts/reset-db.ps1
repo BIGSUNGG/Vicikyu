@@ -43,4 +43,4 @@ if ($LASTEXITCODE) {
 Write-Host ""
 Write-Host "로컬 개발 DB 초기화 완료."
 Write-Host "시드(관리자 admin / Seed 비밀번호)는 다음 기동 때 자동 적용된다: dotnet run --project VolleyballClub.Web"
-Write-Host "기동에는 Redis(6379)가 필요하다 — start.ps1 또는 docker로 띄워 둘 것."
+Write-Host "기동에는 Redis(6379)가 필요하다 — scripts/run.ps1 또는 docker로 띄워 둘 것."

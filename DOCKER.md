@@ -22,6 +22,8 @@ Web(ASP.NET API + Blazor WebAssembly 정적 자산) + SQLite를 동일 출처·�
 docker info   # Docker Desktop 실행 확인 — 실패하면 Docker Desktop을 먼저 실행
 ```
 
+Docker·cloudflared 설치는 `scripts\setup.ps1`(Linux `./scripts/setup.sh`)이 자동화한다.
+
 ## 빌드 · 실행 · 중지
 
 ```bash
@@ -31,6 +33,8 @@ docker compose logs -f web     # Web 로그 실시간 확인
 docker compose down            # 중지 (데이터 유지)
 docker compose down -v         # 중지 + DB 파일 초기화 (시드부터 재생성)
 ```
+
+> 위 기동 절차는 `scripts\run.ps1`(Linux `./scripts/run.sh`)이 터널 등록·헬스체크까지 자동 수행한다.
 
 ## 접속
 
@@ -84,16 +88,40 @@ tailscale funnel --https=443 off            # 터널 중지
 - 접속 확인: `curl -s -o /dev/null -w "%{http_code}" https://<url>/Account/Login` → `200`
 - 주의: 공개 상태에서는 기본 시드 비밀번호가 아닌 강한 `Seed__AdminPassword`를 사용할 것
 
-## 서비스 이전 — 다른 PC로 복사
+## 운영 스크립트 — setup · backup · restore · run
 
-레지스트리 없이 로컬 빌드로 운영하므로 **이미지 + SQLite 볼륨 + 구글 시크릿** 3종과 리포지토리를 함께 전달한다. `docker export`는 포트·볼륨·env가 누락되므로 사용하지 않는다.
+`scripts/` 에 4개 명령이 있다. Windows는 `.ps1`(더블클릭용 `.bat` 래퍼 포함), Linux는 `.sh`.
 
-| 전달물 | 내용 | 비고 |
-| --- | --- | --- |
-| `vicikyu-web.tar` | Docker 이미지 | `docker save`로 추출 — **동일 아키텍처(amd64) 대상만**, arm64는 아래 참고 |
-| `vbdata.tar` | SQLite 데이터 볼륨 | 부원·활동·계정 전부 |
-| `.secrets/vicikyu-sa.json` | 구글 서비스계정 | `.gitignore`되어 git 전달 불가 — USB/scp로 직접 복사 |
-| 리포지토리 | `git clone` 또는 복사 | `docker-compose.yml` 실행용 |
+| 명령 | 역할 |
+| --- | --- |
+| `setup` | Docker·cloudflared 설치(멱등 — 이미 있으면 건너뜀) + 필수 파일 검사 |
+| `backup` | web 정지(WAL 무결성) → DB 볼륨 tar + 구글 시크릿 + 터널 토큰 + manifest(sha256 체크섬) → web 자동 재개. `--image` 시 이미지 tar 추가 |
+| `restore` | 백업 폴더(기본 `backups/` 최신, 경로 인자 가능) 체크섬 검증 → 시크릿·토큰 배치 → 볼륨 교체 → 기동·검증까지 자동 |
+| `run` | 컨테이너 기동(이미지 없으면 빌드) + Cloudflare 터널 서비스 + 헬스체크. `--funnel`(Tailscale 병행) / `--no-tunnel` |
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\backup.ps1                 # 백업
+powershell -ExecutionPolicy Bypass -File scripts\restore.ps1                # 최신 백업 복원+기동
+powershell -ExecutionPolicy Bypass -File scripts\restore.ps1 D:\usb\vicikyu-20261027-1530
+```
+
+```bash
+./scripts/setup.sh && ./scripts/run.sh          # 최초
+./scripts/backup.sh --image                     # 백업(이미지 포함)
+./scripts/restore.sh /mnt/usb/vicikyu-20261027-1530
+```
+
+### 서비스 이전 — 새 PC 절차
+
+레지스트리 없이 로컬 빌드로 운영하므로 **백업 폴더 + 리포지토리**를 전달한다(`docker export`는 포트·볼륨·env가 누락되어 사용하지 않는다).
+
+1. 원본 PC: `backup` 실행 → `backups/vicikyu-타임스탬프/` 폴더를 통째로 전달(USB/scp)
+2. 새 PC: 리포지토리 확보(git clone 또는 복사) → 받은 폴더를 `backups/` 에 붙여넣기
+3. `setup` 1회 실행(Docker·cloudflared 설치)
+4. `restore` 실행 — 체크섬 검증, 시크릿·토큰 배치, 볼륨 복원, 기동·검증까지 자동
+5. 이후 재기동은 `run` 만 실행하면 복원된 상태 그대로 서빙된다
+
+백업 폴더에는 DB·구글 시크릿·터널 토큰 전부가 들어 있다. 보관·전송에 주의하고 git에 커밋하지 않는다(`backups/` 는 gitignore). 백업 기본값은 이미지 tar를 제외하므로 새 PC에서 재빌드된다 — 동일 아키텍처(amd64)에서 이미지까지 그대로 옮기려면 `--image` 로 백업할 것.
 
 ### ARM 대상 — Raspberry Pi 등 arm64
 
@@ -111,7 +139,9 @@ docker buildx build --platform linux/arm64 -t vicikyu-web:latest .
 - SQLite WAL을 SD카드에 두면 마모·전원 단절 손상 위험 — **USB3 SSD 부팅 권장**, 불가 시 고내구 A2 카드 + 종료 전 `docker compose stop web`
 - Pi에서 Development 기동 시 마이그레이션+시드에 1~2분 소요될 수 있음 (정상)
 
-### 원본 PC — 백업
+### 수동 절차 (참고 — 스크립트 고장 시)
+
+#### 원본 PC — 백업
 
 ```powershell
 cd C:\Projects\Vicikyu
@@ -131,7 +161,7 @@ docker run --rm -v vicikyu_vbdata:/data -v ${PWD}:/backup alpine `
 docker compose start web
 ```
 
-### 새 PC — 복원
+#### 새 PC — 복원
 
 ```powershell
 docker info                          # Docker Desktop 실행 확인
@@ -156,7 +186,7 @@ docker compose -p vicikyu up -d
 
 폴더명이 달라지면 compose가 `<폴더명>_vbdata` 새 빈 볼륨을 만들어 **초기화된 것처럼 보이는** 가장 흔한 사고가 발생한다. 항상 `-p vicikyu`로 고정한다.
 
-### 검증
+#### 검증
 
 ```powershell
 docker compose -p vicikyu ps        # web: Up
