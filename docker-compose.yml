@@ -6,11 +6,8 @@ services:
       ConnectionStrings__DefaultConnection: >-
         Data Source=/data/VolleyballClub.db
       Seed__AdminPassword: "Admin1234!"
-      Google__ServiceAccountJson: /config/vicikyu-sa.json
-      Google__SpreadsheetId: 11FS_2C1DLqW5-QTWXqpPtxd4jpeMz5rqxXr04T11zXU
     volumes:
       - vbdata:/data
-      - ./.secrets/vicikyu-sa.json:/config/vicikyu-sa.json:ro
     ports:
       - "5122:8080"
 

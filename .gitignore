@@ -401,6 +401,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 # pi agent local folders
+.crew/
 .pi-glla/
 .pi-subagents/
 .diag/
@@ -413,8 +414,15 @@ FodyWeavers.xsd
 # Cloudflare tunnel token (secret)
 .cloudflare/
 
-# Google service account key (secret)
+# Server secrets (never commit)
 .secrets/
 
 # Ops script backups (DB + secrets + tunnel token — never commit)
 backups/
+
+/.crew/
+/.crew
+!.crew/artifacts/
+!.crew/graphs/
+!.crew/artifacts/.gitkeep
+!.crew/graphs/.gitkeep

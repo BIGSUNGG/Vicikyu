@@ -9,6 +9,3 @@ public record AttendanceChangeRequest(bool ConfirmTeamImpact = false);
 public record TeamMoveRequest(int TargetTeamId);
 public record TeamAddRequest(string ParticipantKey, int TeamId);
 public record FeePaymentRequest(bool IsPaid, string? Memo = null);
-public record SheetSaveRequest(int? Id, string Name, string SpreadsheetIdOrUrl);
-public record SheetMappingRequest(int SheetId, string TabName, string? RowLabel, bool AddNewRow = false);
-public record SheetBulkOptionsRequest(IReadOnlyList<string> Names);

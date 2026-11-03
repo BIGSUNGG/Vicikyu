@@ -1,13 +1,13 @@
 # Docker 실행 가이드 (VolleyballClub)
 
-Web(ASP.NET API + Blazor WebAssembly 정적 자산) + SQLite를 동일 출처·단일 컨테이너로 실행하는 가이드. 브라우저 UI(로그인·로그아웃 포함)는 WASM이며 Identity·권한 검증·DB·Google Sheets는 서버에서 처리한다.
+Web(ASP.NET API + Blazor WebAssembly 정적 자산) + SQLite를 동일 출처·단일 컨테이너로 실행하는 가이드. 브라우저 UI(로그인·로그아웃 포함)는 WASM이며 Identity·권한 검증·DB는 서버에서 처리한다.
 
 ## 구성
 
 | 파일 | 역할 |
 | --- | --- |
 | `Dockerfile` | Client 포함 Web 앱 멀티스테이지 빌드(sdk:10.0 → aspnet:10.0) |
-| `docker-compose.yml` | `web`(호스트 5122 → 컨테이너 8080) + SQLite 데이터 볼륨 `vbdata` + Google 서비스계정 마운트(`.secrets/vicikyu-sa.json`) — 시트 탭 캐시는 프로세스 내 메모리(외부 캐시 불필요) |
+| `docker-compose.yml` | `web`(호스트 5122 → 컨테이너 8080) + SQLite 데이터 볼륨 `vbdata` |
 | `.dockerignore` | 빌드 컨텍스트 제외(bin/obj, Tests, Design 등) |
 
 - 호스트 포트 5121은 로컬 개발 서버(`dotnet run`) 전용 — 컨테이너는 5122를 사용해 충돌 방지
@@ -65,12 +65,11 @@ docker build -t vicikyu-wasm-audit .
 node scripts/verify-wasm-migration.cjs
 ```
 
-- 마지막 명령은 `Verification` 환경·임시 `/tmp` SQLite·별도 컨테이너/네트워크·루프백 임의 포트를 사용하고 종료 시 정리한다. Google 자격증명/시트 ID는 비우고 Sheets 테스트 대역을 사용한다. Chromium은 실제 iPhone이 아니다.
+- 마지막 명령은 `Verification` 환경·임시 `/tmp` SQLite·별도 컨테이너/네트워크·루프백 임의 포트를 사용하고 종료 시 정리한다. Chromium은 실제 iPhone이 아니다.
 - 브라우저 도구: 기존 `.diag/pw/node_modules/playwright` 또는 `PLAYWRIGHT_MODULE`로 지정한 설치본과 Edge가 필요하다. `BROWSER_EXECUTABLE`로 Chromium 실행 파일을 지정할 수 있다. 스크립트는 패키지를 자동 설치하지 않는다.
 - 증거: `artifacts/wasm-browser/results.json`·PNG·실행 로그. 상세 경로/기능 대응 및 미검증 한계는 [전환 문서](docs/blazor-wasm-migration.md) 참조.
 - 운영 반영은 이 목표의 범위 밖이다. 별도 승인과 SQLite 일관된 백업 후 기존 포트·연결 문자열·`vbdata` 마운트를 유지한 채 `docker compose up -d --no-deps --build web`으로 Web만 교체한다. `down -v`는 마이그레이션 절차가 아니다.
 - 롤백 시 이전 Web 이미지로 되돌리고 동일한 DB 볼륨을 유지한다. 이번 전환에는 DB 스키마/EF 마이그레이션 변경이 없다.
-- 개발 검증 중 자동 외부 시트 동기화를 막으려면 실행 프로세스에만 `Sheets__SyncOnStartup=false`를 설정한다. 정상 Development 시작의 기본값은 true로 유지된다.
 
 ## 인터넷 공개 — Tailscale Funnel
 

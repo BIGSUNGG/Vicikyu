@@ -14,9 +14,9 @@ public sealed class ApiValidation : IEndpointFilter
             switch (value)
             {
                 case ActivityCreateRequest r:
-                    Required(r.TabName); if (r.SheetId <= 0 || !Enum.IsDefined(r.Kind) || r.Reason?.Length > 500) Invalid(); break;
+                    if (!Enum.IsDefined(r.Kind) || r.Label?.Length > 100 || r.Note?.Length > 500 || r.Date.Year is < 2000 or > 2100) Invalid(); break;
                 case ActivityEditRequest r:
-                    if (r.Kind is { } kind && !Enum.IsDefined(kind) || r.Reason?.Length > 500) Invalid(); break;
+                    if ((r.Kind is { } kind && !Enum.IsDefined(kind)) || r.Label?.Length > 100 || r.Note?.Length > 500 || r.Date.Year is < 2000 or > 2100) Invalid(); break;
                 case MemberCreateRequest r:
                     Required(r.StudentNumber, r.Name, r.Password); NonNull(r.Department);
                     Role(r.Role); break;
@@ -25,10 +25,6 @@ public sealed class ApiValidation : IEndpointFilter
                     if (r.Status is { } status && !Enum.IsDefined(status)) Invalid(); break;
                 case PasswordChangeRequest r: Required(r.CurrentPassword, r.NewPassword); break;
                 case TextRequest r: Required(r.Value); break;
-                case SheetSaveRequest r: Required(r.Name, r.SpreadsheetIdOrUrl); break;
-                case SheetMappingRequest r: Required(r.TabName); if (r.SheetId <= 0) Invalid(); break;
-                case SheetBulkOptionsRequest r:
-                    if (r.Names is null || r.Names.Count > MemberBulkValidation.MaxRows || r.Names.Any(n => n?.Length > 4096)) Invalid(); break;
                 case TeamCreateRequest r:
                     if (r.UserIds is null || r.GuestIds is null || r.TeamSizes is null || r.UserIds.Any(string.IsNullOrWhiteSpace)) Invalid(); break;
                 case TeamAddRequest r: Required(r.ParticipantKey); if (r.TeamId <= 0) Invalid(); break;

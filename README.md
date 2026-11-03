@@ -60,7 +60,7 @@ dotnet user-secrets set "ConnectionStrings:DefaultConnection" \
   "Data Source=VolleyballClub.db"
 ```
 
-> 기본 SQLite 경로는 서버 구성에서 제공한다. Google 자격증명 등 비밀정보는 서버의 user-secrets/환경변수/설정 저장소에만 두고 Client나 공개 정적 자산에 넣지 않는다.
+> 기본 SQLite 경로는 서버 구성에서 제공한다. 비밀정보는 서버의 user-secrets/환경변수/설정 저장소에만 두고 Client나 공개 정적 자산에 넣지 않는다.
 
 ### 3) 마이그레이션 적용
 
@@ -111,7 +111,7 @@ Development 환경 첫 기동 시 자동 생성(멱등 — 사용자가 이미 �
 하단 탭은 **홈·MY** 두 개(관리자에게만 ⚙ 관리자 탭 추가).
 로그인 → OTP 출석 → 홈에서 내 팀 확인(강조 카드)·이번 학기 출석/순위/회비 상태 → MY(프로필·월간 캘린더·출석률·로그아웃)
 
-> 팀 전체 목록·출석왕 순위 페이지·회비 페이지·Google Sheets 사용 내역 링크는 2026-10-02 요청으로 제거되었다. 홈에는 내 팀·학기 출석 통계·회비 납부 상태 카드가 표시된다.
+> 팀 전체 목록·출석왕 순위 페이지·회비 페이지는 2026-10-02 요청으로 제거되었다. 홈에는 내 팀·학기 출석 통계·회비 납부 상태 카드가 표시된다.
 
 ### ADMIN (부원 기능 +)
 
@@ -153,4 +153,4 @@ dotnet test
 WASM 전환·같은 출처 API·데이터 볼륨 유지·격리 회귀 검증은 [DOCKER.md](DOCKER.md)와 [전환 문서](docs/blazor-wasm-migration.md)를 참고한다. 이 전환에서 운영 배포는 수행하지 않았다.
 
 향후 확장 여지(이번 전환 범위 밖): 소셜 로그인,
-CSV/Excel 부원 명단·출석 기록 내보내기, Google Sheets 동기화, 알림.
+CSV/Excel 부원 명단·출석 기록(xlsx) 가져오기·내보내기, 알림.

@@ -1,27 +1,20 @@
 using VolleyballClub.Domain.Enums;
 namespace VolleyballClub.Application.Dtos;
 
-public record ActivityTargetDto(int SheetId, string SheetName, string TabName, DateOnly From, DateOnly To);
-public record ManagedActivityDto(string Key, int? ActivityId, int? SheetId, string? TabName,
-    DateOnly Date, string SourceLabel, SheetDayKind Kind, string? Reason,
-    ActivityStatus? Status, string StateText, bool CanEditAttendance, int AttendanceCount);
-public record ActivityCreateRequest(int SheetId, string TabName, DateOnly Date, SheetDayKind Kind, string? Reason = null);
-// Null Kind preserves the operational state as well as the source kind.
-// Attendances(선택)는 변경 저장 1회로 활동 정보와 출석 변경을 원자 적용한다 — null이면 출석 변경 없음(기존 의미 그대로).
-public record ActivityEditRequest(DateOnly Date, SheetDayKind? Kind = null, string? Reason = null, int? SheetId = null, string? TabName = null,
+/// <summary>관리자 활동 목록 행 — DayMark(예정/없음)와 Activity(완료/진행)를 한 목록으로 보여준다.
+/// Key: DayMark는 "mark:{yyyy-MM-dd}", Activity는 "app:{id}". Label은 라벨 활동 이름(예: 'OT').</summary>
+public record ManagedActivityDto(string Key, int? ActivityId, DateOnly Date, string? Label,
+    DayKind Kind, string? Note, ActivityStatus? Status, string StateText, bool CanEditAttendance, int AttendanceCount);
+
+/// <summary>활동 생성 — Scheduled/NoActivity는 DayMark로, Completed는 (라벨) 종료 활동으로 만든다.</summary>
+public record ActivityCreateRequest(DateOnly Date, DayKind Kind, string? Label = null, string? Note = null);
+
+// Null Kind preserves the current kind. Attendances(선택)는 변경 저장 1회로 활동 정보와 출석 변경을 원자 적용한다.
+public record ActivityEditRequest(DateOnly Date, DayKind? Kind = null, string? Label = null, string? Note = null,
     IReadOnlyList<ActivityAttendanceSetRequest>? Attendances = null);
 public record ActivityAttendanceSetRequest(string UserId, bool IsAttended);
 public record ActivityAttendanceRequest(bool IsAttended, bool ConfirmTeamImpact = false);
-public record MemberActivityRowDto(string Key, int? ActivityId, DateOnly Date, string SourceLabel,
+public record MemberActivityRowDto(string Key, int? ActivityId, DateOnly Date, string? Label,
     string StateText, bool IsAttended, bool CanEditAttendance, bool HasTeam);
 public record MemberActivityListDto(string UserId, int MonthCount, int SemesterCount, int TotalCount,
     IReadOnlyList<MemberActivityRowDto> Items);
-
-/// <summary>Raw userEnteredValue JSON preserves formula/string/number/bool distinctions.</summary>
-public record ManagedSheetTab(string Name, IReadOnlyList<IReadOnlyList<string>> Rows,
-    IReadOnlyList<IReadOnlyList<string>> RawValues, IReadOnlyDictionary<int, string> ColumnKeys,
-    string? LastMutation = null, IReadOnlyList<IReadOnlyList<string>>? RawCellData = null,
-    IReadOnlyList<string>? ColumnProperties = null, IReadOnlyList<string>? OtherColumnMetadata = null, IReadOnlyList<string>? RowProperties = null);
-public enum SheetMutationKind { Bind, Insert, Write, Delete, InsertMemberRow }
-public record ManagedSheetMutation(string OperationId, SheetMutationKind Kind, int ColumnIndex,
-    string SourceKey, IReadOnlyList<string> RawValues, int RowIndex = 0);

@@ -35,8 +35,6 @@ if (Get-Cloudflared) {
 # 3) 필수 파일 검사 (발급은 대시보드 작업이라 자동화 불가 — 안내만)
 Write-Host ''
 Info '필수 파일 검사'
-if (Test-Path $SaPath)    { Ok '.secrets/vicikyu-sa.json 있음' }
-else { Warn '.secrets/vicikyu-sa.json 없음 — Google 서비스계정 키를 이 위치에 저장할 것 (시트 연결 필수)' }
 if (Test-Path $TokenPath) { Ok '.cloudflare/tunnel-token.txt 있음' }
 else { Warn '.cloudflare/tunnel-token.txt 없음 — Cloudflare Zero Trust > Networks > Tunnels 에서 토큰을 발급받아 저장할 것 (인터넷 공개용)' }
 

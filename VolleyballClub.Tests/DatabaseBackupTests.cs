@@ -54,7 +54,7 @@ public sealed class DatabaseBackupTests
             Assert.True((await users.CreateAsync(new ApplicationUser { UserName = "after-backup", StudentNumber = "after-backup", Name = "synthetic" }, "pass")).Succeeded);
         }
         using (var form = Upload(bytes)) await Status(admin.PostAsync("/api/admin/database/import", form), HttpStatusCode.NoContent);
-        Assert.Equal("synthetic-secret", await host.Query("SELECT Value FROM Settings WHERE Key='Google:ServiceAccountJson'"));
+        Assert.Equal("synthetic-secret", await host.Query("SELECT Value FROM Settings WHERE Key='Test:Secret'"));
         Assert.Equal("1", await host.Query("SELECT COUNT(*) FROM Activities"));
         Assert.Equal("0", await host.Query("SELECT COUNT(*) FROM AspNetUsers WHERE UserName='after-backup'"));
         Assert.NotEqual(originalStamp, await host.Query("SELECT SecurityStamp FROM AspNetUsers WHERE Id='admin-id'"));
@@ -226,8 +226,15 @@ public sealed class DatabaseBackupTests
         using var admin = host.Client(); using var otherAdmin = host.Client();
         await Login(admin, "admin"); await Login(otherAdmin, "admin");
         var bytes = await admin.GetByteArrayAsync("/api/admin/database/export");
-        var existing = admin.PostAsync("/api/admin/sheets/resync", null);
-        await host.PausedSync.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        // 배타적 복원 게이트 검증용 — 가져오기 요청이 안에서 대기한다
+        var existingForm = new MultipartFormDataContent();
+        existingForm.Add(new ByteArrayContent(TestWorkbook.Write(("2026-2",
+        [
+            ["활동 상태", "활동 완료"],
+            ["총 인원 : ", "26. 09. 01. 화"],
+        ]))), "file", "activities.xlsx");
+        var existing = admin.PostAsync("/api/admin/activities/import", existingForm);
+        await host.PausedArchive.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
             // Both casing and trailing-slash aliases must acquire the same exclusive endpoint lease.
@@ -240,7 +247,7 @@ public sealed class DatabaseBackupTests
             var shell = otherAdmin.GetAsync("/admin/settings");
             Assert.False(restore.IsCompleted); Assert.False(queuedReader.IsCompleted);
             Assert.False(auth.IsCompleted); Assert.False(shell.IsCompleted);
-            host.PausedSync.Resume.TrySetResult();
+            host.PausedArchive.Resume.TrySetResult();
             await Status(existing.WaitAsync(TimeSpan.FromSeconds(10)), HttpStatusCode.OK);
             await Status(restore.WaitAsync(TimeSpan.FromSeconds(10)), HttpStatusCode.NoContent);
             using var queuedLease = await queuedReader.WaitAsync(TimeSpan.FromSeconds(10));
@@ -250,9 +257,11 @@ public sealed class DatabaseBackupTests
             var path = Assert.Single(System.IO.Directory.GetFiles(Path.Combine(host.DirectoryPath, "database-backups"), "*.db"));
             await using var backup = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");
             await backup.OpenAsync();
-            Assert.Equal("1", await Scalar(backup, $"SELECT COUNT(*) FROM AuditLogs WHERE Action={(int)AdminAction.SheetResync}"));
+            // 드레인된 가져오기는 커밋 전이었으므로 백업은 복원 직전 상태(시드 활동 1건)를 담는다
+            Assert.Equal("1", await Scalar(backup, "SELECT COUNT(*) FROM Activities"));
+            Assert.Equal("ok", await Scalar(backup, "PRAGMA integrity_check"));
         }
-        finally { host.PausedSync.Resume.TrySetResult(); }
+        finally { host.PausedArchive.Resume.TrySetResult(); }
     }
 
     [Fact]
@@ -313,9 +322,6 @@ public sealed class DatabaseBackupTests
                 builder.UseEnvironment("Development");
                 builder.UseSetting("ConnectionStrings:DefaultConnection", connection);
                 builder.UseSetting("Seed:AdminPassword", "synthetic-test-password");
-                builder.UseSetting("Sheets:SyncOnStartup", "false");
-                builder.UseSetting("Google:ServiceAccountJson", "");
-                builder.UseSetting("Google:SpreadsheetId", "");
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IDatabaseMaintenance>();
@@ -370,22 +376,21 @@ public sealed class DatabaseBackupTests
             return entering;
         }
     }
-    private sealed class PausingSheetSync : ISheetSyncService
+
+    /// <summary>배타적 복원 게이트 검증 — 가져오기 요청 내부에서 대기한다.</summary>
+    private sealed class PausingArchive : IActivityArchiveService
     {
-        public SheetPushResult? LastPushResult => null;
-        public Task<SheetPushResult> PushActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(new SheetPushResult(true, true, null));
-        public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public async Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default)
+
+        public async Task<ActivityImportReport> ImportAsync(Stream stream, CancellationToken ct = default)
         {
-            Started.TrySetResult(); await Resume.Task.WaitAsync(ct);
-            return new(0, 0, 0, 0, []);
+            Started.TrySetResult();
+            await Resume.Task.WaitAsync(ct);
+            return new(0, 0, 0, 0, 0, []);
         }
-        public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) => ResyncAsync(ct);
-        public Task<bool> ExportClosedActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
-        public Task<bool> ExportScheduledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
-        public Task<bool> RemoveCancelledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
+
+        public Task<byte[]> ExportAsync(CancellationToken ct = default) => Task.FromResult(Array.Empty<byte>());
     }
 
     private sealed class DeclaredOversizedContent : HttpContent
@@ -434,7 +439,7 @@ public sealed class DatabaseBackupTests
         private readonly IDatabaseSnapshot? snapshot;
         private readonly bool observeGate;
         public ObservedMaintenance? ObservedGate { get; private set; }
-        public PausingSheetSync PausedSync { get; } = new();
+        public PausingArchive PausedArchive { get; } = new();
         private BackupHost(IDatabaseSnapshot? snapshot, bool observeGate)
         {
             this.snapshot = snapshot; this.observeGate = observeGate; System.IO.Directory.CreateDirectory(DirectoryPath);
@@ -445,14 +450,12 @@ public sealed class DatabaseBackupTests
             builder.UseEnvironment("Testing"); builder.UseSetting("ConnectionStrings:DefaultConnection", Connection);
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<ISheetClient>(); services.AddSingleton<ISheetClient, OfflineSheets>();
-                services.RemoveAll<ISheetSyncService>(); services.AddSingleton<ISheetSyncService, FakeSheetSyncService>();
                 if (snapshot is not null) { services.RemoveAll<IDatabaseSnapshot>(); services.AddSingleton(snapshot); }
                 if (observeGate)
                 {
                     ObservedGate = new(new DatabaseMaintenance(Connection));
                     services.RemoveAll<IDatabaseMaintenance>(); services.AddSingleton<IDatabaseMaintenance>(ObservedGate);
-                    services.RemoveAll<ISheetSyncService>(); services.AddSingleton<ISheetSyncService>(PausedSync);
+                    services.RemoveAll<IActivityArchiveService>(); services.AddSingleton<IActivityArchiveService>(PausedArchive);
                 }
             });
         }
@@ -471,7 +474,7 @@ public sealed class DatabaseBackupTests
                 Assert.True((await users.CreateAsync(user, "pass")).Succeeded);
                 Assert.True((await users.AddToRoleAsync(user, role)).Succeeded);
             }
-            db.Settings.Add(new Setting { Key = "Google:ServiceAccountJson", Value = "synthetic-secret", UpdatedAt = DateTime.UtcNow });
+            db.Settings.Add(new Setting { Key = "Test:Secret", Value = "synthetic-secret", UpdatedAt = DateTime.UtcNow });
             db.Activities.Add(new Activity { ActivityDate = new(2026, 1, 1), Status = ActivityStatus.Ready, CreatedByUserId = "admin-id", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync();
             return host;
@@ -488,13 +491,6 @@ public sealed class DatabaseBackupTests
         {
             await base.DisposeAsync();
             System.IO.Directory.Delete(DirectoryPath, recursive: true);
-        }
-        private sealed class OfflineSheets : ISheetClient
-        {
-            public Task<IReadOnlyList<SheetTab>> GetTabsAsync(string id, IEnumerable<string>? names = null, CancellationToken ct = default) => throw new InvalidOperationException("network forbidden");
-            public Task WriteColumnAsync(string id, string tab, int index, SheetColumn column, CancellationToken ct = default) => throw new InvalidOperationException("network forbidden");
-            public Task InsertColumnAsync(string id, string tab, int index, SheetColumn column, CancellationToken ct = default) => throw new InvalidOperationException("network forbidden");
-            public Task DeleteColumnAsync(string id, string tab, int index, CancellationToken ct = default) => throw new InvalidOperationException("network forbidden");
         }
     }
 }

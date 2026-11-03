@@ -2,7 +2,6 @@ using VolleyballClub.Application.Dtos;
 namespace VolleyballClub.Application.Abstractions;
 public interface IAdminActivityService
 {
-    Task<IReadOnlyList<ActivityTargetDto>> GetTargetsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<ManagedActivityDto>> GetActivitiesAsync(CancellationToken ct = default);
     Task<ManagedActivityDto> CreateAsync(ActivityCreateRequest request, CancellationToken ct = default);
     Task<ManagedActivityDto> EditAsync(string key, ActivityEditRequest request, CancellationToken ct = default);

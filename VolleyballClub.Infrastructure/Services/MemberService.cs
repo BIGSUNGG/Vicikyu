@@ -16,7 +16,6 @@ public class MemberService(
     UserManager<ApplicationUser> userManager,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
-    ISheetFormatResolver formatResolver,
     TimeProvider timeProvider,
     ApplicationDbContext identityDb) : IMemberService
 {
@@ -37,19 +36,7 @@ public class MemberService(
 
         var roleByUser = await GetRoleByUserAsync(db);
 
-        // 시트 연결 판별 — 현재 학기 출석 탭 기준(GetUnmappedUserIdsAsync와 동일 규칙)
-        var tabName = formatResolver.ResolveByDate(today)?.TabName;
-        var sheetIds = await db.SheetDefinitions.AsNoTracking()
-            .Where(s => s.Kind == SheetKind.Attendance)
-            .Select(s => s.Id)
-            .ToListAsync();
-        var mappedSet = tabName is null || sheetIds.Count == 0
-            ? new HashSet<string>()
-            : (await db.SheetMemberMappings.AsNoTracking()
-                .Where(m => m.TabName == tabName && sheetIds.Contains(m.SheetDefinitionId))
-                .Select(m => m.UserId)
-                .ToListAsync()).ToHashSet();
-
+        // 시트 연결 판별은 폐지됨(시트 통합 제거) — 매핑 없이 회비 납부만 필터로 쓴다
         var paidSet = currentPeriod is null
             ? new HashSet<string>()
             : (await db.FeePayments.AsNoTracking()
@@ -67,11 +54,6 @@ public class MemberService(
         if (request.Statuses is { Count: > 0 } statuses)
         {
             query = query.Where(u => statuses.Contains(u.Status));
-        }
-
-        if (request.SheetMapped is { } wantMapped)
-        {
-            query = query.Where(u => mappedSet.Contains(u.Id) == wantMapped);
         }
 
         if (request.FeePaid is { } wantPaid)
@@ -131,8 +113,7 @@ public class MemberService(
                 u.Semester,
                 u.Month,
                 u.Total,
-                paidSet.Contains(u.Id),
-                mappedSet.Contains(u.Id)))
+                paidSet.Contains(u.Id)))
             .ToList();
 
         return new MemberPageDto(items, total, page, pageSize);

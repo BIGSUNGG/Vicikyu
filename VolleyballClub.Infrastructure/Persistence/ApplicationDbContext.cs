@@ -28,26 +28,18 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
-    public DbSet<SheetDefinition> SheetDefinitions => Set<SheetDefinition>();
+    public DbSet<DayMark> DayMarks => Set<DayMark>();
 
-    public DbSet<SheetMemberMapping> SheetMemberMappings => Set<SheetMemberMapping>();
+    public DbSet<UnmappedMember> UnmappedMembers => Set<UnmappedMember>();
 
-    public DbSet<SheetDayMark> SheetDayMarks => Set<SheetDayMark>();
-
-    public DbSet<ActivitySource> ActivitySources => Set<ActivitySource>();
-    public DbSet<SheetEditJournal> SheetEditJournals => Set<SheetEditJournal>();
+    public DbSet<UnmappedAttendance> UnmappedAttendances => Set<UnmappedAttendance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
-        modelBuilder.Entity<SheetDayMark>().HasKey(m => m.Date);
-        modelBuilder.Entity<ActivitySource>().HasKey(s => s.Id);
-        modelBuilder.Entity<ActivitySource>().HasIndex(s => s.ActivityId).IsUnique();
-        modelBuilder.Entity<ActivitySource>().HasOne(s => s.Activity).WithOne()
-            .HasForeignKey<ActivitySource>(s => s.ActivityId).OnDelete(DeleteBehavior.SetNull);
-        modelBuilder.Entity<ActivitySource>().HasOne<SheetDefinition>().WithMany()
-            .HasForeignKey(s => s.SheetDefinitionId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<SheetEditJournal>().HasKey(j => j.Id);
+        modelBuilder.Entity<DayMark>().HasKey(m => m.Date);
+        modelBuilder.Entity<DayMark>().ToTable("DayMarks");
+        modelBuilder.Entity<UnmappedAttendance>().HasIndex(a => new { a.UnmappedMemberId, a.ActivityId }).IsUnique();
     }
 }

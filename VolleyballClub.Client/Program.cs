@@ -12,16 +12,13 @@ builder.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStat
 builder.Services.AddMudServices();
 builder.Services.AddScoped<ActivityClient>();
 builder.Services.AddScoped<AdminActivityClient>();
+builder.Services.AddScoped<ActivityArchiveClient>();
 builder.Services.AddScoped<AttendanceClient>();
 builder.Services.AddScoped<TeamClient>();
 builder.Services.AddScoped<MemberClient>();
 builder.Services.AddScoped<FeeClient>();
 builder.Services.AddScoped<SemesterClient>();
-builder.Services.AddScoped<SheetAdminClient>();
-builder.Services.AddScoped<SheetMemberMappingClient>();
 builder.Services.AddScoped<AuditLogClient>();
-builder.Services.AddScoped<SettingClient>();
 builder.Services.AddScoped<DatabaseBackupClient>();
-builder.Services.AddScoped<SheetSyncClient>();
 builder.Services.AddScoped<CurrentUserClient>();
 await builder.Build().RunAsync();

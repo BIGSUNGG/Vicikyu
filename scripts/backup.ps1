@@ -47,9 +47,6 @@ try {
         $gitRev = ''
         try { $gitRev = (git rev-parse --short HEAD 2>$null) } catch { $gitRev = '' }
         if (-not $gitRev) { $gitRev = 'unknown' }
-        $sheetId = ''
-        $m = Select-String -Path (Join-Path $RepoRoot 'docker-compose.yml') -Pattern 'Google__SpreadsheetId:\s*(\S+)'
-        if ($m) { $sheetId = $m.Matches[0].Groups[1].Value }
 
         $files = Get-ChildItem $dest -File | ForEach-Object {
             @{ name = $_.Name; sha256 = (Get-Sha256 $_.FullName) }
@@ -57,7 +54,6 @@ try {
         [ordered]@{
             created_at     = (Get-Date).ToString('o')
             git_commit     = $gitRev
-            spreadsheet_id = $sheetId
             files          = $files
         } | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $dest 'manifest.json') -Encoding UTF8
     } finally {

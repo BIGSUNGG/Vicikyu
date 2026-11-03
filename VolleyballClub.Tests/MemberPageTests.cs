@@ -10,9 +10,8 @@ namespace VolleyballClub.Tests;
 /// <summary>부원 관리 페이지 개편 — 서버 페이징·필터·정렬, 상태 모델, 부원 상세 출석 기록 정정.</summary>
 public class MemberPageTests
 {
-    // 기본 시각 2026-10-01(KST) → 이번 달 10월, 학기 기본 규칙 9/1~12/31, 현재 학기 탭 '2026-2'
-    private static ServiceHost NewHost() =>
-        new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())).AsAdmin();
+    // 기본 시각 2026-10-01(KST) → 이번 달 10월, 학기 기본 규칙 9/1~12/31
+    private static ServiceHost NewHost() => new ServiceHost().AsAdmin();
 
     private static async Task SeedAttendanceRowAsync(ServiceHost host, int activityId, string userId)
     {
@@ -24,35 +23,6 @@ public class MemberPageTests
             AttendanceType = AttendanceType.Otp,
             CheckedAt = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-    }
-
-    private static async Task<int> SeedAttendanceSheetAsync(ServiceHost host)
-    {
-        await using var db = host.Db.CreateContext();
-        var sheet = new SheetDefinition
-        {
-            Name = "배구부 출석부",
-            SpreadsheetId = "sheet-1",
-            Kind = SheetKind.Attendance,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
-        db.SheetDefinitions.Add(sheet);
-        await db.SaveChangesAsync();
-        return sheet.Id;
-    }
-
-    private static async Task SeedMappingAsync(ServiceHost host, int sheetId, string userId)
-    {
-        await using var db = host.Db.CreateContext();
-        db.SheetMemberMappings.Add(new SheetMemberMapping
-        {
-            SheetDefinitionId = sheetId,
-            TabName = "2026-2",
-            RowLabel = $"{userId} 행",
-            UserId = userId,
         });
         await db.SaveChangesAsync();
     }
@@ -94,27 +64,21 @@ public class MemberPageTests
     }
 
     [Fact]
-    public async Task 시트연결_회비_필터가_서버에서_동작한다()
+    public async Task 회비_필터가_서버에서_동작한다()
     {
         var host = NewHost();
-        var mapped = await host.SeedUserAsync("김연결", "3001");
-        var unmapped = await host.SeedUserAsync("이미연", "3002");
-        var sheetId = await SeedAttendanceSheetAsync(host);
-        await SeedMappingAsync(host, sheetId, mapped);
+        var paid = await host.SeedUserAsync("김납부", "3001");
+        var unpaid = await host.SeedUserAsync("미납부", "3002");
 
         var period = await host.Fee.CreatePeriodAsync(new FeePeriodCreateRequest(
             "2026-2학기", new DateOnly(2026, 9, 1), new DateOnly(2026, 12, 31), 10000));
-        await host.Fee.SetPaidAsync(period.Id, mapped, isPaid: true);
+        await host.Fee.SetPaidAsync(period.Id, paid, isPaid: true);
 
-        var sheetMapped = await host.Member.GetPageAsync(new MemberPageRequest(SheetMapped: true));
-        var sheetUnmapped = await host.Member.GetPageAsync(new MemberPageRequest(SheetMapped: false));
         var feeUnpaid = await host.Member.GetPageAsync(new MemberPageRequest(FeePaid: false));
         var feePaid = await host.Member.GetPageAsync(new MemberPageRequest(FeePaid: true));
 
-        Assert.Equal([mapped], sheetMapped.Items.Select(m => m.UserId));
-        Assert.Equal([unmapped], sheetUnmapped.Items.Select(m => m.UserId));
-        Assert.Equal([unmapped], feeUnpaid.Items.Select(m => m.UserId));
-        Assert.Equal([mapped], feePaid.Items.Select(m => m.UserId));
+        Assert.Equal([unpaid], feeUnpaid.Items.Select(m => m.UserId));
+        Assert.Equal([paid], feePaid.Items.Select(m => m.UserId));
     }
 
     [Fact]
@@ -174,12 +138,11 @@ public class MemberPageTests
     {
         var host = NewHost();
         var member = await host.SeedUserAsync("김정정", "6001");
-        await host.SeedManagedSheetAsync(member);
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 9, 20), ActivityStatus.ActivityClosed);
 
         await host.Attendance.AdminAddForActivityAsync(member, activity.Id);
 
-        await host.Attendance.AdminAddForActivityAsync(member, activity.Id); // idempotent managed retry
+        await host.Attendance.AdminAddForActivityAsync(member, activity.Id); // 멱등 재시도
 
         var records = await host.Attendance.GetAdminRecordsAsync(member);
         Assert.Equal(1, records.TotalCount);
@@ -192,7 +155,6 @@ public class MemberPageTests
     {
         var host = NewHost();
         var member = await host.SeedUserAsync("김삭제", "7001");
-        await host.SeedManagedSheetAsync(member);
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 9, 25), ActivityStatus.ActivityClosed);
         await SeedAttendanceRowAsync(host, activity.Id, member);
         await using (var db = host.Db.CreateContext())

@@ -44,23 +44,6 @@ public static class DependencyInjection
         services.AddSingleton<IDatabaseSnapshot, SqliteDatabaseSnapshot>();
         services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
         services.AddSingleton(TimeProvider.System);
-        // 시트 원본 읽기 캐시 — GoogleSheetClient 앞에 데코레이터로 조립한다(원본 클라이언트는 무변경).
-        services.AddSingleton<GoogleSheetClient>();
-        services.AddSingleton<ISheetTabCache, MemorySheetTabCache>();
-        services.AddSingleton<ISheetClient>(sp => new CachedSheetClient(
-            sp.GetRequiredService<GoogleSheetClient>(),
-            sp.GetRequiredService<ISheetTabCache>(),
-            sp.GetRequiredService<ILogger<CachedSheetClient>>()));
-        services.AddSingleton<ISheetFormatResolver, SheetFormatResolver>();
-        services.AddScoped<ISheetSyncService, SheetSyncService>();
-        services.AddScoped<ISheetAdminService, SheetAdminService>();
-        services.AddScoped<ISheetMemberMappingService, SheetMemberMappingService>();
-
-        // 학기별 출석부 서식 전략(Design/sheet-formats.md) — 새 학기는 SemesterTabFormat.All()에 추가
-        foreach (var format in SemesterTabFormat.All())
-        {
-            services.AddSingleton<ISemesterSheetFormat>(format);
-        }
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ISettingService, SettingService>();
@@ -73,6 +56,8 @@ public static class DependencyInjection
         services.AddSingleton<IMemberWorkbookReader, MemberWorkbookReader>();
         services.AddScoped<IFeeService, FeeService>();
         services.AddScoped<ISemesterService, SemesterService>();
+        services.AddScoped<IActivityArchiveService, ActivityArchiveService>();
+        services.AddScoped<IUnmappedMemberService, UnmappedMemberService>();
 
         return services;
     }

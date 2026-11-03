@@ -37,13 +37,6 @@
 
             <div class="toolbar-row">
                 <div class="filter-group">
-                    @foreach (var (value, label) in new[] { (true, "시트 연결"), (false, "시트 미연결") })
-                    {
-                        <button type="button" class="filter-btn @(sheetMapped == value ? "active" : "")"
-                                @onclick="() => SetSheetFilterAsync(value)">@label</button>
-                    }
-                </div>
-                <div class="filter-group">
                     @foreach (var (value, label) in new[] { (true, "회비 완납"), (false, "회비 미납") })
                     {
                         <button type="button" class="filter-btn @(feePaid == value ? "active" : "")"
@@ -127,10 +120,6 @@
                     <div class="member-meta">@member.StudentNumber · @member.Department · 이번 학기 @(member.SemesterAttendance)회 · 이번 달 @(member.MonthAttendance)회</div>
                 </div>
                 <div style="margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-                    @if (!member.SheetMapped)
-                    {
-                        <span class="badge badge-red">시트 미연결</span>
-                    }
                     <span class="badge @(member.Role == "ADMIN" ? "badge-orange" : "badge-gray")">@(member.Role == "ADMIN" ? "관리자" : "부원")</span>
                     <span class="badge @(member.FeePaidCurrent ? "badge-green" : "badge-red")">@(member.FeePaidCurrent ? "납부" : "미납")</span>
                 </div>
@@ -166,7 +155,7 @@
     private MemberPageDto? page;
     private string search = "";
     private HashSet<MemberStatus> selectedStatuses = [];
-    private bool? sheetMapped;
+    private bool? feePaidOnly;
     private bool? feePaid;
     private MemberSortField sort = MemberSortField.SemesterAttendance;
     private bool ascending;
@@ -178,7 +167,6 @@
         : Math.Max(1, (int)Math.Ceiling(page.TotalCount / (double)page.PageSize));
 
     private int ActiveFilterCount => selectedStatuses.Count
-        + (sheetMapped is not null ? 1 : 0)
         + (feePaid is not null ? 1 : 0);
 
     protected override Task OnInitializedAsync() => ReadAsync();
@@ -193,7 +181,7 @@
         var request = new MemberPageRequest(
             string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
             selectedStatuses.Count > 0 ? selectedStatuses.ToArray() : null,
-            sheetMapped, feePaid, sort, ascending, pageNumber);
+            FeePaid: feePaid, Sort: sort, Ascending: ascending, Page: pageNumber);
         isLoading = showSkeleton || page is null || isLoading;
         isRefreshing = !isLoading;
         loadError = null;
@@ -242,14 +230,6 @@
             selectedStatuses.Add(status);
         }
 
-        pageNumber = 1;
-        await ReadAsync();
-    }
-
-    private async Task SetSheetFilterAsync(bool? value)
-    {
-        // 토글 — 활성 버튼을 다시 누르면 해제(전체)
-        sheetMapped = sheetMapped == value ? null : value;
         pageNumber = 1;
         await ReadAsync();
     }

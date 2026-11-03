@@ -3,7 +3,6 @@ using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
-using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
 
@@ -17,7 +16,6 @@ public sealed class StartNewActivityTests
         host.AsAdmin();
         var session1 = await host.Activity.GetOrCreateTodayAsync();
         await host.Activity.StartActivityAsync();
-        Assert.Contains(session1.ActivityId, host.SheetSync.ScheduledActivityIds); // 시작 → 신형 탭 예정 기록 호출
         var otp1 = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
         var member = await host.SeedUserAsync("민수", "202610001");
         host.AsMember(member);
@@ -26,7 +24,6 @@ public sealed class StartNewActivityTests
         host.AsAdmin();
         await host.Activity.CloseActivityAsync();
         var session2 = await host.Activity.StartNewActivityAsync();
-        Assert.Contains(session2.ActivityId, host.SheetSync.ScheduledActivityIds); // 새 세션 시작 → 예정 기록 호출
 
         Assert.NotEqual(session1.ActivityId, session2.ActivityId);
         Assert.Equal(session1.ActivityDate, session2.ActivityDate); // 같은 날 새 세션
@@ -123,9 +120,10 @@ public sealed class StartNewActivityTests
     [Fact]
     public async Task Calendar_MissesSameDateSessionsOnce()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
-        var member = await host.SeedUserAsync("민수", "202610002");
-        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026 통합", new(2026, 3, 1), new(2026, 12, 31)));
+        var member = await host.SeedUserAsync("민수", "202610002"); // 가입일(3/2)이 학기 안 — 귀속 확보
         var date = Domain.KstClock.Today(host.Time);
         await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);
         await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);

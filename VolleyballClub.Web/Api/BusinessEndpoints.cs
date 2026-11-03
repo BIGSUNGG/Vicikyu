@@ -8,9 +8,7 @@ public static class BusinessEndpoints
     {
         var my = app.MapGroup("/api/my").RequireAuthorization().AddEndpointFilter<ApiValidation>();
         var admin = app.MapGroup("/api/admin").RequireAuthorization(policy => policy.RequireRole("ADMIN"))
-            .AddEndpointFilter<ApiValidation>().AddEndpointFilter<SheetSyncFailureFilter>();
-        admin.MapGet("/sheets/sync-status", async (ISheetSyncService s, CancellationToken ct) => Results.Json(await s.GetStatusAsync(ct)));
-        admin.MapGet("/activities/targets", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetTargetsAsync(ct)));
+            .AddEndpointFilter<ApiValidation>();
         admin.MapGet("/activities", async (IAdminActivityService s, CancellationToken ct) => Results.Json(await s.GetActivitiesAsync(ct)));
         admin.MapPost("/activities", async (IAdminActivityService s, ActivityCreateRequest r, CancellationToken ct) => Results.Json(await s.CreateAsync(r, ct)));
         admin.MapPut("/activities/{key}", async (IAdminActivityService s, string key, ActivityEditRequest r, CancellationToken ct) => Results.Json(await s.EditAsync(key, r, ct)));
@@ -51,7 +49,6 @@ public static class BusinessEndpoints
         admin.MapPost("/members/import", MemberImportEndpoint.Preview)
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(2 * MemberBulkValidation.MaxFileBytes));
         admin.MapPost("/members/bulk", async (IMemberService s, MemberBulkRequest request) => Results.Json(await s.AddBulkAsync(request)));
-        admin.MapPost("/members/mapping-options", async (ISheetMemberMappingService s, SheetBulkOptionsRequest request) => Results.Json(await s.GetBulkOptionsAsync(request.Names)));
         admin.MapPost("/members/search", async (IMemberService s, MemberPageRequest request) => { return Results.Json(await s.GetPageAsync(request)); });
         admin.MapGet("/members/{userId}", async (IMemberService s, string userId) => { return Results.Json(await s.GetAsync(userId)); });
         admin.MapPost("/members", async (IMemberService s, MemberCreateRequest request) => { return Results.Json(await s.AddAsync(request)); });
@@ -75,27 +72,16 @@ public static class BusinessEndpoints
         admin.MapPost("/semesters", async (ISemesterService s, SemesterSaveRequest request) => { return Results.Json(await s.CreateAsync(request)); });
         admin.MapPut("/semesters/{semesterId}", async (ISemesterService s, int semesterId, SemesterSaveRequest request) => { return Results.Json(await s.UpdateAsync(semesterId, request)); });
         admin.MapDelete("/semesters/{semesterId}", async (ISemesterService s, int semesterId) => { await s.DeleteAsync(semesterId); return Results.NoContent(); });
-        admin.MapGet("/sheets", async (ISheetAdminService s) => { return Results.Json(await s.GetListAsync()); });
-        admin.MapPost("/sheets", async (ISheetAdminService s, SheetSaveRequest request) => { return Results.Json(await s.SaveAsync(request.Id, request.Name, request.SpreadsheetIdOrUrl)); });
-        admin.MapDelete("/sheets/{id}", async (ISheetAdminService s, int id) => { await s.DeleteAsync(id); return Results.NoContent(); });
-        admin.MapGet("/members/{userId}/mappings", async (ISheetMemberMappingService s, string userId) => { return Results.Json(await s.GetForMemberAsync(userId)); });
-        admin.MapPut("/members/{userId}/mappings", async (ISheetMemberMappingService s, string userId, SheetMappingRequest request) =>
+        // 활동 기록 xlsx 가져오기·내보내기(관리자 설정 페이지)
+        admin.MapPost("/activities/import", ActivityArchiveEndpoint.Import)
+            .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(2 * Infrastructure.Services.ActivityWorkbookReader.MaxFileBytes));
+        admin.MapGet("/activities/export", ActivityArchiveEndpoint.Export);
+        admin.MapGet("/unmapped-members", async (IUnmappedMemberService s, CancellationToken ct) => Results.Json(await s.GetListAsync(ct)));
+        admin.MapPost("/unmapped-members/{id}/link", async (IUnmappedMemberService s, int id, TextRequest request, CancellationToken ct) =>
         {
-            await s.SetMappingAsync(request.SheetId, request.TabName, userId, request.RowLabel, request.AddNewRow);
+            await s.LinkAsync(id, request.Value, ct);
             return Results.NoContent();
         });
         admin.MapGet("/audit", async (IAuditLogService s, int? take) => { return Results.Json(await s.GetRecentAsync(take ?? 100)); });
-        admin.MapPut("/settings/google-key", async (TextRequest request, ISettingService s, IAuditLogService audit) =>
-        {
-            await s.SetAsync("Google:ServiceAccountJson", request.Value);
-            await audit.LogAsync(AdminAction.SettingChange, "Setting", "Google:ServiceAccountJson", "구글 시트 키 변경");
-            return Results.NoContent();
-        });
-        admin.MapPost("/sheets/resync", async (ISheetSyncService s, IAuditLogService audit) =>
-        {
-            var report = await s.ResyncAsync();
-            await audit.LogAsync(AdminAction.SheetResync, "Sheet", "resync", $"활동 {report.ImportedActivities}건·출석 {report.ImportedAttendances}건 가져옴, 열 {report.ExportedColumns}개 내보냄");
-            return Results.Json(report);
-        });
     }
 }

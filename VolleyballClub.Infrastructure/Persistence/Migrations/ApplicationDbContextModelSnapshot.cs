@@ -170,25 +170,12 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DisplayName")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("OtpCode")
                         .HasMaxLength(10)
                         .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("SheetExportedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SheetSyncError")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("SheetSyncPendingAt")
-                        .HasColumnType("TEXT");
-
-                    b.PrimitiveCollection<string>("SheetSyncRequiredUserIds")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("SheetSyncRevision")
-                        .HasColumnType("INTEGER");
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
@@ -203,43 +190,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .HasFilter("\"Status\" <> 4");
 
                     b.ToTable("Activities", (string)null);
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.ActivitySource", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ActivityId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsMissing")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SheetDefinitionId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("TabName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActivityId")
-                        .IsUnique();
-
-                    b.HasIndex("SheetDefinitionId");
-
-                    b.ToTable("ActivitySources");
                 });
 
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>
@@ -307,6 +257,22 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.ToTable("AuditLogs", (string)null);
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.DayMark", b =>
+                {
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Date");
+
+                    b.ToTable("DayMarks", (string)null);
                 });
 
             modelBuilder.Entity("VolleyballClub.Domain.Entities.FeePayment", b =>
@@ -451,104 +417,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Settings", (string)null);
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetDayMark", b =>
-                {
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Date");
-
-                    b.ToTable("SheetDayMarks");
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetDefinition", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SpreadsheetId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("SheetDefinitions");
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetEditJournal", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("BeforeJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MutationJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SpreadsheetId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SheetEditJournals");
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetMemberMapping", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("RowLabel")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SheetDefinitionId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("TabName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SheetDefinitionId", "TabName", "RowLabel")
-                        .IsUnique();
-
-                    b.HasIndex("SheetDefinitionId", "TabName", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("SheetMemberMappings");
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Team", b =>
                 {
                     b.Property<int>("Id")
@@ -601,6 +469,53 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("TeamMembers", (string)null);
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedAttendance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ActivityId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UnmappedMemberId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivityId");
+
+                    b.HasIndex("UnmappedMemberId", "ActivityId")
+                        .IsUnique();
+
+                    b.ToTable("UnmappedAttendances");
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("UnmappedMembers");
                 });
 
             modelBuilder.Entity("VolleyballClub.Infrastructure.Identity.ApplicationUser", b =>
@@ -748,22 +663,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.ActivitySource", b =>
-                {
-                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
-                        .WithOne()
-                        .HasForeignKey("VolleyballClub.Domain.Entities.ActivitySource", "ActivityId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("VolleyballClub.Domain.Entities.SheetDefinition", null)
-                        .WithMany()
-                        .HasForeignKey("SheetDefinitionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>
                 {
                     b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
@@ -797,17 +696,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Navigation("Activity");
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.SheetMemberMapping", b =>
-                {
-                    b.HasOne("VolleyballClub.Domain.Entities.SheetDefinition", "SheetDefinition")
-                        .WithMany()
-                        .HasForeignKey("SheetDefinitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SheetDefinition");
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Team", b =>
                 {
                     b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
@@ -830,6 +718,25 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Navigation("Team");
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedAttendance", b =>
+                {
+                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
+                        .WithMany()
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VolleyballClub.Domain.Entities.UnmappedMember", "UnmappedMember")
+                        .WithMany("Attendances")
+                        .HasForeignKey("UnmappedMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("UnmappedMember");
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Activity", b =>
                 {
                     b.Navigation("Attendances");
@@ -847,6 +754,11 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Team", b =>
                 {
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedMember", b =>
+                {
+                    b.Navigation("Attendances");
                 });
 #pragma warning restore 612, 618
         }

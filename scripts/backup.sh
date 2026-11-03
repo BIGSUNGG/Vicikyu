@@ -52,11 +52,13 @@ if [ "$IMAGE" = 1 ]; then
 fi
 
 GIT_REV=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
-SHEET_ID=$(grep -oP 'Google__SpreadsheetId:\s*\K\S+' "$REPO_ROOT/docker-compose.yml" || true)
 
 {
-    printf '{\n  "created_at": "%s",\n  "git_commit": "%s",\n  "spreadsheet_id": "%s",\n  "files": [\n' \
-        "$(date -Is)" "$GIT_REV" "$SHEET_ID"
+    printf '{
+  "created_at": "%s",
+  "git_commit": "%s",
+  "files": [
+' \n        "$(date -Is)" "$GIT_REV"
     first=1
     for f in "$DEST"/*; do
         b=$(basename "$f")

@@ -25,7 +25,6 @@ public enum MemberSortField
 public record MemberPageRequest(
     string? Search = null,
     IReadOnlyCollection<MemberStatus>? Statuses = null,
-    bool? SheetMapped = null,
     bool? FeePaid = null,
     MemberSortField Sort = MemberSortField.SemesterAttendance,
     bool Ascending = false,
@@ -43,8 +42,7 @@ public record MemberListItemDto(
     int SemesterAttendance,
     int MonthAttendance,
     int TotalAttendance,
-    bool FeePaidCurrent,
-    bool SheetMapped);
+    bool FeePaidCurrent);
 
 public record MemberPageDto(
     IReadOnlyList<MemberListItemDto> Items,

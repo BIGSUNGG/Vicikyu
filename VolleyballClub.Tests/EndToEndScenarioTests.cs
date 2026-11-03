@@ -1,7 +1,6 @@
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Enums;
-using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -16,16 +15,16 @@ public class EndToEndScenarioTests
     [Fact]
     public async Task FullDayScenario_Works()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
+        await using var host = new ServiceHost();
         var admin = await host.SeedUserAsync("김회장", "admin");
         var m1 = await host.SeedUserAsync("김민수", "202512001");
         var m2 = await host.SeedUserAsync("박지훈", "202512002");
         var m3 = await host.SeedUserAsync("이정우", "202512003");
         var m4 = await host.SeedUserAsync("홍길동", "202512004");
-        await host.SeedManagedSheetAsync(m2); // 2026-2 탭 매핑 — 캘린더·학기 통계 귀속용
 
-        // 1-4. 관리자: 활동 생성 → OTP 생성 → 출석 시작
+        // 1-4. 관리자: 학기 등록 → 활동 생성 → OTP 생성 → 출석 시작
         host.AsAdmin(admin);
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026년 2학기", new DateOnly(2026, 9, 1), new DateOnly(2026, 12, 31)));
         var today = await host.Activity.GetOrCreateTodayAsync();
         Assert.Equal(ActivityStatus.Ready, today.Status);
         await host.Activity.GenerateOtpAsync();

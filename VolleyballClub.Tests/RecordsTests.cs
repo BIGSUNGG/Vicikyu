@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using VolleyballClub.Application.Dtos;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
-using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -9,12 +9,20 @@ namespace VolleyballClub.Tests;
 /// <summary>기록 페이지용 월간 이력 조회 — 활동 전체(상태 포함)와 내 출석.</summary>
 public class RecordsTests
 {
+    private static async Task<ServiceHost> NewHostAsync()
+    {
+        var host = new ServiceHost();
+        host.AsAdmin();
+        // 2026-2 학기 등록 — 귀속 학기의 활동이 기록에 나타난다
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026년 2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        return host;
+    }
+
     [Fact]
     public async Task Records_ListsAllMonthActivities_LatestFirst_WithEvents()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
+        await using var host = await NewHostAsync();
         var alice = await host.SeedUserAsync("김민수", "202512001");
-        await host.SeedManagedSheetAsync(alice); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
 
         // 다른 달 활동은 제외
         await host.SeedActivityAsync(new DateOnly(2026, 9, 30), ActivityStatus.ActivityClosed);
@@ -45,9 +53,8 @@ public class RecordsTests
     [Fact]
     public async Task Records_AreScopedToRequestingUser()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All()));
+        await using var host = await NewHostAsync();
         var alice = await host.SeedUserAsync("김민수", "202512001");
-        await host.SeedManagedSheetAsync(alice); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
         var bob = await host.SeedUserAsync("박지훈", "202512002");
 
         var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
@@ -56,7 +63,8 @@ public class RecordsTests
         var mine = await host.Attendance.GetMyRecordsAsync(alice, 2026, 10);
         var bobs = await host.Attendance.GetMyRecordsAsync(bob, 2026, 10);
 
-        Assert.False(mine.Records.Single().IsAttended);
+        // alice는 이 학기에 귀속되지 않았다(가입일은 3월, 출석 없음) — 남의 출석이 보이지 않는다
+        Assert.Empty(mine.Records);
         Assert.Equal(0, mine.MonthCount);
 
         Assert.True(bobs.Records.Single().IsAttended);

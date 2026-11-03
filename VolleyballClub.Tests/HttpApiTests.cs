@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Identity;
@@ -104,24 +102,62 @@ public sealed class HttpApiTests
         await Status(admin.PutAsJsonAsync($"/api/admin/fees/{period.Id}/members/member-id", new FeePaymentRequest(true)), HttpStatusCode.NoContent);
         Assert.True((await member.GetFromJsonAsync<List<FeeStatusDto>>("/api/my/fees"))!.Single().IsPaid);
         await Status(admin.PostAsJsonAsync("/api/admin/semesters", new SemesterSaveRequest("HTTP semester", now, now.AddDays(30))), HttpStatusCode.OK);
-        var sheetId = await Read<int>(admin.PostAsJsonAsync("/api/admin/sheets", new SheetSaveRequest(null, "fake sheet", "fake-id")));
-        // Mapping save reads the selected tab and no longer runs a global sync.
-        host.Sheets.Tabs.Add(new SheetTab("2026-2", [["활동 상태"], ["부원"], ["member", ""]]));
-        var mapping = await admin.PutAsJsonAsync("/api/admin/members/member-id/mappings", new SheetMappingRequest(sheetId, "2026-2", "member"));
-        Assert.Equal(HttpStatusCode.NoContent, mapping.StatusCode);
-        host.FailingSync = true;
-        var failedSync = await admin.PostAsync("/api/admin/sheets/resync", null);
-        Assert.Equal(HttpStatusCode.InternalServerError, failedSync.StatusCode);
-        var error = (await failedSync.Content.ReadFromJsonAsync<ApiErrorDto>())!;
-        Assert.Equal("unexpected", error.Kind);
-        Assert.False(string.IsNullOrWhiteSpace(error.CorrelationId));
-        Assert.DoesNotContain("test sync failure", error.Message);
-        await Status(admin.PutAsJsonAsync("/api/admin/settings/google-key", new TextRequest("test-only-no-credentials")), HttpStatusCode.NoContent);
+        // 활동 기록 xlsx 가져오기·내보내기 — 신규 관리자 설정 계약
+        using (var form = new MultipartFormDataContent())
+        {
+            form.Add(new ByteArrayContent(TestWorkbook.Write(("2026-2",
+            [
+                ["활동 상태", "활동 완료"],
+                ["총 인원 : ", "26. 09. 01. 화"],
+                ["member", "출석"],
+            ]))), "file", "activities.xlsx");
+            var report = await Read<ActivityImportReport>(admin.PostAsync("/api/admin/activities/import", form));
+            Assert.Equal(1, report.ImportedActivities);
+            Assert.Equal(1, report.ImportedAttendances);
+        }
+        var exported = await admin.GetByteArrayAsync("/api/admin/activities/export");
+        Assert.True(exported.Length > 4);
+        Assert.Equal(0x50, exported[0]); // xlsx(zip) 매직 바이트 'P'
+        Assert.Empty((await admin.GetFromJsonAsync<List<UnmappedMemberDto>>("/api/admin/unmapped-members"))!);
         var audit = await admin.GetFromJsonAsync<List<AuditLogDto>>("/api/admin/audit?take=100");
-        Assert.Contains(audit!, a => a.Action == AdminAction.SettingChange);
-        Assert.DoesNotContain(audit!, a => a.Details.Contains("test-only-no-credentials"));
+        Assert.Contains(audit!, a => a.Action == AdminAction.SettingChange); // 가져오기 감사
         await Status(member.PutAsJsonAsync("/api/my/profile/password", new PasswordChangeRequest("pass", "newpass")), HttpStatusCode.NoContent);
         await Status(member.GetAsync("/api/my/profile"), HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Activity_Import_Does_Not_Persist_The_Upload_File_On_Disk()
+    {
+        await using var host = await ApiHost.StartAsync();
+        using var admin = host.Client();
+        await Login(admin, "admin");
+        await Token(admin);
+
+        static List<string> UploadCandidates() =>
+        [
+            .. Directory.EnumerateFiles(Path.GetTempPath())
+                .Concat(Directory.EnumerateFiles(AppContext.BaseDirectory))
+                .Where(f => Path.GetFileName(f).EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                    || Path.GetFileName(f).EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f, StringComparer.Ordinal)
+                .Select(f => $"{f}:{new FileInfo(f).Length}"),
+        ];
+
+        var before = UploadCandidates();
+        using (var form = new MultipartFormDataContent())
+        {
+            form.Add(new ByteArrayContent(TestWorkbook.Write(("2026-2",
+            [
+                ["활동 상태", "활동 완료"],
+                ["총 인원 : ", "26. 09. 01. 화"],
+                ["미매칭마커", "출석"],
+            ]))), "file", "no-persist-probe.xlsx");
+            var report = await Read<ActivityImportReport>(admin.PostAsync("/api/admin/activities/import", form));
+            Assert.Equal(1, report.ImportedActivities);
+            Assert.Equal(1, report.UnmappedMembers);
+        }
+        // 업로드 파일은 스트리밍으로 파싱·폐기된다 — 임시·콘텐츠 루트에 새 파일이 생기면 안 된다
+        Assert.Equal(before, UploadCandidates());
     }
 
     [Fact]
@@ -240,53 +276,43 @@ public sealed class HttpApiTests
     }
 
     [Fact]
-    public async Task Managed_activity_http_contract_requires_admin_csrf_and_syncs_historical_aliases()
+    public async Task Managed_activity_http_contract_requires_admin_csrf_and_rejects_invalid_kinds()
     {
         await using var host = await ApiHost.StartAsync();
         using var anonymous = host.Client(); using var member = host.Client(); using var admin = host.Client();
         await Token(anonymous); await Login(member, "member"); await Token(member);
-        foreach (var path in new[] { "/api/admin/activities", "/api/admin/activities/targets", "/api/admin/activities/key/members", "/api/admin/members/member-id/activities" })
+        foreach (var path in new[] { "/api/admin/activities", "/api/admin/activities/key/members", "/api/admin/members/member-id/activities" })
         {
             await Status(anonymous.GetAsync(path), HttpStatusCode.Unauthorized);
             await Status(member.GetAsync(path), HttpStatusCode.Forbidden);
         }
         await Login(admin, "admin"); await Token(admin);
-        int sheetId;
-        using (var scope = host.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var sheet = new VolleyballClub.Domain.Entities.SheetDefinition { Name = "synthetic", SpreadsheetId = "fake", Kind = SheetKind.Attendance };
-            db.SheetDefinitions.Add(sheet); await db.SaveChangesAsync(); sheetId = sheet.Id;
-            db.SheetMemberMappings.Add(new() { SheetDefinitionId = sheetId, TabName = "2026-2", UserId = "member-id", RowLabel = "member" });
-            await db.SaveChangesAsync();
-        }
-        host.Sheets.Tabs.Add(new SheetTab("2026-2", [["활동 상태"], ["부원"], ["member"]]));
-        var request = new ActivityCreateRequest(sheetId, "2026-2", new(2026, 10, 2), SheetDayKind.NoActivity);
+        var request = new ActivityCreateRequest(new(2026, 10, 2), DayKind.NoActivity);
         await Status(anonymous.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.Unauthorized);
         await Status(member.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.Forbidden);
         admin.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
         await Status(admin.PostAsJsonAsync("/api/admin/activities", request), HttpStatusCode.BadRequest);
         await Token(admin);
-        await Status(admin.PostAsJsonAsync("/api/admin/activities", request with { Kind = (SheetDayKind)999 }), HttpStatusCode.BadRequest);
+        await Status(admin.PostAsJsonAsync("/api/admin/activities", request with { Kind = (DayKind)999 }), HttpStatusCode.BadRequest);
         var row = await Read<ManagedActivityDto>(admin.PostAsJsonAsync("/api/admin/activities", request));
-        Assert.Null(row.Reason); Assert.False(row.CanEditAttendance);
-        await Status(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}/members/member-id", new ActivityAttendanceRequest(true)), HttpStatusCode.Conflict);
-        var completed = await Read<ManagedActivityDto>(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}", new ActivityEditRequest(request.Date, SheetDayKind.Completed)));
+        Assert.Null(row.Note); Assert.False(row.CanEditAttendance);
+        // 예정/없음 표시에는 출석이 없다 — 활동 키가 아니므로 찾을 수 없음
+        await Status(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}/members/member-id", new ActivityAttendanceRequest(true)), HttpStatusCode.NotFound);
+        var completed = await Read<ManagedActivityDto>(admin.PutAsJsonAsync($"/api/admin/activities/{row.Key}", new ActivityEditRequest(request.Date, DayKind.Completed)));
         Assert.NotNull(completed.ActivityId); Assert.True(completed.CanEditAttendance);
         await Status(admin.PostAsync($"/api/admin/members/member-id/attendance/{completed.ActivityId}", null), HttpStatusCode.NoContent);
         var list = await admin.GetFromJsonAsync<MemberActivityListDto>("/api/admin/members/member-id/activities");
         Assert.Equal(1, list!.TotalCount); Assert.True(Assert.Single(list.Items).IsAttended);
-        var members = await admin.GetFromJsonAsync<List<AttendanceMemberDto>>($"/api/admin/activities/{row.Key}/members");
+        var members = await admin.GetFromJsonAsync<List<AttendanceMemberDto>>($"/api/admin/activities/app:{completed.ActivityId}/members");
         Assert.True(members!.Single(m => m.UserId == "member-id").IsAttended);
         await Status(SendDelete(admin, $"/api/admin/members/member-id/attendance/{completed.ActivityId}", new AttendanceChangeRequest()), HttpStatusCode.NoContent);
-        Assert.Contains(host.Sheets.ManagedWrites, w => w.Kind == SheetMutationKind.Write);
         await Status(admin.DeleteAsync($"/api/admin/activities/app:{completed.ActivityId}"), HttpStatusCode.NoContent);
-        await Status(admin.DeleteAsync($"/api/admin/activities/app:{completed.ActivityId}"), HttpStatusCode.NoContent);
-        await Status(admin.DeleteAsync($"/api/admin/activities/{row.Key}"), HttpStatusCode.NoContent);
-        Assert.Single(host.Sheets.Deletions);
+        await Status(admin.DeleteAsync($"/api/admin/activities/app:{completed.ActivityId}"), HttpStatusCode.NotFound); // 앱 키 재시도
+        await Status(admin.DeleteAsync($"/api/admin/activities/{row.Key}"), HttpStatusCode.NoContent); // 전환된 마크의 재시도는 no-op
         using var verifyScope = host.Services.CreateScope();
         var verify = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Equal(1, await verify.AuditLogs.CountAsync(a => a.Action == AdminAction.ActivityCancel && a.TargetType == "ActivitySource"));
+        Assert.Equal(1, await verify.AuditLogs.CountAsync(a => a.Action == AdminAction.ActivityCancel && a.TargetType == "Activity"));
+        Assert.Empty(await verify.DayMarks.ToListAsync());
     }
 
     private sealed class PasswordChangeHandler : HttpMessageHandler
@@ -373,20 +399,11 @@ public sealed class HttpApiTests
     private sealed class ApiHost : WebApplicationFactory<Program>
     {
         private readonly string dbPath = Path.Combine(Path.GetTempPath(), $"vicikyu-http-{Guid.NewGuid():N}.db");
-        public bool FailingSync { get; set; }
-        public FakeSheetClient Sheets { get; } = new();
         public HttpClient Client() => CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("ConnectionStrings:DefaultConnection", $"Data Source={dbPath}");
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<ISheetSyncService>();
-                services.AddSingleton<ISheetSyncService>(new TestSync(this));
-                services.RemoveAll<ISheetClient>();
-                services.AddSingleton<ISheetClient>(Sheets);
-            });
         }
         public static async Task<ApiHost> StartAsync()
         {
@@ -410,18 +427,6 @@ public sealed class HttpApiTests
             await base.DisposeAsync();
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             foreach (var path in new[] { dbPath, dbPath + "-shm", dbPath + "-wal" }) if (File.Exists(path)) File.Delete(path);
-        }
-        private sealed class TestSync(ApiHost host) : ISheetSyncService
-        {
-            public SheetPushResult? LastPushResult => null;
-            public Task<SheetPushResult> PushActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(new SheetPushResult(true, true, null));
-            public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
-            public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) => ResyncAsync(ct);
-            public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) => host.FailingSync
-                ? throw new InvalidOperationException("test sync failure") : Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
-            public Task<bool> ExportClosedActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
-            public Task<bool> ExportScheduledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
-            public Task<bool> RemoveCancelledActivityAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
         }
     }
 }

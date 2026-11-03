@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
@@ -14,49 +13,6 @@ using VolleyballClub.Infrastructure.Persistence;
 using VolleyballClub.Infrastructure.Services;
 
 namespace VolleyballClub.Tests;
-
-/// <summary>시트 동기화 스텁 — 마감·예정 내보내기 호출만 기록한다.</summary>
-public sealed class FakeSheetSyncService : ISheetSyncService
-{
-    public SheetPushResult? LastPushResult { get; private set; }
-    public List<int> PushedActivityIds { get; } = [];
-    public Task<SheetPushResult> PushActivityAsync(int activityId, CancellationToken ct = default)
-    {
-        PushedActivityIds.Add(activityId);
-        return Task.FromResult(LastPushResult = new SheetPushResult(true, true, null));
-    }
-    public Task<SheetSyncStatusDto> GetStatusAsync(CancellationToken ct = default) => Task.FromResult(new SheetSyncStatusDto(0, []));
-
-    public List<int> ExportedActivityIds { get; } = [];
-
-    public List<int> ScheduledActivityIds { get; } = [];
-
-    public Task<SheetSyncReport> SyncAsync(CancellationToken ct = default) =>
-        Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
-
-    public Task<bool> ExportClosedActivityAsync(int activityId, CancellationToken ct = default)
-    {
-        ExportedActivityIds.Add(activityId);
-        return Task.FromResult(true);
-    }
-
-    public Task<bool> ExportScheduledActivityAsync(int activityId, CancellationToken ct = default)
-    {
-        ScheduledActivityIds.Add(activityId);
-        return Task.FromResult(true);
-    }
-
-    public Task<SheetSyncReport> ResyncAsync(CancellationToken ct = default) =>
-        Task.FromResult(new SheetSyncReport(0, 0, 0, 0, []));
-
-    public List<int> CancelledActivityIds { get; } = [];
-
-    public Task<bool> RemoveCancelledActivityAsync(int activityId, CancellationToken ct = default)
-    {
-        CancelledActivityIds.Add(activityId);
-        return Task.FromResult(true);
-    }
-}
 
 /// <summary>시간을 고정하는 TimeProvider — '오늘'과 OTP 시각을 테스트에서 제어한다.</summary>
 public sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
@@ -164,27 +120,17 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public IAttendanceService Attendance { get; }
 
+    public IAdminActivityService AdminActivities { get; }
+
+    public IActivityArchiveService Archive { get; }
+
+    public IUnmappedMemberService Unmapped { get; }
+
     public ITeamService Team { get; }
 
     public IFeeService Fee { get; }
 
     public ISemesterService Semester { get; }
-
-    public FakeSheetSyncService SheetSync { get; } = new();
-    public FakeSheetClient ManagedSheets { get; } = new();
-    public async Task SeedManagedSheetAsync(string userId)
-    {
-        await using var db = Db.CreateContext();
-        var sheet = new SheetDefinition { Name = "test attendance", SpreadsheetId = "managed-test", Kind = SheetKind.Attendance };
-        db.SheetDefinitions.Add(sheet);
-        await db.SaveChangesAsync();
-        db.SheetMemberMappings.Add(new SheetMemberMapping { SheetDefinitionId = sheet.Id, TabName = "2026-2", UserId = userId, RowLabel = userId });
-        await db.SaveChangesAsync();
-        ManagedSheets.Tabs.Add(new VolleyballClub.Application.Dtos.SheetTab("2026-2", [["활동 상태"], ["부원"], [userId]]));
-    }
-
-    /// <summary>출석 서비스가 참조할 학기 전략 리졸버 — 기본은 전략 없음(모든 시트 활동이 비회원 학기가 됨).</summary>
-    public ISheetFormatResolver FormatResolver { get; }
 
     public IMemberService Member { get; }
 
@@ -195,22 +141,23 @@ public sealed class ServiceHost : IAsyncDisposable
     {
     }
 
-    public ServiceHost(FixedTimeProvider? time = null, FakeCurrentUser? current = null, ISheetFormatResolver? formatResolver = null)
+    public ServiceHost(FixedTimeProvider? time = null, FakeCurrentUser? current = null)
     {
         Time = time ?? new FixedTimeProvider(new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
         Current = current ?? new FakeCurrentUser();
-        FormatResolver = formatResolver ?? new SheetFormatResolver([]);
         Db = new TestDb();
         Audit = new AuditLogService(Db.Factory, Current, Time);
         Settings = new SettingService(Db.Factory, Current, Time);
-        Activity = new ActivityService(Db.Factory, Current, Audit, SheetSync, Time);
-        Attendance = new AttendanceService(Db.Factory, Current, Audit, FormatResolver, Time,
-            new AdminActivityService(Db.Factory, ManagedSheets, new SheetFormatResolver(SemesterTabFormat.All()), Current, SheetSync, Time), SheetSync);
+        AdminActivities = new AdminActivityService(Db.Factory, Current, Time);
+        Activity = new ActivityService(Db.Factory, Current, Audit, Time);
+        Attendance = new AttendanceService(Db.Factory, Current, Audit, Time, AdminActivities);
         Team = new TeamService(Db.Factory, Current, Audit, Time);
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);
+        Archive = new ActivityArchiveService(Db.Factory, Current, Audit, Time);
+        Unmapped = new UnmappedMemberService(Db.Factory, Current, Audit, Time);
         var memberDb = Db.CreateContext();
-        Member = new MemberService(Db.Factory, CreateUserManager(memberDb), Current, Audit, FormatResolver, Time, memberDb);
+        Member = new MemberService(Db.Factory, CreateUserManager(memberDb), Current, Audit, Time, memberDb);
         Users = CreateUserManager();
     }
 
@@ -273,12 +220,13 @@ public sealed class ServiceHost : IAsyncDisposable
         return user.Id;
     }
 
-    public async Task<Activity> SeedActivityAsync(DateOnly date, ActivityStatus status = ActivityStatus.AttendanceOpen, string? otp = null)
+    public async Task<Activity> SeedActivityAsync(DateOnly date, ActivityStatus status = ActivityStatus.AttendanceOpen, string? otp = null, string? displayName = null)
     {
         await using var db = Db.CreateContext();
         var activity = new Activity
         {
             ActivityDate = date,
+            DisplayName = displayName,
             Status = status,
             OtpCode = otp,
             AttendanceOpenedAt = DateTime.UtcNow,

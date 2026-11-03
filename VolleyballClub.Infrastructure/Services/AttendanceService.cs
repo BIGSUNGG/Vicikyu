@@ -14,18 +14,11 @@ public class AttendanceService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ICurrentUserService currentUser,
     IAuditLogService auditLog,
-    ISheetFormatResolver formatResolver,
     TimeProvider timeProvider,
-    IAdminActivityService adminActivities,
-    ISheetSyncService sheetSync) : IAttendanceService
+    IAdminActivityService adminActivities) : IAttendanceService
 {
     public async Task<DateTime> CheckInWithOtpAsync(string otp)
     {
-        int activityId = 0;
-        var checkedAt = default(DateTime);
-        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
-        try
-        {
         var userId = await currentUser.RequireUserIdAsync();
         var code = otp.Trim();
 
@@ -67,7 +60,6 @@ public class AttendanceService(
             CreatedAt = now,
         };
         db.Attendances.Add(attendance);
-        activity.MarkSheetPending(now, userId);
         try
         {
             await db.SaveChangesAsync();
@@ -77,29 +69,11 @@ public class AttendanceService(
             throw new ConflictException("이미 출석 처리되었습니다.");
         }
 
-        activityId = activity.Id;
-        checkedAt = now;
-        }
-        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
-
-        // 시트 반영은 응답 뒤에서 — 부원 체크인 응답을 원격 I/O가 지연시키지 않는다.
-        // PushActivityAsync는 실패를 스스로 미반영(pending)으로 보존한다(관리자 화면 알림).
-        // scoped 서비스지만 의존은 모두 앱 수명 싱글턴이고 Dispose가 없어 요청 스코프 종료 후에도 안전하다.
-        // 원격 I/O는 AttendanceCommitGate를 절대 잡지 않는다(Gate→AttendanceCommitGate 순서만 허용).
-        _ = Task.Run(async () =>
-        {
-            try { await sheetSync.PushActivityAsync(activityId, CancellationToken.None); }
-            catch (Exception ex) when (ex is ObjectDisposedException) { /* 앱 종료 중 — pending 보존으로 다음 기동에 재시도 */ }
-        });
-        return checkedAt;
+        return now;
     }
 
     public async Task AdminAddAsync(string targetUserId)
     {
-        int activityId;
-        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
-        try
-        {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
@@ -126,7 +100,6 @@ public class AttendanceService(
             CheckedAt = now,
             CreatedAt = now,
         });
-        activity.MarkSheetPending(now, targetUserId);
         try
         {
             await db.SaveChangesAsync();
@@ -137,20 +110,10 @@ public class AttendanceService(
         }
 
         await auditLog.LogAsync(AdminAction.AttendanceAdd, "User", targetUserId, $"{member.Name} 직접 출석 추가");
-        activityId = activity.Id;
-        }
-        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
-
-        // 즉시 시트 반영 — 실패해도 추가는 유효(미반영 보존·관리자 알림)
-        await sheetSync.PushActivityAsync(activityId);
     }
 
     public async Task AdminCancelAsync(string targetUserId, bool confirmTeamImpact = false)
     {
-        int activityId;
-        await ManagedSheetEdits.AttendanceCommitGate.WaitAsync();
-        try
-        {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
@@ -161,12 +124,6 @@ public class AttendanceService(
         }
 
         await RemoveAttendanceCoreAsync(db, targetUserId, activity, confirmTeamImpact);
-        activityId = activity.Id;
-        }
-        finally { ManagedSheetEdits.AttendanceCommitGate.Release(); }
-
-        // 즉시 시트 반영 — 실패해도 취소는 유효(미반영 보존·관리자 알림)
-        await sheetSync.PushActivityAsync(activityId);
     }
 
     public Task AdminAddForActivityAsync(string targetUserId, int activityId) =>
@@ -195,8 +152,6 @@ public class AttendanceService(
             .Where(m => m.UserId == targetUserId && m.Team!.ActivityId == activity.Id)
             .ToListAsync();
         db.TeamMembers.RemoveRange(teamMembers);
-        // 출석 취소도 '시트 미반영' 마킹과 같이 커밋된다 — 시트 기록 성공 시 해제된다
-        activity.MarkSheetPending(KstClock.NowUtc(timeProvider), targetUserId);
         await db.SaveChangesAsync();
         await auditLog.LogAsync(AdminAction.AttendanceRemove, "User", targetUserId,
             $"{member?.Name ?? targetUserId} {activity.ActivityDate:MM.dd} 출석 취소");
@@ -234,17 +189,16 @@ public class AttendanceService(
                 .ToListAsync())
             .ToHashSet();
 
-        // 출석 추가 후보 — 현재 학기의 시작된 활동(이미 출석한 활동은 화면에서 비활성 표시).
-        // 미매핑 학기 활동은 제외 — 추가가 어차피 행 매핑 검증(SetAttendanceAsync)에서 거부된다.
+        // 출석 추가 후보 — 현재 학기의 시작된 활동 중 이 부원에게 귀속되는 학기의 활동(이미 출석한 활동은 화면에서 비활성 표시)
         var attendedIds = records.Select(x => x.ActivityId).ToHashSet();
-        var candidatePeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
+        var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
         var candidates = (await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
             .OrderByDescending(a => a.ActivityDate)
             .ThenByDescending(a => a.Id)
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync())
-            .Where(a => MemberActivityAttribution.IsAttributed(a.ActivityDate, candidatePeriods))
+            .Where(a => MemberSemesters.IsAttributed(a.ActivityDate, attributedPeriods))
             .ToList();
 
         return new MemberAttendanceAdminDto(
@@ -322,26 +276,26 @@ public class AttendanceService(
 
         // 마감된 활동 중 미출석일만 결석으로 표시 — 마감 전 활동은 진행 중이므로 제외,
         // 같은 날 활동이 여러 개여도 하루 치만 표시한다(BuildWeeks의 날짜 딕셔너리 중복 방지).
-        // 부원이 매핑된 학기의 활동만 결석으로 표시한다(비회원·방학 학기 제외)
+        // 이 부원에게 귀속되는 학기의 활동만 결석으로 표시한다(비회원·방학 학기 제외)
         var attendedDates = myAttendances.Select(x => x.ActivityDate).ToHashSet();
-        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
+        var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
         days.AddRange(activityIdsByDate
             .Where(a => a.Status == ActivityStatus.ActivityClosed
                 && !attendedDates.Contains(a.ActivityDate)
-                && MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
+                && MemberSemesters.IsAttributed(a.ActivityDate, attributedPeriods))
             .GroupBy(a => a.ActivityDate)
             .Select(g => new CalendarDayDto(g.Key, CalendarDayKind.Missed, null)));
 
-        // 시트의 예정/없음 날징은 캘린더에 상태로 표시한다 — 출석·미출석 표시가 이미 있는 날은 우선한다
+        // 예정/없음 날짜는 캘린더에 상태로 표시한다 — 출석·미출석 표시가 이미 있는 날은 우선한다
         var markedDates = days.Select(d => d.Date).ToHashSet();
-        var dayMarks = await db.SheetDayMarks.AsNoTracking()
+        var dayMarks = await db.DayMarks.AsNoTracking()
             .Where(m => m.Date >= first && m.Date <= last)
             .ToListAsync();
         days.AddRange(dayMarks
             .Where(m => !markedDates.Contains(m.Date))
             .Select(m => new CalendarDayDto(
                 m.Date,
-                m.Kind == SheetDayKind.Scheduled ? CalendarDayKind.Scheduled : CalendarDayKind.NoActivity,
+                m.Kind == DayKind.Scheduled ? CalendarDayKind.Scheduled : CalendarDayKind.NoActivity,
                 null)));
 
         var scope = await GetCurrentSemesterScopeAsync(db);
@@ -384,11 +338,11 @@ public class AttendanceService(
             .Select(x => new { x.ActivityId, x.CheckedAt })
             .ToListAsync();
 
-        // 부원이 매핑된 학기의 활동과 실제 출석한 활동만 표시한다(비회원 학기는 미출석으로 표시하지 않는다)
+        // 이 부원에게 귀속되는 학기의 활동과 실제 출석한 활동만 표시한다(비회원 학기는 미출석으로 표시하지 않는다)
         var attendedIds = myAttendances.Select(x => x.ActivityId).ToHashSet();
-        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
+        var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
         var visible = activities
-            .Where(a => attendedIds.Contains(a.Id) || MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
+            .Where(a => attendedIds.Contains(a.Id) || MemberSemesters.IsAttributed(a.ActivityDate, attributedPeriods))
             .ToList();
 
         var records = visible
@@ -415,14 +369,14 @@ public class AttendanceService(
         var scope = await GetCurrentSemesterScopeAsync(db);
         var (semStart, semEnd) = (scope.Start, scope.End);
 
-        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모 — 부원이 매핑된 학기의 활동만 센다(비회원·방학 학기 제외)
+        // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모 — 이 부원에게 귀속되는 학기의 활동만 센다(비회원·방학 학기 제외)
         var semesterActivities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
             .Select(a => new { a.Id, a.ActivityDate })
             .ToListAsync();
-        var mappedPeriods = await MemberActivityAttribution.GetMappedPeriodsAsync(db, formatResolver, userId);
+        var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
         var countedActivities = semesterActivities
-            .Where(a => MemberActivityAttribution.IsAttributed(a.ActivityDate, mappedPeriods))
+            .Where(a => MemberSemesters.IsAttributed(a.ActivityDate, attributedPeriods))
             .Select(a => a.Id)
             .ToList();
 

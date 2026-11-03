@@ -38,9 +38,6 @@ command -v python3 >/dev/null 2>&1 ||
 # 3) 필수 파일 검사 (발급은 대시보드 작업이라 자동화 불가 — 안내만)
 echo
 info '필수 파일 검사'
-if [ -f "$SA_PATH" ]; then
-	ok '.secrets/vicikyu-sa.json 있음'
-else warn '.secrets/vicikyu-sa.json 없음 — Google 서비스계정 키를 이 위치에 저장할 것 (시트 연결 필수)'; fi
 if [ -f "$TOKEN_PATH" ]; then
 	ok '.cloudflare/tunnel-token.txt 있음'
 else warn '.cloudflare/tunnel-token.txt 없음 — Cloudflare Zero Trust > Networks > Tunnels 에서 토큰을 발급받아 저장할 것 (인터넷 공개용)'; fi

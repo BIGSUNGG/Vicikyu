@@ -3,12 +3,16 @@ using VolleyballClub.Domain.Enums;
 namespace VolleyballClub.Domain.Entities;
 
 /// <summary>하루의 배구 활동 단위. 같은 날 여러 세션 가능 — 현재 활동은 미종료 최신 것.
-/// 활동 종료는 관리자 마감으로만 결정되며 날짜 경과로 자동 종료되지 않는다.</summary>
+/// 활동 종료는 관리자 마감으로만 결정되며 날짜 경과로 자동 종료되지 않는다.
+/// DisplayName이 있으면 라벨 활동(예: 'OT') — 같은 날 정기 활동과 구분되는 추가 활동이다.</summary>
 public class Activity
 {
     public int Id { get; set; }
 
     public DateOnly ActivityDate { get; set; }
+
+    /// <summary>라벨 활동의 표시명(예: 'OT'). null이면 정기 활동.</summary>
+    public string? DisplayName { get; set; }
 
     public ActivityStatus Status { get; set; } = ActivityStatus.Ready;
 
@@ -21,35 +25,10 @@ public class Activity
 
     public DateTime? ActivityClosedAt { get; set; }
 
-    /// <summary>시트 내보내기 완료 시각. null이면 마감됐지만 시트에 아직 기록 안 됨 — 시작 동기화가 복구한다.
-    /// 다시 열기(Reopen) 시 null로 초기화되어, 재마감 시 같은 날짜 열을 제자리 덮어써 변경분이 반영된다.</summary>
-    public DateTime? SheetExportedAt { get; set; }
-
-    /// <summary>활동·출석 정보가 시트에 반영되지 못한 시각. null이면 미반영 없음.
-    /// 시트 우선 가져오기는 이 값이 남은 활동이 없을 때만 진행한다(그 전까지 DB 우선 유지).</summary>
-    public DateTime? SheetSyncPendingAt { get; set; }
-
-    /// <summary>마지막 시트 반영 실패 사유. 성공하면 null로 초기화된다.</summary>
-    public string? SheetSyncError { get; set; }
-
-    /// <summary>동시 출석이 이전 시트 기록의 성공으로 미반영 해제되지 않도록 하는 변경 버전.</summary>
-    public long SheetSyncRevision { get; set; }
-
-    /// <summary>취소된 출석도 행 매핑을 검증할 수 있도록 아직 전송하지 못한 변경 부원을 보존한다.</summary>
-    public List<string> SheetSyncRequiredUserIds { get; set; } = [];
-
-    public void MarkSheetPending(DateTime now, string? userId = null)
-    {
-        SheetSyncRevision++;
-        SheetSyncPendingAt = now;
-        SheetSyncError = null;
-        if (userId is not null && !SheetSyncRequiredUserIds.Contains(userId)) SheetSyncRequiredUserIds.Add(userId);
-    }
-
     public string CreatedByUserId { get; set; } = "";
 
-    /// <summary>시트 가져오기로 생성된 활동의 CreatedByUserId 값 — 동기화 재연결·삭제 판별에 쓰인다.</summary>
-    public const string SheetImportCreator = "sheet-import";
+    /// <summary>xlsx 가져오기로 생성된 활동의 CreatedByUserId 값.</summary>
+    public const string ImportCreator = "xlsx-import";
 
     public DateTime CreatedAt { get; set; }
 

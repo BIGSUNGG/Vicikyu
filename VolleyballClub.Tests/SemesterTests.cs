@@ -2,7 +2,6 @@ using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
-using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -136,9 +135,10 @@ public class SemesterTests
     [Fact]
     public async Task Calendar_MarksMissedHeldActivitiesOnly()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())); // 고정 시각 2026-10-01 KST
-        var member = await host.SeedUserAsync("김민수", "202512001");
-        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
+        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        host.AsAdmin();
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026 전체", new(2026, 3, 1), new(2026, 12, 31)));
+        var member = await host.SeedUserAsync("김민수", "202512001"); // 가입일 3/2 → 학기 귀속
 
         await SeedHeldActivityAsync(host.Db, "2026-09-25"); // 마감 활동, 미출석 → 표시
         await SeedHeldActivityAsync(host.Db, "2026-09-26", member); // 마감 활동, 출석 → 초록
@@ -154,21 +154,22 @@ public class SemesterTests
         Assert.DoesNotContain(october.Days, d => d.Kind == CalendarDayKind.Missed);
     }
 
-    /// <summary>시트의 예정/없음 날징은 캘린더에 상태로 표시되고, 실제 출석·미출석 표시가 우선한다.</summary>
+    /// <summary>예정/없음 날징은 캘린더에 상태로 표시되고, 실제 출석·미출석 표시가 우선한다.</summary>
     [Fact]
     public async Task Calendar_ShowsScheduledAndNoActivityDays()
     {
-        await using var host = new ServiceHost(formatResolver: new SheetFormatResolver(SemesterTabFormat.All())); // 고정 시각 2026-10-01 KST
-        var member = await host.SeedUserAsync("김민수", "202512001");
-        await host.SeedManagedSheetAsync(member); // 2026-2 탭 매핑 — 매핑 학기 활동만 귀속된다
+        await using var host = new ServiceHost(); // 고정 시각 2026-10-01 KST
+        host.AsAdmin();
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026 전체", new(2026, 3, 1), new(2026, 12, 31)));
+        var member = await host.SeedUserAsync("김민수", "202512001"); // 가입일 3/2 → 학기 귀속
 
         await SeedHeldActivityAsync(host.Db, "2026-10-16"); // 마감 활동, 미출석 — 마크보다 우선
         await using (var ctx = host.Db.CreateContext())
         {
-            ctx.SheetDayMarks.AddRange(
-                new SheetDayMark { Date = new DateOnly(2026, 10, 9), Kind = SheetDayKind.NoActivity },
-                new SheetDayMark { Date = new DateOnly(2026, 10, 16), Kind = SheetDayKind.Scheduled }, // 스테일 마크
-                new SheetDayMark { Date = new DateOnly(2026, 10, 30), Kind = SheetDayKind.Scheduled });
+            ctx.DayMarks.AddRange(
+                new DayMark { Date = new DateOnly(2026, 10, 9), Kind = DayKind.NoActivity },
+                new DayMark { Date = new DateOnly(2026, 10, 16), Kind = DayKind.Scheduled }, // 스테일 마크
+                new DayMark { Date = new DateOnly(2026, 10, 30), Kind = DayKind.Scheduled });
             await ctx.SaveChangesAsync();
         }
 
