@@ -14,10 +14,10 @@ services:
     ports:
       - "5122:8080"
 
-  # 지속 배포 업데이터 — Pi 등 상시 서버에서만 실행 (COMPOSE_PROFILES=pi)
+  # 지속 배포 업데이터 — 상시 서버에서만 실행 (COMPOSE_PROFILES=server)
   watchtower:
     image: containrrr/watchtower:latest
-    profiles: ["pi"]
+    profiles: ["server"]
     restart: unless-stopped
     environment:
       WATCHTOWER_POLL_INTERVAL: "300"

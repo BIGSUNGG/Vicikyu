@@ -121,11 +121,11 @@ git tag v0.3.0 && git push origin v0.3.0   # 이것만 — 배포 (Actions ~5분
 - `main` push는 테스트만 실행되고 배포되지 않는다 — 배포는 태그가 결정한다
 - 배포 기록 = git 태그 목록. 이미지도 태그명으로 남는다 (`ghcr.io/bigsungg/vicikyu:v0.3.0`)
 
-- **서버에서 Watchtower 활성화(1회)**: 리포 루트 `.env` 파일에 `COMPOSE_PROFILES=pi` 추가 후 `docker compose -p vicikyu up -d`
+- **서버에서 Watchtower 활성화(1회)**: 리포 루트 `.env` 파일에 `COMPOSE_PROFILES=server` 추가 후 `docker compose -p vicikyu up -d`
 - **최초 1회**: GitHub → 프로필 → Packages → `vicikyu` → Package settings → visibility **Public** (리포가 공개고 이미지에 시크릿 없음). 비공개 유지 시 서버에서 read:packages PAT로 `docker login ghcr.io`
 - 서버 아키텍처 무관 — Actions가 arm64/amd64 모두 푸시한다 (Pi=arm64, Windows PC=amd64 자동 선택)
 - **롤백**: `docker tag ghcr.io/bigsungg/vicikyu:<이전태그> ghcr.io/bigsungg/vicikyu:latest && docker compose -p vicikyu up -d web`
-- 로컬 개발(5121 `dotnet run`)과 무관. 노트북 compose에는 pi 프로필이 없어 Watchtower가 돌지 않는다
+- 로컬 개발(5121 `dotnet run`)과 무관. 개발 머신 compose에는 server 프로필이 없어 Watchtower가 돌지 않는다 — 어떤 머신이든 `.env`에 넣으면 그 머신이 자동 업데이트 서버가 된다
 - `run.sh`/`restore.sh`도 기동 전 GHCR 풀을 먼저 시도한다 (풀 실패 시 로컬 빌드로 폴백)
 
 ### 서비스 이전 — 새 PC 절차
