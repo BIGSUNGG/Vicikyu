@@ -179,6 +179,18 @@ public class TeamGenerationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetParticipants_FillsStudentNumberForMemberOnly()
+    {
+        await host.Team.AddGuestAsync("게스트");
+
+        var list = (await host.Team.GetParticipantsAsync()).Participants;
+
+        var member = list.Single(p => p.Name == "부원1");
+        Assert.Equal("202512001", member.StudentNumber);
+        Assert.All(list.Where(p => p.IsGuest), p => Assert.Null(p.StudentNumber));
+    }
+
+    [Fact]
     public async Task CancelTeams_RemovesAllTeams_AndUnpublishes()
     {
         await GenerateAsync(2, 2, 2);

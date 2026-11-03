@@ -7,7 +7,8 @@ public record ParticipantDto(
     string Name,
     string Department,
     bool IsGuest,
-    bool IsAttended);
+    bool IsAttended,
+    string? StudentNumber = null);
 
 public record ParticipantListDto(
     List<ParticipantDto> Participants,

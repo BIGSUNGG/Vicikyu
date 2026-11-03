@@ -121,8 +121,21 @@ else
     <div class="teams-setup">
         <div class="card">
             <div class="section-divider">오늘 출석 @(participants.AttendedCount)명</div>
+            <div class="sort-strip">
+                @foreach (var (field, label) in new[]
+                         {
+                             (ParticipantSortField.Name, "이름"),
+                             (ParticipantSortField.StudentNumber, "학번"),
+                         })
+                {
+                    var selected = sortField == field;
+                    <button type="button" class="sort-link @(selected ? "active" : "")" @onclick="() => ToggleSort(field)">
+                        @label@(selected ? (sortAscending ? " ↑" : " ↓") : "")
+                    </button>
+                }
+            </div>
         <div class="card-list">
-            @foreach (var p in participants.Participants)
+            @foreach (var p in SortedParticipants)
             {
                 <label class="member-row" @key="p.Key">
                     <input type="checkbox"
@@ -284,6 +297,24 @@ else
     private bool showConfirmDialog;
     private string newGuestName = "";
     private string? sizeError;
+    private ParticipantSortField sortField = ParticipantSortField.Name;
+    private bool sortAscending = true;
+
+    /// <summary>'오늘 출석' 명단 표시 순서 — 기본은 이름 가나다순.</summary>
+    private List<ParticipantDto> SortedParticipants => ParticipantOrder.Sort(participants.Participants, sortField, sortAscending);
+
+    private void ToggleSort(ParticipantSortField value)
+    {
+        if (sortField == value)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortField = value;
+            sortAscending = true;
+        }
+    }
 
     protected override Task OnInitializedAsync() => ReadAsync();
 

@@ -56,7 +56,7 @@ public class TeamService(
             .Join(db.Users.AsNoTracking(),
                 a => a.UserId,
                 u => u.Id,
-                (a, u) => new { a.UserId, u.Name, u.Department })
+                (a, u) => new { a.UserId, u.Name, u.Department, u.StudentNumber })
             .ToListAsync();
 
         var guests = await db.Guests.AsNoTracking()
@@ -67,7 +67,7 @@ public class TeamService(
         var participants = new List<ParticipantDto>();
         foreach (var u in attendedUsers)
         {
-            participants.Add(new ParticipantDto($"u:{u.UserId}", u.UserId, null, u.Name, u.Department, false, true));
+            participants.Add(new ParticipantDto($"u:{u.UserId}", u.UserId, null, u.Name, u.Department, false, true, u.StudentNumber));
         }
 
         foreach (var g in guests)
