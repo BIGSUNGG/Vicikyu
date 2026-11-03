@@ -142,6 +142,9 @@ public sealed class ActivityArchiveService(
         var rowsByKey = new Dictionary<(int? SemesterId, string Label), SemesterMember>();
         var addedPairs = new HashSet<(int? SemesterId, string Label, int ActivityId)>();
         var countedUnmapped = new HashSet<SemesterMember>();
+        // 이번 실행에 자동 매핑한 (계정, 학기) 조합 — 새로 만든 행(Id==0)은 DB 쿼리에 보이지 않으므로
+        // 서로 다른 라벨이 같은 계정·학기에 매핑되어 unique 위반되는 것을 여기서 막는다.
+        var autoMapped = new HashSet<(string UserId, int? SemesterId)>();
 
         // 탭 → 학기: 학기명 일치 우선, 없으면 탭의 완료 활동 날짜가 가장 많이 속하는 학기, 그래도 없으면 미분류(null)
         var semesterByTab = new Dictionary<string, int?>();
@@ -194,18 +197,22 @@ public sealed class ActivityArchiveService(
                     rowsByKey[(semesterId, label)] = row;
                 }
 
-                // 새 행(또는 아직 미매핑 행)을 이름으로 자동 매핑 — 그 학기에 이미 매핑된 행이 있으면 그대로 둔다
+                // 새 행(또는 아직 미매핑 행)을 이름으로 자동 매핑 — 같은 학기에 이미 매핑된 조합이면 건너뛴다(미분류 null은 여러 행 허용).
+                // 새로 만든 행(Id==0)은 DB 쿼리에 보이지 않으므로 in-run 집합과 기존 DB 행을 모두 확인한다.
                 if (row.MappedUserId is null)
                 {
                     var member = ResolveMember(label, byName, byNameStudent);
                     if (member is not null)
                     {
-                        // 같은 학기(미분류 제외)에 이미 매핑된 행이 있으면 그대로 둔다 — 미분류(null)는 여러 행 매핑을 허용한다
-                    var alreadyMapped = semesterId != null && row.Id != 0 && await db.SemesterMembers.AnyAsync(
-                            m => m.MappedUserId == member.Id && m.SemesterId == semesterId && m.Id != row.Id, ct);
+                        var key = (member.Id, semesterId);
+                        var alreadyMapped = semesterId != null
+                            && (autoMapped.Contains(key)
+                                || await db.SemesterMembers.AnyAsync(
+                                    m => m.MappedUserId == member.Id && m.SemesterId == semesterId && m.Id != row.Id, ct));
                         if (!alreadyMapped)
                         {
                             row.MappedUserId = member.Id;
+                            if (semesterId != null) autoMapped.Add(key);
                         }
                         else
                         {
