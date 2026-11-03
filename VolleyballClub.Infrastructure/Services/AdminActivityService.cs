@@ -421,7 +421,15 @@ public sealed class AdminActivityService(
                 CreatedAt = now,
             });
         }
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // OTP 체크인과의 경합 등 unique 위반 — AttendanceService와 동일한 방어
+            throw new ConflictException("이미 출석 처리되었습니다.");
+        }
     }
 
     public async Task<MemberActivityListDto> GetMemberActivitiesAsync(string userId, CancellationToken ct = default)

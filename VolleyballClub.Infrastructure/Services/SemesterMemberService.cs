@@ -106,13 +106,14 @@ public sealed class SemesterMemberService(
             ? null
             : await db.SemesterPeriods.AsNoTracking().SingleOrDefaultAsync(p => p.Id == request.SemesterId, ct)
                 ?? throw new NotFoundException("학기를 찾을 수 없습니다.");
+        var semesterId = semester?.Id; // null = 미분류 — EF가 == null을 IS NULL로 번역한다
         var exists = await db.SemesterMembers.AnyAsync(
-            m => m.SemesterId == semester!.Id && m.Label == label, ct);
+            m => m.SemesterId == semesterId && m.Label == label, ct);
         if (exists) throw new ConflictException("같은 학기에 같은 라벨의 행이 이미 있습니다.");
 
         var row = new SemesterMember
         {
-            SemesterId = semester?.Id,
+            SemesterId = semesterId,
             Label = label,
             Name = name,
             CreatedAt = KstClock.NowUtc(timeProvider),
@@ -173,6 +174,17 @@ public sealed class SemesterMemberService(
             ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
         var existing = await db.SemesterAttendances
             .SingleOrDefaultAsync(sa => sa.SemesterMemberId == rowId && sa.ActivityId == activityId, ct);
+
+        // 이중 집계 방지 — 이 행이 매핑된 계정의 다른 행에 같은 활동 출석이 이미 있으면 추가를 거부한다
+        if (attended && existing is null && row.MappedUserId is not null)
+        {
+            var dupOnOtherRow = await db.SemesterAttendances.AnyAsync(sa =>
+                sa.ActivityId == activityId
+                && sa.SemesterMemberId != rowId
+                && sa.SemesterMember.MappedUserId == row.MappedUserId, ct);
+            if (dupOnOtherRow)
+                throw new ConflictException("이 부원의 다른 학기 행에 이미 이 활동 출석이 있습니다. 먼저 그 쪽을 취소해 주세요.");
+        }
         var now = KstClock.NowUtc(timeProvider);
 
         if (attended && existing is null)
