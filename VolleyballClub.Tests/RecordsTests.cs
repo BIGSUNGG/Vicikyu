@@ -71,17 +71,6 @@ public class RecordsTests
         Assert.Equal(1, bobs.MonthCount);
     }
 
-    private static async Task AddAttendanceDirectAsync(ServiceHost host, int activityId, string userId)
-    {
-        await using var db = host.Db.CreateContext();
-        db.Attendances.Add(new Attendance
-        {
-            ActivityId = activityId,
-            UserId = userId,
-            AttendanceType = AttendanceType.Otp,
-            CheckedAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-    }
+    private static Task AddAttendanceDirectAsync(ServiceHost host, int activityId, string userId) =>
+        host.SeedAttendanceAsync(userId, activityId);
 }

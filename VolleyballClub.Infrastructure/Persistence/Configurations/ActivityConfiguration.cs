@@ -17,7 +17,7 @@ public class ActivityConfiguration : IEntityTypeConfiguration<Activity>
 
         builder.Property(a => a.OtpCode).HasMaxLength(10);
 
-        builder.HasMany(a => a.Attendances)
+        builder.HasMany(a => a.SemesterAttendances)
             .WithOne(a => a.Activity)
             .HasForeignKey(a => a.ActivityId)
             .OnDelete(DeleteBehavior.Cascade);

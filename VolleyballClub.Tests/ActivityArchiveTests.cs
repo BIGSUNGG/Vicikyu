@@ -215,35 +215,40 @@ public sealed class ActivityArchiveTests
 
         await using var db = host.Db.CreateContext();
         Assert.Equal(2, await db.Activities.CountAsync());
-        Assert.Equal(1, await db.Attendances.CountAsync());
-        Assert.Single(await db.UnmappedMembers.ToListAsync());
-        Assert.Single(await db.UnmappedAttendances.ToListAsync());
+        Assert.Equal(2, await db.SemesterAttendances.CountAsync()); // 김민수 1 + 외부인 1
+        var rows = await db.SemesterMembers.ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(rows, r => r.MappedUserId != null && r.Label == "김민수 2025 체육"); // 자동 매핑
+        Assert.Contains(rows, r => r.MappedUserId == null && r.Label == "외부인 99"); // 미매핑 영구 보관
     }
 
     [Fact]
-    public async Task 미매핑_부원은_보관후_연동으로_이관되고_재연동은_중복을_만들지_않는다()
+    public async Task 미매핑_행은_매핑후에도_삭제되지_않고_출석이_계정_통계에_합산된다()
     {
         await using var host = new ServiceHost();
         host.AsAdmin();
         var member = await host.SeedUserAsync("김민수", "2025");
         await ImportAsync(host, ImportWorkbook());
 
-        var list = await host.Unmapped.GetListAsync();
+        var list = await host.SheetRows.GetListAsync(mapped: false);
         var unmapped = Assert.Single(list);
         Assert.Equal("외부인 99", unmapped.Label);
         Assert.Equal("외부인", unmapped.Name);
         Assert.Equal(1, unmapped.AttendanceCount);
 
-        await host.Unmapped.LinkAsync(unmapped.Id, member);
-        await Assert.ThrowsAsync<NotFoundException>(() => host.Unmapped.LinkAsync(unmapped.Id, member)); // 재연동 — 이미 삭제됨
+        await host.SheetRows.SetMappingAsync(unmapped.Id, member);
 
         await using var db = host.Db.CreateContext();
-        Assert.Empty(await db.UnmappedMembers.ToListAsync());
-        Assert.Empty(await db.UnmappedAttendances.ToListAsync());
-        // 가져오기 출석 1건(9/1) + 미매핑에서 이관된 1건(9/8) = 2건 — 이관이 실제 계정으로 옮겨졌다
-        var attendances = await db.Attendances.Where(a => a.UserId == member).ToListAsync();
+        var row = await db.SemesterMembers.SingleAsync(m => m.Id == unmapped.Id); // 매핑후에도 행 유지(영구)
+        Assert.Equal(member, row.MappedUserId);
+        // 가져오기 출석 1건(9/1, 자동 매핑된 김민수 행) + 매핑된 외부인 행 1건(9/8) = 조인 집계 2건
+        var attendances = await db.SemesterAttendances
+            .Where(a => a.SemesterMember.MappedUserId == member).ToListAsync();
         Assert.Equal(2, attendances.Count);
         Assert.All(attendances, a => Assert.Equal(AttendanceType.Import, a.AttendanceType));
+
+        // 없는 행 매핑은 NotFound다
+        await Assert.ThrowsAsync<NotFoundException>(() => host.SheetRows.SetMappingAsync(999, member));
     }
 
     [Fact]
@@ -266,8 +271,8 @@ public sealed class ActivityArchiveTests
         Assert.Equal(2, report.UnmappedAttendances); // 졸업생 3/10·3/24
 
         await using var db = host.Db.CreateContext();
-        Assert.Single(await db.UnmappedMembers.ToListAsync());
-        Assert.Equal(2, await db.UnmappedAttendances.CountAsync());
+        Assert.Equal(1, await db.SemesterMembers.CountAsync(m => m.MappedUserId == null));
+        Assert.Equal(2, await db.SemesterAttendances.CountAsync(a => a.SemesterMember.MappedUserId == null));
     }
 
     [Fact]
@@ -324,7 +329,7 @@ public sealed class ActivityArchiveTests
 
         await using var db = host.Db.CreateContext();
         var activity = Assert.Single(await db.Activities.ToListAsync());
-        Assert.Equal(1, await db.Attendances.CountAsync(a => a.ActivityId == activity.Id));
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(a => a.ActivityId == activity.Id));
     }
 
     private static async Task<ActivityImportReport> ImportAsync(ServiceHost host, byte[] bytes)
@@ -385,8 +390,8 @@ public sealed class ActivityArchiveTests
             Assert.Null(activities[0].DisplayName); // 정기 활동
             Assert.Equal("OT", activities[1].DisplayName); // 라벨 활동
 
-            var pairs = await db.Attendances.AsNoTracking()
-                .Select(a => new { a.Activity!.ActivityDate, a.Activity.DisplayName, a.UserId })
+            var pairs = await db.SemesterAttendances.AsNoTracking()
+                .Select(a => new { a.Activity!.ActivityDate, a.Activity.DisplayName, UserId = a.SemesterMember.MappedUserId })
                 .OrderBy(x => x.ActivityDate).ThenBy(x => x.UserId).ToListAsync();
             Assert.Equal(new[]
             {

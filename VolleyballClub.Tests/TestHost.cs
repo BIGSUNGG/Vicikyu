@@ -124,7 +124,7 @@ public sealed class ServiceHost : IAsyncDisposable
 
     public IActivityArchiveService Archive { get; }
 
-    public IUnmappedMemberService Unmapped { get; }
+    public ISemesterMemberService SheetRows { get; }
 
     public ITeamService Team { get; }
 
@@ -155,7 +155,7 @@ public sealed class ServiceHost : IAsyncDisposable
         Fee = new FeeService(Db.Factory, Current, Audit, Time);
         Semester = new SemesterService(Db.Factory, Current, Audit, Time);
         Archive = new ActivityArchiveService(Db.Factory, Current, Audit, Time);
-        Unmapped = new UnmappedMemberService(Db.Factory, Current, Audit, Time);
+        SheetRows = new SemesterMemberService(Db.Factory, Current, Audit, Time);
         var memberDb = Db.CreateContext();
         Member = new MemberService(Db.Factory, CreateUserManager(memberDb), Current, Audit, Time, memberDb);
         Users = CreateUserManager();
@@ -246,10 +246,30 @@ public sealed class ServiceHost : IAsyncDisposable
         return await db.Activities.FirstAsync(a => a.ActivityDate == today);
     }
 
+    /// <summary>테스트용 출석 시드 — (user, 활동 학기) 매핑 행을 보장하고 학기별 출석을 추가한다.</summary>
+    public async Task<SemesterAttendance> SeedAttendanceAsync(string userId, int activityId, AttendanceType type = AttendanceType.Otp)
+    {
+        await using var db = Db.CreateContext();
+        var activity = await db.Activities.AsNoTracking().SingleAsync(a => a.Id == activityId);
+        var now = DateTime.UtcNow;
+        var row = await SemesterMemberRows.EnsureUserRowAsync(db, userId, activity, now);
+        var attendance = new SemesterAttendance
+        {
+            SemesterMember = row,
+            ActivityId = activityId,
+            AttendanceType = type,
+            CheckedAt = now,
+            CreatedAt = now,
+        };
+        db.SemesterAttendances.Add(attendance);
+        await db.SaveChangesAsync();
+        return attendance;
+    }
+
     public async Task<int> CountAttendancesAsync()
     {
         await using var db = Db.CreateContext();
-        return await db.Attendances.CountAsync();
+        return await db.SemesterAttendances.CountAsync();
     }
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();

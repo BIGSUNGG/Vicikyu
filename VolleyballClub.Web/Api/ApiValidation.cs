@@ -32,6 +32,8 @@ public sealed class ApiValidation : IEndpointFilter
                 case FeePeriodCreateRequest r: Required(r.Name); break;
                 case FeePeriodUpdateRequest r: Required(r.Name); break;
                 case SemesterSaveRequest r: Required(r.Name); break;
+                case SemesterMemberCreateRequest r: Required(r.Name); break;
+                case SemesterMemberMappingRequest r: break;
                 case MemberPageRequest r:
                     if (!Enum.IsDefined(r.Sort) || r.Statuses?.Any(s => !Enum.IsDefined(s)) == true || r.Page < 1 || r.PageSize < 1 || r.PageSize > 100) Invalid(); break;
                 case FeeFilter filter: if (!Enum.IsDefined(filter)) Invalid(); break;

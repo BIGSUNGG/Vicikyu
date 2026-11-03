@@ -10,7 +10,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 {
     public DbSet<Activity> Activities => Set<Activity>();
 
-    public DbSet<Attendance> Attendances => Set<Attendance>();
+    public DbSet<SemesterMember> SemesterMembers => Set<SemesterMember>();
+
+    public DbSet<SemesterAttendance> SemesterAttendances => Set<SemesterAttendance>();
 
     public DbSet<Guest> Guests => Set<Guest>();
 
@@ -30,16 +32,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<DayMark> DayMarks => Set<DayMark>();
 
-    public DbSet<UnmappedMember> UnmappedMembers => Set<UnmappedMember>();
-
-    public DbSet<UnmappedAttendance> UnmappedAttendances => Set<UnmappedAttendance>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         modelBuilder.Entity<DayMark>().HasKey(m => m.Date);
         modelBuilder.Entity<DayMark>().ToTable("DayMarks");
-        modelBuilder.Entity<UnmappedAttendance>().HasIndex(a => new { a.UnmappedMemberId, a.ActivityId }).IsUnique();
     }
 }

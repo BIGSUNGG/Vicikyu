@@ -51,12 +51,12 @@ public class TeamService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await ActivityService.FindCurrentAsync(db, today);
 
-        var attendedUsers = await db.Attendances.AsNoTracking()
-            .Where(a => a.ActivityId == activity.Id)
+        var attendedUsers = await db.SemesterAttendances.AsNoTracking()
+            .Where(a => a.ActivityId == activity.Id && a.SemesterMember.MappedUserId != null)
             .Join(db.Users.AsNoTracking(),
-                a => a.UserId,
+                a => a.SemesterMember.MappedUserId,
                 u => u.Id,
-                (a, u) => new { a.UserId, u.Name, u.Department, u.StudentNumber })
+                (a, u) => new { UserId = u.Id, u.Name, u.Department, u.StudentNumber })
             .ToListAsync();
 
         var guests = await db.Guests.AsNoTracking()

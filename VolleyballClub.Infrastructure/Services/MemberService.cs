@@ -65,16 +65,16 @@ public class MemberService(
 
         var ordered = (request.Sort, request.Ascending) switch
         {
-            (MemberSortField.TotalAttendance, true) => query.OrderBy(u => db.Attendances.Count(a => a.UserId == u.Id)),
-            (MemberSortField.TotalAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a => a.UserId == u.Id)),
-            (MemberSortField.SemesterAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
-                a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
-            (MemberSortField.SemesterAttendance, false) => query.OrderByDescending(u => db.Attendances.Count(a =>
-                a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
-            (MemberSortField.MonthAttendance, true) => query.OrderBy(u => db.Attendances.Count(a =>
-                a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
-            _ => query.OrderByDescending(u => db.Attendances.Count(a =>
-                a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
+            (MemberSortField.TotalAttendance, true) => query.OrderBy(u => db.SemesterAttendances.Count(a => a.SemesterMember.MappedUserId == u.Id)),
+            (MemberSortField.TotalAttendance, false) => query.OrderByDescending(u => db.SemesterAttendances.Count(a => a.SemesterMember.MappedUserId == u.Id)),
+            (MemberSortField.SemesterAttendance, true) => query.OrderBy(u => db.SemesterAttendances.Count(a =>
+                a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
+            (MemberSortField.SemesterAttendance, false) => query.OrderByDescending(u => db.SemesterAttendances.Count(a =>
+                a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd)),
+            (MemberSortField.MonthAttendance, true) => query.OrderBy(u => db.SemesterAttendances.Count(a =>
+                a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
+            _ => query.OrderByDescending(u => db.SemesterAttendances.Count(a =>
+                a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd)),
         };
 
         // 동률 행의 2차 정렬 — 페이지를 넘길 때 순서가 흔들려 행이 중복/누락되는 것을 막는다
@@ -94,11 +94,11 @@ public class MemberService(
                 u.Department,
                 u.Status,
                 u.Color,
-                Total = db.Attendances.Count(a => a.UserId == u.Id),
-                Semester = db.Attendances.Count(a =>
-                    a.UserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd),
-                Month = db.Attendances.Count(a =>
-                    a.UserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd),
+                Total = db.SemesterAttendances.Count(a => a.SemesterMember.MappedUserId == u.Id),
+                Semester = db.SemesterAttendances.Count(a =>
+                    a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= semStart && a.Activity!.ActivityDate <= semEnd),
+                Month = db.SemesterAttendances.Count(a =>
+                    a.SemesterMember.MappedUserId == u.Id && a.Activity!.ActivityDate >= monthStart && a.Activity!.ActivityDate <= monthEnd),
             })
             .ToListAsync();
 
@@ -365,8 +365,8 @@ public class MemberService(
         var adminRole = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name == "ADMIN");
         var isAdmin = adminRole is not null
             && await db.UserRoles.AsNoTracking().AnyAsync(ur => ur.UserId == userId && ur.RoleId == adminRole.Id);
-        var totalAttendance = await db.Attendances.AsNoTracking()
-            .CountAsync(a => a.UserId == userId);
+        var totalAttendance = await db.SemesterAttendances.AsNoTracking()
+            .CountAsync(a => a.SemesterMember.MappedUserId == userId);
 
         return new ProfileDto(user.Name, user.StudentNumber, user.Department, isAdmin ? "ADMIN" : "MEMBER", user.JoinedAt, totalAttendance, user.Color);
     }

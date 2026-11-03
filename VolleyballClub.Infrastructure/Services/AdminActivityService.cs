@@ -38,12 +38,12 @@ public sealed class AdminActivityService(
 
     private static ManagedActivityDto Dto(Activity a) => new(
         $"app:{a.Id}", a.Id, a.ActivityDate, a.DisplayName, DayKind.Completed, null, a.Status,
-        State(a), Editable(a), a.Attendances.Count);
+        State(a), Editable(a), a.SemesterAttendances.Count);
 
     private static async Task<List<ManagedActivityDto>> ListAsync(ApplicationDbContext db, CancellationToken ct)
     {
         var marks = await db.DayMarks.AsNoTracking().ToListAsync(ct);
-        var activities = await db.Activities.AsNoTracking().Include(a => a.Attendances).ToListAsync(ct);
+        var activities = await db.Activities.AsNoTracking().Include(a => a.SemesterAttendances).ToListAsync(ct);
         return marks.Select(Dto)
             .Concat(activities.Select(Dto))
             .OrderByDescending(a => a.Date)
@@ -155,7 +155,7 @@ public sealed class AdminActivityService(
     /// <summary>출석자·팀·게스트가 남아 있는 활동의 예정/없음 전환을 거부한다(데이터 소실 방지).</summary>
     private static void EnsureNoAttendanceToMarkChange(Activity activity)
     {
-        if (activity.Attendances.Count > 0)
+        if (activity.SemesterAttendances.Count > 0)
             throw new ConflictException("출석자가 있는 활동은 예정/없음으로 바꿀 수 없습니다.");
         if (activity.Teams.Count > 0 || activity.Guests.Count > 0)
             throw new ConflictException("팀·게스트 기록이 있는 활동은 예정/없음으로 바꿀 수 없습니다.");
@@ -286,7 +286,7 @@ public sealed class AdminActivityService(
             {
                 var activityId = int.Parse(key[4..]);
                 var activity = await db.Activities
-                    .Include(a => a.Attendances).Include(a => a.Teams).Include(a => a.Guests)
+                    .Include(a => a.SemesterAttendances).Include(a => a.Teams).Include(a => a.Guests)
                     .SingleAsync(a => a.Id == activityId, ct);
                 EnsureNoAttendanceToMarkChange(activity);
                 mark = new DayMark { Date = request.Date, Kind = effectiveKind, Note = note };
@@ -311,7 +311,7 @@ public sealed class AdminActivityService(
     {
         if (!key.StartsWith("app:") || !int.TryParse(key[4..], out var id))
             throw new NotFoundException("활동을 찾을 수 없습니다.");
-        return await db.Activities.Include(a => a.Attendances).SingleOrDefaultAsync(a => a.Id == id, ct)
+        return await db.Activities.Include(a => a.SemesterAttendances).SingleOrDefaultAsync(a => a.Id == id, ct)
             ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
     }
 
@@ -325,7 +325,7 @@ public sealed class AdminActivityService(
         else
         {
             var activityId = int.Parse(key[4..]);
-            var activity = await db.Activities.AsNoTracking().Include(a => a.Attendances)
+            var activity = await db.Activities.AsNoTracking().Include(a => a.SemesterAttendances)
                 .SingleOrDefaultAsync(a => a.Id == activityId, ct);
             if (activity is not null) return Dto(activity);
         }
@@ -354,10 +354,9 @@ public sealed class AdminActivityService(
 
         var activity = await LoadActivityAsync(db, key, ct);
         var (attendanceCount, teamCount, guestCount) =
-            (activity.Attendances.Count, await db.Teams.CountAsync(t => t.ActivityId == activity.Id, ct),
+            (activity.SemesterAttendances.Count, await db.Teams.CountAsync(t => t.ActivityId == activity.Id, ct),
              await db.Guests.CountAsync(g => g.ActivityId == activity.Id, ct));
-        db.Attendances.RemoveRange(activity.Attendances);
-        db.UnmappedAttendances.RemoveRange(db.UnmappedAttendances.Where(u => u.ActivityId == activity.Id));
+        db.SemesterAttendances.RemoveRange(activity.SemesterAttendances);
         db.Activities.Remove(activity);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -371,8 +370,10 @@ public sealed class AdminActivityService(
         if (!key.StartsWith("app:")) return []; // 예정/없음 표시에는 출석이 없다
         await using var db = await factory.CreateDbContextAsync(ct);
         if (!int.TryParse(key[4..], out var activityId)) throw new NotFoundException("활동을 찾을 수 없습니다.");
-        var attendance = await db.Attendances.AsNoTracking()
-            .Where(a => a.ActivityId == activityId).ToDictionaryAsync(a => a.UserId, ct);
+        var attendance = await db.SemesterAttendances.AsNoTracking()
+            .Where(a => a.ActivityId == activityId && a.SemesterMember.MappedUserId != null)
+            .Select(a => new { a.Id, a.CheckedAt, a.AttendanceType, UserId = a.SemesterMember.MappedUserId! })
+            .ToDictionaryAsync(a => a.UserId, ct);
         // 활동 종료 여부와 무관하게 전체 활성 부원을 나열한다(과거 활동도 임의 출석 부여 가능)
         var users = await db.Users.AsNoTracking().Where(u => u.Status == MemberStatus.Active).OrderBy(u => u.Name).ToListAsync(ct);
         return users.Select(u => { var a = attendance.GetValueOrDefault(u.Id); return new AttendanceMemberDto(u.Id, u.Name, u.StudentNumber,
@@ -387,7 +388,8 @@ public sealed class AdminActivityService(
         if (!Editable(activity))
             throw new ConflictException("시작 또는 완료된 활동만 출석을 수정할 수 있습니다.");
         var member = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
-        var existing = activity.Attendances.SingleOrDefault(x => x.UserId == userId);
+        var existing = await db.SemesterAttendances
+            .FirstOrDefaultAsync(x => x.ActivityId == activity.Id && x.SemesterMember.MappedUserId == userId, ct);
         var teams = await db.TeamMembers.Where(m => m.UserId == userId && m.Team!.ActivityId == activity.Id).ToListAsync(ct);
         if (!request.IsAttended && teams.Count > 0 && !request.ConfirmTeamImpact)
             throw new ConflictException("팀 편성이 완료되어 있습니다. 출석을 취소하면 팀에서도 제외됩니다. 계속하시겠습니까?");
@@ -395,8 +397,18 @@ public sealed class AdminActivityService(
         var attendanceChanged = (existing is not null) != request.IsAttended;
         var now = KstClock.NowUtc(clock);
         if (attendanceChanged && request.IsAttended)
-            activity.Attendances.Add(new Attendance { UserId = userId, AttendanceType = AttendanceType.Admin, CheckedAt = now, CreatedAt = now });
-        else if (attendanceChanged) { db.Attendances.Remove(existing!); db.TeamMembers.RemoveRange(teams); }
+        {
+            var row = await SemesterMemberRows.EnsureUserRowAsync(db, userId, activity, now, ct);
+            db.SemesterAttendances.Add(new SemesterAttendance
+            {
+                SemesterMember = row,
+                ActivityId = activity.Id,
+                AttendanceType = AttendanceType.Admin,
+                CheckedAt = now,
+                CreatedAt = now,
+            });
+        }
+        else if (attendanceChanged) { db.SemesterAttendances.Remove(existing!); db.TeamMembers.RemoveRange(teams); }
         if (attendanceChanged)
         {
             activity.UpdatedAt = now;
@@ -418,8 +430,8 @@ public sealed class AdminActivityService(
         await using var db = await factory.CreateDbContextAsync(ct);
         if (!await db.Users.AnyAsync(u => u.Id == userId, ct)) throw new NotFoundException("부원을 찾을 수 없습니다.");
         var rows = await ListAsync(db, ct);
-        var attendance = await db.Attendances.AsNoTracking()
-            .Where(a => a.UserId == userId).Select(a => new { a.ActivityId, a.Activity!.ActivityDate }).ToListAsync(ct);
+        var attendance = await db.SemesterAttendances.AsNoTracking()
+            .Where(a => a.SemesterMember.MappedUserId == userId).Select(a => new { a.ActivityId, a.Activity!.ActivityDate }).ToListAsync(ct);
         var teams = await db.TeamMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => m.Team!.ActivityId).ToListAsync(ct);
         var today = KstClock.Today(clock);
         var (from, to) = await SemesterPeriodResolver.GetCurrentRangeAsync(db, today);

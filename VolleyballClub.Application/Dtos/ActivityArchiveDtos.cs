@@ -8,6 +8,3 @@ public record ActivityImportReport(
     int UnmappedMembers,
     int UnmappedAttendances,
     IReadOnlyList<string> Warnings);
-
-/// <summary>미매핑 부원 목록 행 — 아직 실제 계정과 연결되지 않은 xlsx 행 라벨.</summary>
-public record UnmappedMemberDto(int Id, string Label, string Name, int AttendanceCount, DateTime CreatedAt);

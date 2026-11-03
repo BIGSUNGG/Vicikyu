@@ -63,14 +63,6 @@ public class RankingTests
     {
         await using var db = host.Db.CreateContext();
         var activity = await db.Activities.SingleAsync(a => a.ActivityDate == date);
-        db.Attendances.Add(new VolleyballClub.Domain.Entities.Attendance
-        {
-            ActivityId = activity.Id,
-            UserId = userId,
-            AttendanceType = AttendanceType.Otp,
-            CheckedAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
+        await host.SeedAttendanceAsync(userId, activity.Id);
     }
 }

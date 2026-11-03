@@ -5,7 +5,7 @@ using VolleyballClub.Application.Exceptions;
 
 namespace VolleyballClub.Client.Services;
 
-/// <summary>활동 기록 xlsx 가져오기·내보내기 + 미매핑 부원 관리(관리자 설정 페이지).</summary>
+/// <summary>활동 기록 xlsx 가져오기·내보내기(관리자 설정 페이지).</summary>
 public sealed class ActivityArchiveClient(ApiHttp api, IJSRuntime js)
 {
     public async Task<ActivityImportReport> ImportAsync(IBrowserFile file)
@@ -25,11 +25,6 @@ public sealed class ActivityArchiveClient(ApiHttp api, IJSRuntime js)
         try { await module.InvokeVoidAsync("saveAs", "활동기록.xlsx", bytes); }
         finally { await module.DisposeAsync(); }
     }
-
-    public Task<List<UnmappedMemberDto>> GetUnmappedAsync() => api.GetAsync<List<UnmappedMemberDto>>("api/admin/unmapped-members");
-
-    public Task LinkAsync(int unmappedMemberId, string userId) =>
-        api.PostAsync($"api/admin/unmapped-members/{unmappedMemberId}/link", new TextRequest(userId));
 }
 
 /// <summary>업로드 크기 상한 — 서버(ActivityWorkbookReader.MaxFileBytes)와 동일.</summary>

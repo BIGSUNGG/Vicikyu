@@ -2,16 +2,19 @@ using VolleyballClub.Domain.Enums;
 
 namespace VolleyballClub.Domain.Entities;
 
-/// <summary>출석 기록. (ActivityId, UserId) 복합 Unique로 중복 출석을 DB에서 차단한다.</summary>
-public class Attendance
+/// <summary>학기별 부원 행의 출석 기록 — OTP·관리자·가져오기 출석의 단일 저장소.
+/// 통계·랭킹은 SemesterMember.MappedUserId 조인으로 집계한다.</summary>
+public class SemesterAttendance
 {
     public int Id { get; set; }
+
+    public int SemesterMemberId { get; set; }
+
+    public SemesterMember SemesterMember { get; set; } = null!;
 
     public int ActivityId { get; set; }
 
     public Activity Activity { get; set; } = null!;
-
-    public string UserId { get; set; } = "";
 
     public AttendanceType AttendanceType { get; set; }
 

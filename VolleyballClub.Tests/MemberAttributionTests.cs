@@ -20,19 +20,8 @@ public class MemberAttributionTests
         return host;
     }
 
-    private static async Task AddAttendanceAsync(ServiceHost host, int activityId, string userId)
-    {
-        await using var db = host.Db.CreateContext();
-        db.Attendances.Add(new Attendance
-        {
-            ActivityId = activityId,
-            UserId = userId,
-            AttendanceType = AttendanceType.Admin,
-            CheckedAt = DateTime.UnixEpoch,
-            CreatedAt = DateTime.UnixEpoch,
-        });
-        await db.SaveChangesAsync();
-    }
+    private static Task AddAttendanceAsync(ServiceHost host, int activityId, string userId) =>
+        host.SeedAttendanceAsync(userId, activityId, AttendanceType.Admin);
 
     [Fact]
     public async Task 귀속된_학기의_활동만_결석으로_표시한다()

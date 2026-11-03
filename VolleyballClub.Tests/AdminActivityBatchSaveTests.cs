@@ -34,7 +34,7 @@ public sealed partial class AdminActivityManagementTests
         var unchanged = (await h.List()).Single(a => a.Key == row.Key);
         Assert.Equal(DayKind.Scheduled, unchanged.Kind);
         await using var db = h.Db.CreateContext();
-        Assert.Empty(await db.Attendances.ToListAsync());
+        Assert.Empty(await db.SemesterAttendances.ToListAsync());
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed partial class AdminActivityManagementTests
         var unchanged = (await h.List()).Single(a => a.Key == row.Key);
         Assert.Equal(DayKind.Completed, unchanged.Kind);
         await using var db = h.Db.CreateContext();
-        Assert.Empty(await db.Attendances.ToListAsync());
+        Assert.Empty(await db.SemesterAttendances.ToListAsync());
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed partial class AdminActivityManagementTests
             Attendances: [new ActivityAttendanceSetRequest("a", false)]));
         Assert.Equal(0, edited.AttendanceCount);
         await using var verify = h.Db.CreateContext();
-        Assert.Empty(await verify.Attendances.ToListAsync());
+        Assert.Empty(await verify.SemesterAttendances.ToListAsync());
         Assert.Empty(await verify.TeamMembers.ToListAsync());
     }
 }

@@ -31,7 +31,7 @@ public sealed partial class AdminActivityManagementTests
         await h.Service.SetAttendanceAsync(row.Key, "a", new(attended)); // 첫 요청(false는 이미 0출석 — 상태 변화 없음)
         await h.Service.SetAttendanceAsync(row.Key, "a", new(attended)); // 재시도 — 중복 없음
         await using var db = h.Db.CreateContext();
-        Assert.Equal(attended ? 1 : 0, await db.Attendances.CountAsync());
+        Assert.Equal(attended ? 1 : 0, await db.SemesterAttendances.CountAsync());
         Assert.Equal(attended ? 1 : 0, await db.AuditLogs.CountAsync(a =>
             a.Action == (attended ? AdminAction.AttendanceAdd : AdminAction.AttendanceRemove)));
     }

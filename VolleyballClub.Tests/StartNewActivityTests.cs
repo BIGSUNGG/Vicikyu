@@ -35,8 +35,8 @@ public sealed class StartNewActivityTests
         await host.Attendance.CheckInWithOtpAsync(session2.OtpCode!); // 새 세션 별도 출석
 
         await using var db = host.Db.CreateContext();
-        Assert.Equal(1, await db.Attendances.CountAsync(a => a.ActivityId == session1.ActivityId));
-        Assert.Equal(1, await db.Attendances.CountAsync(a => a.ActivityId == session2.ActivityId));
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(a => a.ActivityId == session1.ActivityId));
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(a => a.ActivityId == session2.ActivityId));
 
         host.AsAdmin();
         Assert.Equal(session2.ActivityId, (await host.Activity.GetOrCreateTodayAsync()).ActivityId); // 현재 활동 = 새 세션
@@ -64,11 +64,9 @@ public sealed class StartNewActivityTests
         var session1 = await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);
         var session2 = await host.SeedActivityAsync(date, ActivityStatus.ActivityClosed);
 
+        await host.SeedAttendanceAsync(member, session1.Id);
+        await host.SeedAttendanceAsync(member, session2.Id);
         await using var db = host.Db.CreateContext();
-        db.Attendances.AddRange(
-            new Attendance { ActivityId = session1.Id, UserId = member, AttendanceType = AttendanceType.Otp, CheckedAt = DateTime.UnixEpoch, CreatedAt = DateTime.UnixEpoch },
-            new Attendance { ActivityId = session2.Id, UserId = member, AttendanceType = AttendanceType.Otp, CheckedAt = DateTime.UnixEpoch, CreatedAt = DateTime.UnixEpoch });
-        await db.SaveChangesAsync();
 
         var calendar = await host.Attendance.GetMyCalendarAsync(member, date.Year, date.Month);
         var day = calendar.Days.Single(d => d.Date == date); // 중복 없이 하루 치만

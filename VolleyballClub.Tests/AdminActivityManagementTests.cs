@@ -40,6 +40,24 @@ public sealed partial class AdminActivityManagementTests
             await Service.CreateAsync(new ActivityCreateRequest(new(2026, 9, 15), DayKind.NoActivity, Note: "시험"));
         }
 
+        /// <summary>테스트용 출석 시드 — (user, 활동 학기) 매핑 행을 보장하고 학기별 출석을 추가한다.</summary>
+        public async Task SeedAttendanceAsync(string userId, int activityId, AttendanceType type = AttendanceType.Admin)
+        {
+            await using var db = Db.CreateContext();
+            var activity = await db.Activities.AsNoTracking().SingleAsync(a => a.Id == activityId);
+            var now = DateTime.UtcNow;
+            var row = await SemesterMemberRows.EnsureUserRowAsync(db, userId, activity, now);
+            db.SemesterAttendances.Add(new SemesterAttendance
+            {
+                SemesterMember = row,
+                ActivityId = activityId,
+                AttendanceType = type,
+                CheckedAt = now,
+                CreatedAt = now,
+            });
+            await db.SaveChangesAsync();
+        }
+
         public Task<IReadOnlyList<ManagedActivityDto>> List() => Service.GetActivitiesAsync();
 
         public async Task<ManagedActivityDto> Completed() => (await List()).Single(a => a.Kind == DayKind.Completed);
@@ -82,9 +100,9 @@ public sealed partial class AdminActivityManagementTests
             Attendances: [new ActivityAttendanceSetRequest("a", true)]));
 
         await using var db = h.Db.CreateContext();
-        var stored = await db.Activities.Include(a => a.Attendances).SingleAsync(a => a.Id == ready.Id);
+        var stored = await db.Activities.Include(a => a.SemesterAttendances).ThenInclude(a => a.SemesterMember).SingleAsync(a => a.Id == ready.Id);
         Assert.Equal(ActivityStatus.ActivityClosed, stored.Status);
-        Assert.Single(stored.Attendances, x => x.UserId == "a");
+        Assert.Single(stored.SemesterAttendances, x => x.SemesterMember.MappedUserId == "a");
     }
 
     [Fact]
@@ -146,16 +164,12 @@ public sealed partial class AdminActivityManagementTests
     {
         await using var h = new Host(); await h.Seed(); var row = await h.Completed();
         await h.Service.SetAttendanceAsync(row.Key, "a", new(true));
-        // 매핑 시대 이전에 직접 심은 출석도 편집·재시도에서 보존된다
-        await using (var seed = h.Db.CreateContext())
-        {
-            seed.Attendances.Add(new Attendance { ActivityId = row.ActivityId!.Value, UserId = "unmapped", AttendanceType = AttendanceType.Admin });
-            await seed.SaveChangesAsync();
-        }
+        // 직접 심은 출석도 편집·재시도에서 보존된다
+        await h.SeedAttendanceAsync("unmapped", row.ActivityId!.Value, AttendanceType.Admin);
         await h.Service.SetAttendanceAsync(row.Key, "a", new(true)); // 동일 요청 재시도 — 멱등
         // 출석자가 있는 활동은 예정/없음으로 바꿀 수 없다
         await Assert.ThrowsAsync<ConflictException>(() => h.Service.EditAsync(row.Key, new(row.Date, DayKind.NoActivity)));
-        await using (var db = h.Db.CreateContext()) Assert.Equal(2, await db.Attendances.CountAsync());
+        await using (var db = h.Db.CreateContext()) Assert.Equal(2, await db.SemesterAttendances.CountAsync());
         var edited = await h.Service.EditAsync(row.Key, new(new(2026, 9, 2)));
         var resynced = (await h.List()).Single(r => r.Key == row.Key);
         Assert.Equal(edited, resynced); Assert.Equal(row.ActivityId, edited.ActivityId); Assert.Equal(2, edited.AttendanceCount);
@@ -164,7 +178,7 @@ public sealed partial class AdminActivityManagementTests
         // 실제 출석한 활동 행만 나타난다(미귀속 학기의 미출석 행 제외)
         Assert.Single(member.Items); Assert.True(member.Items.Single(r => r.Key == row.Key).IsAttended);
         await using var verify = h.Db.CreateContext();
-        Assert.All(await verify.Attendances.ToListAsync(), a => Assert.Equal(AttendanceType.Admin, a.AttendanceType));
+        Assert.All(await verify.SemesterAttendances.ToListAsync(), a => Assert.Equal(AttendanceType.Admin, a.AttendanceType));
     }
 
     [Fact]
@@ -184,7 +198,7 @@ public sealed partial class AdminActivityManagementTests
         await Assert.ThrowsAsync<ConflictException>(() => attendance.AdminRemoveForActivityAsync("a", row.ActivityId.Value));
         await attendance.AdminRemoveForActivityAsync("a", row.ActivityId.Value, true);
         await using var verify = h.Db.CreateContext();
-        Assert.Empty(await verify.Attendances.ToListAsync()); Assert.Empty(await verify.TeamMembers.ToListAsync());
+        Assert.Empty(await verify.SemesterAttendances.ToListAsync()); Assert.Empty(await verify.TeamMembers.ToListAsync());
         Assert.Equal(2, await verify.AuditLogs.CountAsync(a =>
             a.Action == AdminAction.AttendanceAdd || a.Action == AdminAction.AttendanceRemove));
     }
@@ -209,7 +223,7 @@ public sealed partial class AdminActivityManagementTests
         Assert.Equal(3, await verify.Users.CountAsync()); Assert.Equal(1, await verify.SemesterPeriods.CountAsync());
         Assert.Contains(await verify.AuditLogs.ToListAsync(), a => a.Action == AdminAction.ActivityCancel);
         Assert.Empty(await verify.Activities.ToListAsync());
-        Assert.Empty(await verify.Attendances.ToListAsync()); Assert.Empty(await verify.Guests.ToListAsync());
+        Assert.Empty(await verify.SemesterAttendances.ToListAsync()); Assert.Empty(await verify.Guests.ToListAsync());
         Assert.Empty(await verify.Teams.ToListAsync()); Assert.Empty(await verify.TeamMembers.ToListAsync());
     }
 
@@ -220,6 +234,6 @@ public sealed partial class AdminActivityManagementTests
         var app = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
         await Assert.ThrowsAsync<ConflictException>(() => h.Service.SetAttendanceAsync($"app:{app.Id}", "a", new(true)));
         await using var db = h.Db.CreateContext();
-        Assert.Empty(await db.Attendances.ToListAsync());
+        Assert.Empty(await db.SemesterAttendances.ToListAsync());
     }
 }

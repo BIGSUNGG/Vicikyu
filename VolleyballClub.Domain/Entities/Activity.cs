@@ -34,7 +34,7 @@ public class Activity
 
     public DateTime UpdatedAt { get; set; }
 
-    public List<Attendance> Attendances { get; set; } = [];
+    public List<SemesterAttendance> SemesterAttendances { get; set; } = [];
 
     public List<Guest> Guests { get; set; } = [];
 

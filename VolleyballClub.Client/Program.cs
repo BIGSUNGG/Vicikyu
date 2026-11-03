@@ -18,6 +18,7 @@ builder.Services.AddScoped<TeamClient>();
 builder.Services.AddScoped<MemberClient>();
 builder.Services.AddScoped<FeeClient>();
 builder.Services.AddScoped<SemesterClient>();
+builder.Services.AddScoped<SemesterMemberClient>();
 builder.Services.AddScoped<AuditLogClient>();
 builder.Services.AddScoped<DatabaseBackupClient>();
 builder.Services.AddScoped<CurrentUserClient>();

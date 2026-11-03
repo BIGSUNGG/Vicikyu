@@ -13,7 +13,7 @@ namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>활동 기록 xlsx 가져오기·내보내기(관리자 설정 페이지).
 /// 가져오기: 학기별 탭을 파싱해 DB에 병합한다(멱등 — 같은 파일 재업로드 시 중복 없음).
-/// 매칭 실패 부원 행은 UnmappedMember에 임시 보관하고, 완료 활동은 (날짜, 라벨)로 기존 활동에 병합한다.
+/// 모든 부원 행은 학기별 SemesterMember로 영구 저장되고, 이름 매칭에 성공하면 즉시 계정에 매핑된다.
 /// 내보내기: 전체 학기를 탭으로 담은 단일 xlsx(신형 서식 + 월별 출석횟수·학기 총 출석).</summary>
 public sealed class ActivityArchiveService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -43,11 +43,12 @@ public sealed class ActivityArchiveService(
         var byName = members.Where(m => m.Name.Length > 0).ToLookup(m => m.Name);
         var byNameStudent = members.Where(m => m.Name.Length > 0 && m.StudentNumber.Length > 0)
             .ToLookup(m => $"{m.Name} {m.StudentNumber}");
+        var periods = await db.SemesterPeriods.AsNoTracking().ToListAsync(ct);
 
         // 1단계 — 활동/마크 확정(활동 Id가 필요하므로 먼저 저장한다).
         // 같은 파일 안에서의 중복을 막기 위해 이번 실행의 추가 엔티티를 in-run 집합으로 추적한다
         // — Added 상태 엔티티는 SaveChanges 전까지 DB 쿼리에 보이지 않기 때문이다.
-        var pending = new Dictionary<Activity, List<string>>();
+        var pending = new Dictionary<Activity, List<(string TabName, string RowLabel)>>();
         var activityByKey = new Dictionary<(DateOnly Date, string? Label), Activity>();
         var createdActivityDates = new HashSet<DateOnly>();
         var markByDate = new Dictionary<DateOnly, DayMark>();
@@ -102,7 +103,7 @@ public sealed class ActivityArchiveService(
                 if (activityByKey.TryGetValue((column.Date, label), out var known))
                 {
                     if (!pending.TryGetValue(known, out var labels)) pending[known] = labels = [];
-                    labels.AddRange(column.AttendedRowLabels);
+                    labels.AddRange(column.AttendedRowLabels.Select(l => (tab.Name, l)));
                     continue;
                 }
                 var activity = await db.Activities
@@ -129,63 +130,111 @@ public sealed class ActivityArchiveService(
                 activityByKey[(column.Date, label)] = activity;
                 createdActivityDates.Add(column.Date);
                 if (!pending.TryGetValue(activity, out var fresh)) pending[activity] = fresh = [];
-                fresh.AddRange(column.AttendedRowLabels);
+                fresh.AddRange(column.AttendedRowLabels.Select(l => (tab.Name, l)));
             }
         }
         await db.SaveChangesAsync(ct);
 
-        // 2단계 — 출석 병합(매칭 성공 → Attendance, 실패 → 미매핑 보관)
+        // 2단계 — 학기별 부원 행·출석 병합(행은 영구, 이름 매칭 성공 시 즉시 매핑)
         var importedAttendances = 0;
         var unmappedMembers = 0;
         var unmappedAttendances = 0;
-        var unmappedByLabel = new Dictionary<string, UnmappedMember>();
-        var pendingUnmappedPairs = new HashSet<(string Label, int ActivityId)>();
-        foreach (var (activity, allRowLabels) in pending)
+        var rowsByKey = new Dictionary<(int? SemesterId, string Label), SemesterMember>();
+        var addedPairs = new HashSet<(int? SemesterId, string Label, int ActivityId)>();
+        var countedUnmapped = new HashSet<SemesterMember>();
+
+        // 탭 → 학기: 학기명 일치 우선, 없으면 탭의 완료 활동 날짜가 가장 많이 속하는 학기, 그래도 없으면 미분류(null)
+        var semesterByTab = new Dictionary<string, int?>();
+        int? ResolveTabSemester(string tabName, IEnumerable<DateOnly> dates)
         {
-            var current = await db.Attendances.Where(a => a.ActivityId == activity.Id)
-                .Select(a => a.UserId).ToHashSetAsync(ct);
-            foreach (var rowLabel in allRowLabels.Distinct(StringComparer.Ordinal))
+            var match = periods.FirstOrDefault(p =>
+                string.Equals(p.Name.Trim(), tabName.Trim(), StringComparison.CurrentCultureIgnoreCase));
+            if (match is not null) return match.Id;
+            return dates.Select(d => periods
+                    .Where(p => d >= p.StartDate && d <= p.EndDate)
+                    .OrderBy(p => p.Id)
+                    .Select(p => (int?)p.Id)
+                    .FirstOrDefault())
+                .Where(s => s is not null)
+                .GroupBy(s => s)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+        }
+
+        foreach (var (activity, allRows) in pending)
+        {
+            foreach (var (tabName, rowLabel) in allRows.Distinct())
             {
-                var member = ResolveMember(rowLabel, byName, byNameStudent);
-                if (member is not null)
+                if (string.IsNullOrWhiteSpace(rowLabel)) continue;
+                var label = rowLabel.Trim();
+                if (!semesterByTab.TryGetValue(tabName, out var semesterId))
                 {
-                    if (current.Contains(member.Id)) continue;
-                    db.Attendances.Add(new Attendance
-                    {
-                        ActivityId = activity.Id,
-                        UserId = member.Id,
-                        AttendanceType = AttendanceType.Import,
-                        CheckedAt = now,
-                        CreatedAt = now,
-                    });
-                    current.Add(member.Id);
-                    importedAttendances++;
-                    continue;
+                    semesterId = ResolveTabSemester(tabName, pending.Where(kv => kv.Value.Any(v => v.TabName == tabName))
+                        .SelectMany(kv => kv.Value.Where(v => v.TabName == tabName)
+                            .Select(_ => kv.Key.ActivityDate))
+                        .Distinct());
+                    semesterByTab[tabName] = semesterId;
                 }
 
-                if (!unmappedByLabel.TryGetValue(rowLabel, out var unmapped))
+                if (!rowsByKey.TryGetValue((semesterId, label), out var row))
                 {
-                    unmapped = await db.UnmappedMembers.SingleOrDefaultAsync(m => m.Label == rowLabel, ct);
-                    if (unmapped is null)
+                    row = await db.SemesterMembers.SingleOrDefaultAsync(m => m.SemesterId == semesterId && m.Label == label, ct);
+                    if (row is null)
                     {
-                        unmapped = new UnmappedMember { Label = rowLabel, Name = ParseName(rowLabel), CreatedAt = now };
-                        db.UnmappedMembers.Add(unmapped);
-                        unmappedMembers++;
-                        warnings.Add($"{rowLabel}: 부원 매칭 실패 — 미매핑 목록에 보관했습니다.");
+                        row = new SemesterMember
+                        {
+                            SemesterId = semesterId,
+                            Label = label,
+                            Name = ParseName(label),
+                            CreatedAt = now,
+                        };
+                        db.SemesterMembers.Add(row);
                     }
-                    unmappedByLabel[rowLabel] = unmapped;
+                    rowsByKey[(semesterId, label)] = row;
                 }
-                // 새로 만든 UnmappedMember는 Id가 아직 없으므로 내비게이션으로 연결한다(EF가 저장 시 FK를 채운다)
-                var already = unmapped.Id != 0 && await db.UnmappedAttendances.AnyAsync(
-                    u => u.UnmappedMemberId == unmapped.Id && u.ActivityId == activity.Id, ct);
-                if (already || !pendingUnmappedPairs.Add((rowLabel, activity.Id))) continue;
-                db.UnmappedAttendances.Add(new UnmappedAttendance
+
+                // 새 행(또는 아직 미매핑 행)을 이름으로 자동 매핑 — 그 학기에 이미 매핑된 행이 있으면 그대로 둔다
+                if (row.MappedUserId is null)
                 {
-                    UnmappedMember = unmapped,
+                    var member = ResolveMember(label, byName, byNameStudent);
+                    if (member is not null)
+                    {
+                        // 같은 학기(미분류 제외)에 이미 매핑된 행이 있으면 그대로 둔다 — 미분류(null)는 여러 행 매핑을 허용한다
+                    var alreadyMapped = semesterId != null && row.Id != 0 && await db.SemesterMembers.AnyAsync(
+                            m => m.MappedUserId == member.Id && m.SemesterId == semesterId && m.Id != row.Id, ct);
+                        if (!alreadyMapped)
+                        {
+                            row.MappedUserId = member.Id;
+                        }
+                        else
+                        {
+                            warnings.Add($"{label}: '{member.Name}' 계정에 이 학기 연결 행이 이미 있어 자동 매핑을 건너뛰었습니다.");
+                        }
+                    }
+                }
+
+                if (row.MappedUserId is null && row.Id == 0 && countedUnmapped.Add(row))
+                {
+                    unmappedMembers++;
+                    warnings.Add($"{label}: 부원 매칭 실패 — 학기별 부원 행으로 보관했습니다.");
+                }
+
+                // 멱등 — DB 저장분과 이번 실행 추가분 모두 중복 방지
+                var alreadyAdded = row.Id != 0 && await db.SemesterAttendances.AnyAsync(
+                    a => a.SemesterMemberId == row.Id && a.ActivityId == activity.Id, ct);
+                if (alreadyAdded || !addedPairs.Add((semesterId, label, activity.Id))) continue;
+
+                db.SemesterAttendances.Add(new SemesterAttendance
+                {
+                    SemesterMember = row,
                     ActivityId = activity.Id,
+                    AttendanceType = AttendanceType.Import,
+                    CheckedAt = now,
                     CreatedAt = now,
                 });
-                unmappedAttendances++;
+                if (row.MappedUserId is null) unmappedAttendances++;
+                else importedAttendances++;
             }
         }
         await db.SaveChangesAsync(ct);
@@ -222,17 +271,18 @@ public sealed class ActivityArchiveService(
 
     private sealed record ExportItem(DateOnly Date, Activity? Activity, DayMark? Mark);
 
-    private sealed record ExportRow(string Label, string? UserId, HashSet<int> AttendedActivityIds);
+    private sealed record ExportRow(string Label, HashSet<int> AttendedActivityIds);
 
     public async Task<byte[]> ExportAsync(CancellationToken ct = default)
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var periods = await db.SemesterPeriods.AsNoTracking().OrderBy(p => p.StartDate).ToListAsync(ct);
-        var activities = await db.Activities.AsNoTracking().Include(a => a.Attendances)
+        var activities = await db.Activities.AsNoTracking()
+            .Include(a => a.SemesterAttendances).ThenInclude(a => a.SemesterMember)
             .OrderBy(a => a.ActivityDate).ToListAsync(ct);
         var marks = await db.DayMarks.AsNoTracking().OrderBy(m => m.Date).ToListAsync(ct);
-        var unmapped = await db.UnmappedMembers.AsNoTracking().Include(m => m.Attendances).ToListAsync(ct);
+        var rows = await db.SemesterMembers.AsNoTracking().Include(m => m.Attendances).ToListAsync(ct);
         var userRows = await db.Users.AsNoTracking()
             .Select(u => new { u.Id, u.Name, u.StudentNumber, u.Department, u.JoinedAt }).ToListAsync(ct);
         var usersById = userRows.ToDictionary(u => u.Id,
@@ -268,20 +318,23 @@ public sealed class ActivityArchiveService(
             for (var i = 2; !usedNames.Add(unique); i++) unique = $"{cleaned[..Math.Min(28, cleaned.Length)]}({i})";
             return unique;
         }
-        var tabs = groups.Select(g => BuildTab(SafeTabName(g.Name), SemesterTotalHeader(g.Name), SemesterJoiners(g.From, g.To),
+        var tabs = groups.Select(g => BuildTab(SafeTabName(g.Name), SemesterTotalHeader(g.Name),
+            SemesterJoiners(g.From, g.To), periods.First(p => p.Name == g.Name).Id,
             activities.Where(a => a.ActivityDate >= g.From && a.ActivityDate <= g.To).ToList(),
             marks.Where(m => m.Date >= g.From && m.Date <= g.To).ToList(),
-            unmapped, usersById)).ToList();
+            rows, usersById)).ToList();
         var leftoverActivities = activities.Where(a => !groups.Any(g => a.ActivityDate >= g.From && a.ActivityDate <= g.To)).ToList();
         var leftoverMarks = marks.Where(m => !groups.Any(g => m.Date >= g.From && m.Date <= g.To)).ToList();
         if (leftoverActivities.Count > 0 || leftoverMarks.Count > 0)
-            tabs.Add(BuildTab(SafeTabName("미분류"), SemesterTotalHeader("미분류"), [], leftoverActivities, leftoverMarks, unmapped, usersById));
+            tabs.Add(BuildTab(SafeTabName("미분류"), SemesterTotalHeader("미분류"), [], null,
+                leftoverActivities, leftoverMarks, rows, usersById));
 
         return ActivityWorkbookWriter.Write(tabs);
     }
 
     private static (string Name, Cell[][] Grid) BuildTab(string name, string totalHeader, HashSet<string> joinerIds,
-        List<Activity> activities, List<DayMark> marks, List<UnmappedMember> unmapped, Dictionary<string, UserRef> users)
+        int? periodId, List<Activity> activities, List<DayMark> marks,
+        List<SemesterMember> rows, Dictionary<string, UserRef> users)
     {
         // 열 항목: 같은 날에는 활동이 마크보다 먼저 온다(마크는 같은 날 활동과 공존하지 않지만 정렬 안전장치)
         var items = activities.Select(a => new ExportItem(a.ActivityDate, a, null))
@@ -290,29 +343,29 @@ public sealed class ActivityArchiveService(
             .ThenBy(i => i.Activity is null ? 1 : 0)
             .ToList();
 
-        // 행: 그 학기 소속 부원 전체(출석 1회 이상 또는 가입일이 학기 안 — MemberSemesters 규칙) + 미매핑 부원(원본 라벨)
+        // 행: 그 학기의 학기별 부원 행(영구 — 원본 라벨 그대로) + 가입일 귀속 부원 중 행이 없는 사람
         var activityIds = activities.Select(a => a.Id).ToHashSet();
-        var rows = activities.SelectMany(a => a.Attendances.Select(x => x.UserId)).Distinct()
-            .Concat(joinerIds)
-            .Where(users.ContainsKey)
-            .Distinct()
+        var semesterRows = rows
+            .Where(m => m.SemesterId == periodId)
+            .Select(m => new ExportRow(m.Label,
+                m.Attendances.Where(u => activityIds.Contains(u.ActivityId)).Select(u => u.ActivityId).ToHashSet()))
+            .ToList();
+        var joinerRows = joinerIds
+            .Where(id => !rows.Any(m => m.MappedUserId == id && m.SemesterId == periodId))
             .Select(id => new ExportRow(
                 $"{users[id].Name} {users[id].StudentNumber} {users[id].Department}".Trim(),
-                id,
-                activities.Where(a => a.Attendances.Any(x => x.UserId == id)).Select(a => a.Id).ToHashSet()))
-            .Concat(unmapped
-                .Where(m => m.Attendances.Any(u => activityIds.Contains(u.ActivityId)))
-                .Select(m => new ExportRow(m.Label, null,
-                    m.Attendances.Where(u => activityIds.Contains(u.ActivityId)).Select(u => u.ActivityId).ToHashSet())))
+                []))
+            .ToList();
+        var exportRows = semesterRows.Concat(joinerRows)
             .OrderBy(r => r.Label, StringComparer.CurrentCulture)
             .ToList();
 
         var grid = new List<Cell[]>();
         var statusCells = new List<Cell> { new("활동 상태") };
         var headerCells = new List<Cell> { new("총 인원 : ") };
-        var bodyCells = rows.Select(_ => new List<Cell> { new("") }).ToList();
-        var monthCounts = rows.Select(_ => new Dictionary<int, int>()).ToList();
-        var totals = new int[rows.Count];
+        var bodyCells = exportRows.Select(_ => new List<Cell> { new("") }).ToList();
+        var monthCounts = exportRows.Select(_ => new Dictionary<int, int>()).ToList();
+        var totals = new int[exportRows.Count];
         var lastMonth = -1;
         // Excel 열 번호(1-based) 추적 — A는 부원 라벨 열, 첫 항목 열은 B(=2)
         var col = 2;
@@ -323,11 +376,11 @@ public sealed class ActivityArchiveService(
         {
             statusCells.Add(new(""));
             headerCells.Add(new($"{month}월 출석횟수"));
-            var from = ActivityWorkbookWriter.ColumnName(monthStartCol);
-            var to = ActivityWorkbookWriter.ColumnName(col - 1);
-            for (var r = 0; r < rows.Count; r++)
+            var fromCol = ActivityWorkbookWriter.ColumnName(monthStartCol);
+            var toCol = ActivityWorkbookWriter.ColumnName(col - 1);
+            for (var r = 0; r < exportRows.Count; r++)
                 bodyCells[r].Add(new((monthCounts[r].GetValueOrDefault(month, 0)).ToString(),
-                    Formula: $"COUNTIF({from}{r + 3}:{to}{r + 3},\"출석\")"));
+                    Formula: $"COUNTIF({fromCol}{r + 3}:{toCol}{r + 3},\"출석\")"));
             countCols.Add(col);
             col++;
             monthStartCol = col;
@@ -343,10 +396,10 @@ public sealed class ActivityArchiveService(
             {
                 statusCells.Add(new(activity.Status == ActivityStatus.ActivityClosed ? "활동 완료" : "활동 예정"));
                 if (!string.IsNullOrWhiteSpace(activity.DisplayName)) header += $" {activity.DisplayName.Trim()}";
-                for (var r = 0; r < rows.Count; r++)
+                for (var r = 0; r < exportRows.Count; r++)
                 {
-                    var attended = rows[r].AttendedActivityIds.Contains(activity.Id);
-                    if (attended) { monthCounts[r][item.Date.Month] = monthCounts[r].GetValueOrDefault(item.Date.Month) + 1; totals[r]++; }
+                    var attended = exportRows[r].AttendedActivityIds.Contains(activity.Id);
+                    if (attended) { monthCounts[r][item.Date.Month] = monthCounts[r].GetValueOrDefault(item.Date.Month, 0) + 1; totals[r]++; }
                     bodyCells[r].Add(new(attended ? "출석" : "미출석"));
                 }
             }
@@ -356,7 +409,7 @@ public sealed class ActivityArchiveService(
                 statusCells.Add(new(mark.Kind == DayKind.Scheduled
                     ? "활동 예정"
                     : "활동 없음" + (string.IsNullOrWhiteSpace(mark.Note) ? "" : $"({mark.Note.Trim()})")));
-                for (var r = 0; r < rows.Count; r++) bodyCells[r].Add(new(""));
+                for (var r = 0; r < exportRows.Count; r++) bodyCells[r].Add(new(""));
             }
             headerCells.Add(new(header));
             col++;
@@ -366,15 +419,15 @@ public sealed class ActivityArchiveService(
             AppendMonthCount(lastMonth);
             statusCells.Add(new(""));
             headerCells.Add(new(totalHeader));
-            for (var r = 0; r < rows.Count; r++)
+            for (var r = 0; r < exportRows.Count; r++)
                 bodyCells[r].Add(new(totals[r].ToString(),
                     Formula: string.Join("+", countCols.Select(c => $"{ActivityWorkbookWriter.ColumnName(c)}{r + 3}"))));
         }
 
         grid.Add([.. statusCells]);
         grid.Add([.. headerCells]);
-        for (var r = 0; r < rows.Count; r++)
-            grid.Add([new(rows[r].Label), .. bodyCells[r].Where((c, i) => i > 0)]);
+        for (var r = 0; r < exportRows.Count; r++)
+            grid.Add([new(exportRows[r].Label), .. bodyCells[r].Where((c, i) => i > 0)]);
         return (name, [.. grid]);
     }
 
@@ -513,4 +566,3 @@ internal static class ActivityWorkbookWriter
         return letters;
     }
 }
-

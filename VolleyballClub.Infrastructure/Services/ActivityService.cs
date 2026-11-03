@@ -60,8 +60,8 @@ public class ActivityService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var activity = await FindCurrentAsync(db, today);
 
-        var attendance = await db.Attendances.AsNoTracking()
-            .Where(a => a.ActivityId == activity.Id && a.UserId == userId)
+        var attendance = await db.SemesterAttendances.AsNoTracking()
+            .Where(a => a.ActivityId == activity.Id && a.SemesterMember.MappedUserId == userId)
             .Select(a => new { a.CheckedAt, a.AttendanceType })
             .FirstOrDefaultAsync();
 
@@ -169,7 +169,7 @@ public class ActivityService(
             throw new ConflictException("종료된 활동은 취소할 수 없습니다. '활동 다시 열기' 후 취소해 주세요.");
         }
 
-        var attendanceCount = await db.Attendances.CountAsync(a => a.ActivityId == activity.Id);
+        var attendanceCount = await db.SemesterAttendances.CountAsync(a => a.ActivityId == activity.Id);
         var guestCount = await db.Guests.CountAsync(g => g.ActivityId == activity.Id);
         var teamCount = await db.Teams.CountAsync(t => t.ActivityId == activity.Id);
 
@@ -240,7 +240,7 @@ public class ActivityService(
         ?? throw new NotFoundException("현재 활동이 아직 생성되지 않았습니다.");
 
     private static async Task<int> CountAttendanceAsync(ApplicationDbContext db, int activityId) =>
-        await db.Attendances.CountAsync(a => a.ActivityId == activityId);
+        await db.SemesterAttendances.CountAsync(a => a.ActivityId == activityId);
 
     private static async Task<AdminTodayDto> LoadAdminDtoAsync(ApplicationDbContext db, int activityId)
     {

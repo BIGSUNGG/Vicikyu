@@ -41,7 +41,7 @@ public class OtpAttendanceTests : IAsyncLifetime
         Assert.Equal(1, await host.CountAttendancesAsync());
         var activity = await host.GetTodayActivityAsync();
         await using var db = host.Db.CreateContext();
-        var attendance = await db.Attendances.SingleAsync(a => a.ActivityId == activity.Id && a.UserId == "user-202512001");
+        var attendance = await db.SemesterAttendances.SingleAsync(a => a.ActivityId == activity.Id && a.SemesterMember.MappedUserId == "user-202512001");
         Assert.Equal(AttendanceType.Otp, attendance.AttendanceType);
         Assert.Equal(checkedAt, attendance.CheckedAt, precision: TimeSpan.FromSeconds(1));
     }

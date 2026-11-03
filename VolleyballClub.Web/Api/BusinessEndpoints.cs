@@ -76,12 +76,14 @@ public static class BusinessEndpoints
         admin.MapPost("/activities/import", ActivityArchiveEndpoint.Import)
             .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(2 * Infrastructure.Services.ActivityWorkbookReader.MaxFileBytes));
         admin.MapGet("/activities/export", ActivityArchiveEndpoint.Export);
-        admin.MapGet("/unmapped-members", async (IUnmappedMemberService s, CancellationToken ct) => Results.Json(await s.GetListAsync(ct)));
-        admin.MapPost("/unmapped-members/{id}/link", async (IUnmappedMemberService s, int id, TextRequest request, CancellationToken ct) =>
-        {
-            await s.LinkAsync(id, request.Value, ct);
-            return Results.NoContent();
-        });
+        // 학기별 부원 행 관리(설정>시트 설정 · 부원 상세 시트 연결 · 대량 추가 추천)
+        admin.MapGet("/semester-members", async (ISemesterMemberService s, int? semesterId, bool? mapped, CancellationToken ct) => Results.Json(await s.GetListAsync(semesterId, mapped, ct)));
+        admin.MapPost("/semester-members", async (ISemesterMemberService s, SemesterMemberCreateRequest r, CancellationToken ct) => Results.Json(await s.AddRowAsync(r, ct)));
+        admin.MapDelete("/semester-members/{id}", async (ISemesterMemberService s, int id, CancellationToken ct) => { await s.RemoveRowAsync(id, ct); return Results.NoContent(); });
+        admin.MapPost("/semester-members/{id}/mapping", async (ISemesterMemberService s, int id, SemesterMemberMappingRequest r, CancellationToken ct) => { await s.SetMappingAsync(id, r.UserId, ct); return Results.NoContent(); });
+        admin.MapGet("/semester-members/{id}/attendance", async (ISemesterMemberService s, int id, CancellationToken ct) => Results.Json(await s.GetRowAttendanceAsync(id, ct)));
+        admin.MapPut("/semester-members/{id}/attendance/{activityId}", async (ISemesterMemberService s, int id, int activityId, [Microsoft.AspNetCore.Mvc.FromBody] ActivityAttendanceRequest r, CancellationToken ct) => { await s.SetRowAttendanceAsync(id, activityId, r.IsAttended, ct); return Results.NoContent(); });
+        admin.MapGet("/members/{userId}/sheet-rows", async (ISemesterMemberService s, string userId, CancellationToken ct) => Results.Json(await s.GetForMemberAsync(userId, ct)));
         admin.MapGet("/audit", async (IAuditLogService s, int? take) => { return Results.Json(await s.GetRecentAsync(take ?? 100)); });
     }
 }

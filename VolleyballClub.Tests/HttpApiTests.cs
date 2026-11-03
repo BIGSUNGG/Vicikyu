@@ -118,7 +118,7 @@ public sealed class HttpApiTests
         var exported = await admin.GetByteArrayAsync("/api/admin/activities/export");
         Assert.True(exported.Length > 4);
         Assert.Equal(0x50, exported[0]); // xlsx(zip) 매직 바이트 'P'
-        Assert.Empty((await admin.GetFromJsonAsync<List<UnmappedMemberDto>>("/api/admin/unmapped-members"))!);
+        Assert.Empty((await admin.GetFromJsonAsync<List<SemesterMemberRowDto>>("/api/admin/semester-members?mapped=false"))!);
         var audit = await admin.GetFromJsonAsync<List<AuditLogDto>>("/api/admin/audit?take=100");
         Assert.Contains(audit!, a => a.Action == AdminAction.SettingChange); // 가져오기 감사
         await Status(member.PutAsJsonAsync("/api/my/profile/password", new PasswordChangeRequest("pass", "newpass")), HttpStatusCode.NoContent);

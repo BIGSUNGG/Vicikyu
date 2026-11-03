@@ -13,19 +13,8 @@ public class MemberPageTests
     // 기본 시각 2026-10-01(KST) → 이번 달 10월, 학기 기본 규칙 9/1~12/31
     private static ServiceHost NewHost() => new ServiceHost().AsAdmin();
 
-    private static async Task SeedAttendanceRowAsync(ServiceHost host, int activityId, string userId)
-    {
-        await using var db = host.Db.CreateContext();
-        db.Attendances.Add(new Attendance
-        {
-            ActivityId = activityId,
-            UserId = userId,
-            AttendanceType = AttendanceType.Otp,
-            CheckedAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-    }
+    private static Task SeedAttendanceRowAsync(ServiceHost host, int activityId, string userId) =>
+        host.SeedAttendanceAsync(userId, activityId);
 
     [Fact]
     public async Task 페이징_25명을_10개씩_조회하면_3페이지에_5명이다()
@@ -171,7 +160,7 @@ public class MemberPageTests
         await host.Attendance.AdminRemoveForActivityAsync(member, activity.Id, confirmTeamImpact: true);
 
         await using var verify = host.Db.CreateContext();
-        Assert.Empty(await verify.Attendances.Where(a => a.UserId == member).ToListAsync());
+        Assert.Empty(await verify.SemesterAttendances.Where(a => a.SemesterMember.MappedUserId == member).ToListAsync());
         Assert.Empty(await verify.TeamMembers.Where(m => m.UserId == member).ToListAsync());
     }
 

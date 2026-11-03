@@ -1,7 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
+using VolleyballClub.Infrastructure.Services;
 using Xunit;
 
 namespace VolleyballClub.Tests;
@@ -198,10 +200,11 @@ public class SemesterTests
         await ctx.SaveChangesAsync();
         if (userId is not null)
         {
-            ctx.Attendances.Add(new Attendance
+            var row = await SemesterMemberRows.EnsureUserRowAsync(ctx, userId, activity, DateTime.UnixEpoch);
+            ctx.SemesterAttendances.Add(new SemesterAttendance
             {
+                SemesterMember = row,
                 ActivityId = activity.Id,
-                UserId = userId,
                 AttendanceType = AttendanceType.Admin,
                 CheckedAt = DateTime.UnixEpoch,
                 CreatedAt = DateTime.UnixEpoch,
@@ -241,10 +244,12 @@ public class SemesterTests
         };
         ctx.Activities.Add(activity);
         await ctx.SaveChangesAsync();
-        ctx.Attendances.Add(new Attendance
+        var member = await ctx.Users.AsNoTracking().FirstAsync();
+        var row = await SemesterMemberRows.EnsureUserRowAsync(ctx, member.Id, activity, DateTime.UnixEpoch);
+        ctx.SemesterAttendances.Add(new SemesterAttendance
         {
+            SemesterMember = row,
             ActivityId = activity.Id,
-            UserId = ctx.Users.First().Id,
             AttendanceType = AttendanceType.Admin,
             CheckedAt = DateTime.UnixEpoch,
             CreatedAt = DateTime.UnixEpoch,

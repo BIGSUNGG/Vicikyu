@@ -4,6 +4,7 @@
 
 @inject MemberClient MemberSvc
 @inject AdminActivityClient ActivitySvc
+@inject SemesterMemberClient SheetRows
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject Microsoft.Extensions.Logging.ILogger<MemberDetail> Logger
@@ -16,6 +17,7 @@
 <nav class="segment member-detail-tabs" aria-busy="@(memberLoading ? "true" : "false")" data-load-state="@MemberLoadState">
     <a class="seg-btn @(section == Section.Edit ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Edit)" href="javascript:void(0)">부원 수정</a>
     <a class="seg-btn @(section == Section.Attendance ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Attendance)" href="javascript:void(0)">출석 기록</a>
+    <a class="seg-btn @(section == Section.Sheet ? "active" : "")" aria-disabled="@(memberLoading || member is null)" @onclick="() => OpenSectionAsync(Section.Sheet)" href="javascript:void(0)">시트 연결</a>
 </nav>
 
 @if (memberLoading)
@@ -158,6 +160,67 @@ else if (memberError is not null)
     </div>
 }
 
+@if (section == Section.Sheet && member is not null && !memberLoading)
+{
+    <div class="card member-sheet" data-load-state="@(sheetLoading ? "loading" : sheetError is not null ? "error" : "ready")">
+        <h2 class="card-title">시트 연결 — @member.Name</h2>
+        <p class="member-meta">학기별 부원 행을 이 계정에 연결합니다. 연결하면 그 행의 출석이 이 부원의 통계에 합산되고, 행은 영구 보존됩니다.</p>
+        @if (sheetLoading)
+        {
+            <span class="admin-load-status" role="status">학기별 행을 불러오는 중…</span>
+        }
+        else if (sheetError is not null)
+        {
+            <div role="alert"><p>@sheetError</p><button type="button" class="btn-primary" @onclick="LoadSheetRowsAsync">다시 불러오기</button></div>
+        }
+        else if (sheetRows is null || sheetRows.Semesters.Count == 0)
+        {
+            <p class="member-meta">등록된 학기·학기별 부원 행이 없습니다 — 설정에서 시트를 먼저 가져오세요.</p>
+        }
+        else
+        {
+            @foreach (var semester in sheetRows.Semesters)
+            {
+                <div class="btn-row settings-sheet-row" style="align-items:flex-end">
+                    <div class="field" style="flex:1">
+                        @if (semester.MappedRowId is { } rowId)
+                        {
+                            <label class="form-label">@semester.SemesterName — 연결됨: @(semester.MappedRowLabel ?? rowId.ToString()) · 출석 @(semester.AttendanceCount)건</label>
+                        }
+                        else if (semester.Candidates.Count > 0)
+                        {
+                            <label class="form-label">@semester.SemesterName — 미연결 행 선택</label>
+                            <select class="form-control" value="@sheetPicks.GetValueOrDefault(semester.SemesterId)"
+                                    @onchange="e => sheetPicks[semester.SemesterId] = int.TryParse(e.Value?.ToString(), out var picked) ? picked : 0">
+                                <option value="0">행 선택…</option>
+                                @foreach (var candidate in semester.Candidates)
+                                {
+                                    <option value="@candidate.Id">@candidate.Label · 출석 @(candidate.AttendanceCount)건</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <label class="form-label">@semester.SemesterName</label>
+                            <p class="member-meta">연결할 수 있는 미매핑 행이 없습니다.</p>
+                        }
+                    </div>
+                    @if (semester.MappedRowId is { } mappedId)
+                    {
+                        <button type="button" class="btn-secondary" disabled="@sheetBusy" @onclick="() => UnmapRowAsync(mappedId)">연결 해제</button>
+                    }
+                    else if (semester.Candidates.Count > 0)
+                    {
+                        <button type="button" class="btn-secondary" disabled="@(sheetBusy || sheetPicks.GetValueOrDefault(semester.SemesterId) == 0)"
+                                @onclick="() => MapRowAsync(semester.SemesterId)">연결</button>
+                    }
+                </div>
+            }
+            <p class="member-meta">★ 같은 학기에는 한 계정이 한 행만 연결할 수 있습니다. 새 행은 설정>시트 설정에서 추가하세요.</p>
+        }
+    </div>
+}
+
 @if (confirmStatus is not null)
 {
     <div class="confirm-overlay" @onclick="() => confirmStatus = null">
@@ -196,6 +259,7 @@ else if (memberError is not null)
     {
         Edit,
         Attendance,
+        Sheet,
     }
 
     private int routeEpoch;
@@ -213,6 +277,11 @@ else if (memberError is not null)
     private MemberActivityListDto? attendance;
     private bool attendanceBusy;
     private string? attendanceWriteError;
+    private bool sheetLoading;
+    private string? sheetError;
+    private MemberSheetRowsDto? sheetRows;
+    private bool sheetBusy;
+    private Dictionary<int?, int> sheetPicks = [];
     private (string Name, MemberStatus Status)? confirmStatus;
     private MemberActivityRowDto? confirmRemove;
 
@@ -229,6 +298,10 @@ else if (memberError is not null)
         confirmRemove = null;
         attendanceBusy = false;
         attendanceWriteError = null;
+        sheetRows = null;
+        sheetError = null;
+        sheetLoading = false;
+        sheetPicks = [];
         await LoadMemberAsync(epoch, UserId);
     }
 
@@ -282,6 +355,78 @@ else if (memberError is not null)
         if (memberLoading || member is null || memberError is not null || attendanceBusy) return;
         section = target;
         if (target == Section.Attendance) await ReadAttendanceAsync();
+        if (target == Section.Sheet && sheetRows is null) await LoadSheetRowsAsync();
+    }
+
+    private async Task LoadSheetRowsAsync()
+    {
+        var epoch = routeEpoch;
+        var requestedUserId = UserId;
+        sheetLoading = true;
+        sheetError = null;
+        try
+        {
+            var loaded = await SheetRows.GetForMemberAsync(requestedUserId);
+            if (epoch != routeEpoch) return;
+            sheetRows = loaded;
+            sheetPicks = loaded.Semesters.ToDictionary(s => s.SemesterId, _ => 0);
+        }
+        catch (AppException ex)
+        {
+            if (epoch != routeEpoch) return;
+            sheetError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "시트 연결 정보 조회 실패");
+            if (epoch != routeEpoch) return;
+            sheetError = "시트 연결 정보를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (epoch == routeEpoch) sheetLoading = false;
+        }
+    }
+
+    private async Task MapRowAsync(int? semesterId)
+    {
+        var rowId = sheetPicks.GetValueOrDefault(semesterId);
+        if (rowId == 0 || sheetBusy) return;
+        sheetBusy = true;
+        try
+        {
+            await SheetRows.SetMappingAsync(rowId, UserId);
+            Snackbar.Add("연결 완료 — 출석 기록이 이 부원 통계에 합산됩니다.", Severity.Success);
+            await LoadSheetRowsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            sheetBusy = false;
+        }
+    }
+
+    private async Task UnmapRowAsync(int rowId)
+    {
+        if (sheetBusy) return;
+        sheetBusy = true;
+        try
+        {
+            await SheetRows.SetMappingAsync(rowId, null);
+            Snackbar.Add("연결을 해제했습니다. 행과 출석 기록은 유지됩니다.", Severity.Success);
+            await LoadSheetRowsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            sheetBusy = false;
+        }
     }
 
     private Task ReadAttendanceAsync() => LoadAttendanceAsync(showSkeleton: true);

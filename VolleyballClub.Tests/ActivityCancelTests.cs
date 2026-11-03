@@ -30,7 +30,7 @@ public class ActivityCancelTests : IAsyncLifetime
 
         await using var db = host.Db.CreateContext();
         Assert.Equal(0, await db.Activities.CountAsync());
-        Assert.Equal(0, await db.Attendances.CountAsync());
+        Assert.Equal(0, await db.SemesterAttendances.CountAsync());
         Assert.Equal(0, await db.Guests.CountAsync());
         Assert.Equal(0, await db.Teams.CountAsync());
         Assert.Equal(0, await db.TeamMembers.CountAsync());
@@ -54,19 +54,8 @@ public class ActivityCancelTests : IAsyncLifetime
         Assert.Contains("취소할 수 없", ex.Message);
     }
 
-    private async Task SeedAttendanceAsync(int activityId, string userId)
-    {
-        await using var db = host.Db.CreateContext();
-        db.Attendances.Add(new Attendance
-        {
-            ActivityId = activityId,
-            UserId = userId,
-            AttendanceType = AttendanceType.Otp,
-            CheckedAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-    }
+    private async Task SeedAttendanceAsync(int activityId, string userId) =>
+        await host.SeedAttendanceAsync(userId, activityId);
 
     private async Task SeedGuestAsync(int activityId)
     {

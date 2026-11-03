@@ -64,15 +64,32 @@ internal static class ActivityManagementVerification
             db.Activities.Add(live);
             await db.SaveChangesAsync();
             var memberIds = await db.Users.Where(u => u.StudentNumber != "admin").OrderBy(u => u.StudentNumber).Select(u => u.Id).ToListAsync();
+            var members = await db.Users.Where(u => u.StudentNumber != "admin").OrderBy(u => u.StudentNumber)
+                .ToDictionaryAsync(u => u.Id, u => u);
             var baseTime = new DateTime(today, new TimeOnly(18, 2), DateTimeKind.Utc);
             var minutes = new[] { 3, 5, 7, 9, 12, 14, 16, 19, 22, 25, 28, 31 };
+            var liveSemesterId = await db.SemesterPeriods.AsNoTracking()
+                .Where(p => p.StartDate <= today && p.EndDate >= today)
+                .OrderBy(p => p.Id).Select(p => (int?)p.Id).FirstOrDefaultAsync();
             for (var i = 0; i < minutes.Length; i++)
-                db.Attendances.Add(new Attendance
+            {
+                var row = new SemesterMember
                 {
-                    ActivityId = live.Id, UserId = memberIds[i],
+                    SemesterId = liveSemesterId,
+                    Label = $"{members[memberIds[i]].Name} {members[memberIds[i]].StudentNumber} {members[memberIds[i]].Department}".Trim(),
+                    Name = members[memberIds[i]].Name,
+                    MappedUserId = memberIds[i],
+                    CreatedAt = baseTime,
+                };
+                db.SemesterMembers.Add(row);
+                db.SemesterAttendances.Add(new SemesterAttendance
+                {
+                    SemesterMember = row,
+                    ActivityId = live.Id,
                     AttendanceType = i % 4 == 0 ? AttendanceType.Admin : AttendanceType.Otp,
                     CheckedAt = baseTime.AddMinutes(minutes[i]), CreatedAt = baseTime.AddMinutes(minutes[i]),
                 });
+            }
             await db.SaveChangesAsync();
 
             // 과거 완료 활동(팀·게스트 포함) + 예정/없음 표시 + 라벨 활동
@@ -93,14 +110,33 @@ internal static class ActivityManagementVerification
                 new DayMark { Date = new DateOnly(2026, 10, 20), Kind = DayKind.Scheduled },
                 new DayMark { Date = new DateOnly(2026, 10, 22), Kind = DayKind.NoActivity, Note = "시험" });
             await db.SaveChangesAsync();
-            db.Attendances.Add(new Attendance
+            var pastSemesterId = await db.SemesterPeriods.AsNoTracking()
+                .Where(p => p.StartDate <= new DateOnly(2026, 10, 1) && p.EndDate >= new DateOnly(2026, 10, 1))
+                .OrderBy(p => p.Id).Select(p => (int?)p.Id).FirstOrDefaultAsync();
+            SemesterMember PastRow(int index) => new()
             {
-                ActivityId = completed.Id, UserId = memberIds[0], AttendanceType = AttendanceType.Import,
+                SemesterId = pastSemesterId,
+                Label = $"{members[memberIds[index]].Name} {members[memberIds[index]].StudentNumber} {members[memberIds[index]].Department}".Trim(),
+                Name = members[memberIds[index]].Name,
+                MappedUserId = memberIds[index],
+                CreatedAt = seededAt,
+            };
+            var completedRow = PastRow(0);
+            db.SemesterMembers.Add(completedRow);
+            db.SemesterAttendances.Add(new SemesterAttendance
+            {
+                SemesterMember = completedRow,
+                ActivityId = completed.Id,
+                AttendanceType = AttendanceType.Import,
                 CheckedAt = seededAt, CreatedAt = seededAt,
             });
-            db.Attendances.Add(new Attendance
+            var labeledRow = PastRow(1);
+            db.SemesterMembers.Add(labeledRow);
+            db.SemesterAttendances.Add(new SemesterAttendance
             {
-                ActivityId = labeled.Id, UserId = memberIds[1], AttendanceType = AttendanceType.Import,
+                SemesterMember = labeledRow,
+                ActivityId = labeled.Id,
+                AttendanceType = AttendanceType.Import,
                 CheckedAt = seededAt, CreatedAt = seededAt,
             });
             await db.SaveChangesAsync();
@@ -131,11 +167,11 @@ internal static class ActivityManagementVerification
                 members = await db.Users.OrderBy(u => u.StudentNumber).Select(u => new { u.Id, u.StudentNumber, u.Name }).ToListAsync(),
                 dayMarks = await db.DayMarks.OrderBy(m => m.Date).Select(m => new { m.Date, Kind = m.Kind.ToString(), m.Note }).ToListAsync(),
                 activities = await db.Activities.OrderBy(a => a.Id).Select(a => new { a.Id, a.ActivityDate, a.DisplayName, Status = a.Status.ToString() }).ToListAsync(),
-                attendances = await db.Attendances.OrderBy(a => a.Id).Select(a => new { a.Id, a.ActivityId, a.UserId }).ToListAsync(),
+                attendances = await db.SemesterAttendances.OrderBy(a => a.Id).Select(a => new { a.Id, a.ActivityId, UserId = a.SemesterMember.MappedUserId }).ToListAsync(),
                 guests = await db.Guests.OrderBy(g => g.Id).Select(g => new { g.Id, g.ActivityId }).ToListAsync(),
                 teams = await db.Teams.OrderBy(t => t.Id).Select(t => new { t.Id, t.ActivityId }).ToListAsync(),
                 teamMembers = await db.TeamMembers.OrderBy(t => t.Id).Select(t => new { t.Id, t.TeamId, t.UserId, t.GuestId }).ToListAsync(),
-                unmappedMembers = await db.UnmappedMembers.OrderBy(m => m.Id).Select(m => new { m.Id, m.Label, m.Name }).ToListAsync(),
+                semesterMembers = await db.SemesterMembers.OrderBy(m => m.Id).Select(m => new { m.Id, m.Label, m.Name, m.MappedUserId }).ToListAsync(),
                 semesters = await db.SemesterPeriods.OrderBy(s => s.Id).Select(s => new { s.Id, s.Name }).ToListAsync(),
                 auditCount = await db.AuditLogs.CountAsync()
             });

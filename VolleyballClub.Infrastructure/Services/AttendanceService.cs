@@ -39,7 +39,7 @@ public class AttendanceService(
         }
 
         // 서버 로직 선검사 + DB unique index 최종 방어(동시 요청)
-        if (await db.Attendances.AnyAsync(a => a.ActivityId == activity.Id && a.UserId == userId))
+        if (await HasAttendanceAsync(db, activity.Id, userId))
         {
             throw new ConflictException("이미 출석 처리되었습니다.");
         }
@@ -51,15 +51,15 @@ public class AttendanceService(
         }
 
         var now = KstClock.NowUtc(timeProvider);
-        var attendance = new Attendance
+        var row = await SemesterMemberRows.EnsureUserRowAsync(db, userId, activity, now);
+        db.SemesterAttendances.Add(new SemesterAttendance
         {
+            SemesterMember = row,
             ActivityId = activity.Id,
-            UserId = userId,
             AttendanceType = AttendanceType.Otp,
             CheckedAt = now,
             CreatedAt = now,
-        };
-        db.Attendances.Add(attendance);
+        });
         try
         {
             await db.SaveChangesAsync();
@@ -83,7 +83,7 @@ public class AttendanceService(
             throw new ConflictException("현재 활동이 종료되어 수정할 수 없습니다.");
         }
 
-        if (await db.Attendances.AnyAsync(a => a.ActivityId == activity.Id && a.UserId == targetUserId))
+        if (await HasAttendanceAsync(db, activity.Id, targetUserId))
         {
             throw new ConflictException("이미 출석 처리되었습니다.");
         }
@@ -92,10 +92,11 @@ public class AttendanceService(
             ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
 
         var now = KstClock.NowUtc(timeProvider);
-        db.Attendances.Add(new Attendance
+        var row = await SemesterMemberRows.EnsureUserRowAsync(db, targetUserId, activity, now);
+        db.SemesterAttendances.Add(new SemesterAttendance
         {
+            SemesterMember = row,
             ActivityId = activity.Id,
-            UserId = targetUserId,
             AttendanceType = AttendanceType.Admin,
             CheckedAt = now,
             CreatedAt = now,
@@ -132,10 +133,16 @@ public class AttendanceService(
     public Task AdminRemoveForActivityAsync(string targetUserId, int activityId, bool confirmTeamImpact = false) =>
         adminActivities.SetAttendanceAsync($"app:{activityId}", targetUserId, new(false, confirmTeamImpact));
 
+    /// <summary>사용자의 활동 출석 존재 여부 — 매핑 행 조인.</summary>
+    private static Task<bool> HasAttendanceAsync(ApplicationDbContext db, int activityId, string userId) =>
+        db.SemesterAttendances.AsNoTracking()
+            .AnyAsync(x => x.ActivityId == activityId && x.SemesterMember.MappedUserId == userId);
+
     /// <summary>지정 활동의 출석 기록 삭제 — 팀 편성 영향 확인과 팀원 제거를 당일·과거 기록이 공유한다.</summary>
     private async Task RemoveAttendanceCoreAsync(ApplicationDbContext db, string targetUserId, Activity activity, bool confirmTeamImpact)
     {
-        var attendance = await db.Attendances.FirstOrDefaultAsync(a => a.ActivityId == activity.Id && a.UserId == targetUserId)
+        var attendance = await db.SemesterAttendances
+            .FirstOrDefaultAsync(x => x.ActivityId == activity.Id && x.SemesterMember.MappedUserId == targetUserId)
             ?? throw new NotFoundException("출석 기록이 없습니다.");
 
         var hasTeams = await db.Teams.AnyAsync(t => t.ActivityId == activity.Id)
@@ -147,7 +154,7 @@ public class AttendanceService(
 
         var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == targetUserId);
 
-        db.Attendances.Remove(attendance);
+        db.SemesterAttendances.Remove(attendance);
         var teamMembers = await db.TeamMembers
             .Where(m => m.UserId == targetUserId && m.Team!.ActivityId == activity.Id)
             .ToListAsync();
@@ -170,14 +177,14 @@ public class AttendanceService(
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
 
-        var monthCount = await db.Attendances.AsNoTracking().CountAsync(x =>
-            x.UserId == userId && x.Activity!.ActivityDate >= monthStart && x.Activity!.ActivityDate <= monthEnd);
-        var semesterCount = await db.Attendances.AsNoTracking().CountAsync(x =>
-            x.UserId == userId && x.Activity!.ActivityDate >= semStart && x.Activity!.ActivityDate <= semEnd);
-        var totalCount = await db.Attendances.AsNoTracking().CountAsync(x => x.UserId == userId);
+        var monthCount = await db.SemesterAttendances.AsNoTracking().CountAsync(x =>
+            x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= monthStart && x.Activity!.ActivityDate <= monthEnd);
+        var semesterCount = await db.SemesterAttendances.AsNoTracking().CountAsync(x =>
+            x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= semStart && x.Activity!.ActivityDate <= semEnd);
+        var totalCount = await db.SemesterAttendances.AsNoTracking().CountAsync(x => x.SemesterMember.MappedUserId == userId);
 
-        var records = await db.Attendances.AsNoTracking()
-            .Where(x => x.UserId == userId)
+        var records = await db.SemesterAttendances.AsNoTracking()
+            .Where(x => x.SemesterMember.MappedUserId == userId)
             .OrderByDescending(x => x.Activity!.ActivityDate)
             .ThenByDescending(x => x.Id)
             .Select(x => new { x.Id, x.ActivityId, x.Activity!.ActivityDate, x.AttendanceType, x.CheckedAt })
@@ -195,7 +202,7 @@ public class AttendanceService(
         var candidates = (await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
             .OrderByDescending(a => a.ActivityDate)
-            .ThenByDescending(a => a.Id)
+            .ThenBy(a => a.Id)
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync())
             .Where(a => MemberSemesters.IsAttributed(a.ActivityDate, attributedPeriods))
@@ -224,9 +231,9 @@ public class AttendanceService(
 
         var query =
             from m in db.Users.AsNoTracking()
-            join a in db.Attendances.AsNoTracking()
+            join a in db.SemesterAttendances.AsNoTracking()
                 .Where(x => x.ActivityId == currentActivityId)
-                on m.Id equals a.UserId into ga
+                on m.Id equals a.SemesterMember.MappedUserId into ga
             from a in ga.DefaultIfEmpty()
             where m.Status == MemberStatus.Active
             select new AttendanceMemberDto(
@@ -258,8 +265,8 @@ public class AttendanceService(
         var last = first.AddMonths(1).AddDays(-1);
         await using var db = await dbFactory.CreateDbContextAsync();
 
-        var myAttendances = await db.Attendances.AsNoTracking()
-            .Where(x => x.UserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
+        var myAttendances = await db.SemesterAttendances.AsNoTracking()
+            .Where(x => x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
             .Select(x => new { x.Activity!.ActivityDate, x.CheckedAt })
             .ToListAsync();
 
@@ -300,10 +307,10 @@ public class AttendanceService(
 
         var scope = await GetCurrentSemesterScopeAsync(db);
         var monthCount = myAttendances.Count;
-        var semesterCount = await db.Attendances.AsNoTracking()
-            .CountAsync(x => x.UserId == userId && x.Activity!.ActivityDate >= scope.Start && x.Activity!.ActivityDate <= scope.End);
-        var totalCount = await db.Attendances.AsNoTracking()
-            .CountAsync(x => x.UserId == userId);
+        var semesterCount = await db.SemesterAttendances.AsNoTracking()
+            .CountAsync(x => x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= scope.Start && x.Activity!.ActivityDate <= scope.End);
+        var totalCount = await db.SemesterAttendances.AsNoTracking()
+            .CountAsync(x => x.SemesterMember.MappedUserId == userId);
 
         return new MyCalendarDto(year, month, days, monthCount, semesterCount, totalCount, scope);
     }
@@ -333,8 +340,8 @@ public class AttendanceService(
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
             .ToListAsync();
 
-        var myAttendances = await db.Attendances.AsNoTracking()
-            .Where(x => x.UserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
+        var myAttendances = await db.SemesterAttendances.AsNoTracking()
+            .Where(x => x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
             .Select(x => new { x.ActivityId, x.CheckedAt })
             .ToListAsync();
 
@@ -347,7 +354,7 @@ public class AttendanceService(
 
         var records = visible
             .OrderByDescending(a => a.ActivityDate)
-            .ThenByDescending(a => a.Id) // 같은 날 여러 세션은 최신 세션 우선
+            .ThenBy(a => a.Id) // 같은 날 여러 세션은 최신 세션 우선
             .Select(a =>
             {
                 var attendance = myAttendances.FirstOrDefault(x => x.ActivityId == a.Id);
@@ -380,14 +387,14 @@ public class AttendanceService(
             .Select(a => a.Id)
             .ToList();
 
-        var myAttendances = await db.Attendances.AsNoTracking()
-            .CountAsync(x => x.UserId == userId && countedActivities.Contains(x.ActivityId));
+        var myAttendances = await db.SemesterAttendances.AsNoTracking()
+            .CountAsync(x => x.SemesterMember.MappedUserId == userId && countedActivities.Contains(x.ActivityId));
 
         var totalActiveMembers = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
 
-        var counts = await db.Attendances.AsNoTracking()
-            .Where(x => countedActivities.Contains(x.ActivityId))
-            .GroupBy(x => x.UserId)
+        var counts = await db.SemesterAttendances.AsNoTracking()
+            .Where(x => countedActivities.Contains(x.ActivityId) && x.SemesterMember.MappedUserId != null)
+            .GroupBy(x => x.SemesterMember.MappedUserId)
             .Select(g => new { UserId = g.Key, Count = g.Count() })
             .ToListAsync();
 
@@ -410,10 +417,10 @@ public class AttendanceService(
         };
 
         var counts = await (
-            from a in db.Attendances.AsNoTracking()
+            from a in db.SemesterAttendances.AsNoTracking()
             where a.Activity!.ActivityDate >= start && a.Activity!.ActivityDate <= end
                 && a.Activity.Status != ActivityStatus.Ready
-            join u in db.Users.AsNoTracking() on a.UserId equals u.Id
+            join u in db.Users.AsNoTracking() on a.SemesterMember.MappedUserId equals u.Id
             where u.Status == MemberStatus.Active
             group a by new { u.Id, u.Name, u.Department } into g
             select new { g.Key.Id, g.Key.Name, g.Key.Department, Count = g.Count() }

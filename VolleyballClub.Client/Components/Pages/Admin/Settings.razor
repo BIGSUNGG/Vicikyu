@@ -1,7 +1,10 @@
 @page "/admin/settings"
 @attribute [Authorize(Roles = "ADMIN")]
+@implements IDisposable
 
 @inject ActivityArchiveClient Archive
+@inject SemesterMemberClient SheetRows
+@inject SemesterClient Semesters
 @inject MemberClient MembersSvc
 @inject ISnackbar Snackbar
 @inject Microsoft.Extensions.Logging.ILogger<Settings> Logger
@@ -13,92 +16,192 @@
 
 <h1 class="page-title"><img class="icon" src="/icons/gear.svg" alt=""> 설정</h1>
 
-<DatabaseBackupSettings />
+<nav class="segment" aria-label="설정 섹션">
+    <a class="seg-btn @(section == Section.Db ? "active" : "")" href="javascript:void(0)" @onclick="() => Switch(Section.Db)">DB 설정</a>
+    <a class="seg-btn @(section == Section.Sheet ? "active" : "")" href="javascript:void(0)" @onclick="() => Switch(Section.Sheet)">시트 설정</a>
+</nav>
 
-<div class="card settings-card">
-    <h2 class="card-title">활동 기록 가져오기 · 내보내기 (xlsx)</h2>
-    <p class="form-label">학기별 탭 출석부 파일을 업로드하면 기존 기록과 병합합니다(같은 파일을 다시 올려도 중복이 생기지 않습니다).
-        매칭되지 않은 부원 행은 아래 '미매핑 부원'에 보관됩니다. 업로드한 파일은 서버에 저장되지 않습니다.</p>
-    <div class="btn-row" style="align-items:flex-end">
-        <div class="field" style="flex:1">
-            <label class="form-label">활동 기록 xlsx (최대 8MB)</label>
-            <InputFile OnChange="OnFileSelectedAsync" accept=".xlsx" />
+@if (section == Section.Db)
+{
+    <DatabaseBackupSettings />
+}
+else
+{
+    <div class="card settings-card">
+        <h2 class="card-title">활동 기록 가져오기 · 내보내기 (xlsx)</h2>
+        <p class="form-label">학기별 탭 출석부 파일을 업로드하면 기존 기록과 병합합니다(같은 파일을 다시 올려도 중복이 생기지 않습니다).
+            모든 부원 행은 '학기별 부원'에 영구 저장되고, 이름이 계정과 일치하면 자동으로 매핑됩니다. 업로드한 파일은 서버에 저장되지 않습니다.</p>
+        <div class="btn-row" style="align-items:flex-end">
+            <div class="field" style="flex:1">
+                <label class="form-label">활동 기록 xlsx (최대 8MB)</label>
+                <InputFile OnChange="OnFileSelectedAsync" accept=".xlsx" />
+            </div>
+            <button type="button" class="btn-primary" disabled="@(importing || selectedFile is null)" @onclick="ImportAsync">
+                @(importing ? "가져오는 중…" : "가져오기")
+            </button>
+            <button type="button" class="btn-secondary" disabled="@exporting" @onclick="ExportAsync">
+                @(exporting ? "내보내는 중…" : "전체 기록 내보내기")
+            </button>
         </div>
-        <button type="button" class="btn-primary" disabled="@(importing || selectedFile is null)" @onclick="ImportAsync">
-            @(importing ? "가져오는 중…" : "가져오기")
-        </button>
-        <button type="button" class="btn-secondary" disabled="@exporting" @onclick="ExportAsync">
-            @(exporting ? "내보내는 중…" : "전체 기록 내보내기")
-        </button>
-    </div>
-    @if (importReport is not null)
-    {
-        <div class="day-detail" style="margin-top:10px">
-            <div class="dd-date">가져오기 결과</div>
-            <div class="dd-info">활동 @(importReport.ImportedActivities)건 추가 · 출석 @(importReport.ImportedAttendances)건 추가 · 예정/없음 표시 @(importReport.DayMarks)건 · 미매핑 부원 @(importReport.UnmappedMembers)명</div>
-            @foreach (var w in importReport.Warnings.Take(20))
-            {
-                <div class="dd-info miss">@w</div>
-            }
-        </div>
-    }
-</div>
-
-<div class="card settings-card" data-load-state="@UnmappedLoadState">
-    <h2 class="card-title">미매핑 부원</h2>
-    <p class="form-label">가져오기에서 계정과 매칭되지 않은 부원 행입니다. 실제 부원과 연동하면 출석 기록이 해당 계정으로 이어지고 목록에서 사라집니다.</p>
-    @if (unmappedLoading)
-    {
-        <span class="admin-load-status" role="status">미매핑 부원을 불러오는 중…</span>
-    }
-    else if (unmappedError is not null)
-    {
-        <div role="alert"><p>@unmappedError</p></div>
-    }
-    else if (unmapped.Count == 0)
-    {
-        <p class="dd-info">미매핑 부원이 없습니다.</p>
-    }
-    else
-    {
-        @foreach (var member in unmapped)
+        @if (importReport is not null)
         {
-            <div class="btn-row" style="align-items:flex-end">
-                <div class="field" style="flex:1">
-                    <label class="form-label">@member.Label — 출석 @(member.AttendanceCount)건</label>
-                    <select class="form-control" @bind="linkTargets[member.Id]">
-                        <option value="">부원 선택…</option>
-                        @foreach (var candidate in memberCandidates)
-                        {
-                            <option value="@candidate.UserId">@candidate.Name (@candidate.StudentNumber)</option>
-                        }
-                    </select>
-                </div>
-                <button type="button" class="btn-secondary" disabled="@(string.IsNullOrEmpty(linkTargets.GetValueOrDefault(member.Id)))"
-                        @onclick="() => LinkAsync(member.Id)">연동</button>
+            <div class="day-detail" style="margin-top:10px">
+                <div class="dd-date">가져오기 결과</div>
+                <div class="dd-info">활동 @(importReport.ImportedActivities)건 추가 · 출석 @(importReport.ImportedAttendances)건 추가 · 예정/없음 표시 @(importReport.DayMarks)건 · 미매핑 부원 @(importReport.UnmappedMembers)명</div>
+                @foreach (var w in importReport.Warnings.Take(20))
+                {
+                    <div class="dd-info miss">@w</div>
+                }
             </div>
         }
-    }
-</div>
+    </div>
+
+    <div class="card settings-card" data-load-state="@RowsLoadState">
+        <h2 class="card-title">학기별 부원</h2>
+        <p class="form-label">시트에서 가져온 학기별 부원 행입니다. 계정과 매핑하면 출석 기록이 해당 계정 통계에 합산되고, 행은 삭제되지 않고 영구 보존됩니다.
+            매핑·해제는 부원 상세 페이지의 '시트 연결' 탭에서도 할 수 있습니다.</p>
+        <div class="btn-row" style="align-items:flex-end">
+            <div class="field" style="flex:1">
+                <label class="form-label">학기 필터</label>
+                <select class="form-control" @bind="semesterFilter" @bind:after="ReloadRowsAsync">
+                    <option value="@((int?)null)">전체</option>
+                    @foreach (var s in semesters)
+                    {
+                        <option value="@s.Id">@s.Name</option>
+                    }
+                    <option value="0">미분류</option>
+                </select>
+            </div>
+            <div class="field" style="flex:1">
+                <label class="form-label">행 추가 — 이름</label>
+                <input class="form-control" @bind="newRowName" maxlength="100" placeholder="새 부원 행 이름" />
+            </div>
+            <div class="field" style="flex:1">
+                <label class="form-label">행 추가 — 학기</label>
+                <select class="form-control" @bind="newRowSemesterId">
+                    <option value="0">미분류</option>
+                    @foreach (var s in semesters)
+                    {
+                        <option value="@s.Id">@s.Name</option>
+                    }
+                </select>
+            </div>
+            <button type="button" class="btn-secondary" disabled="@(rowsBusy || string.IsNullOrWhiteSpace(newRowName))" @onclick="AddRowAsync">행 추가</button>
+        </div>
+        @if (rowsLoading)
+        {
+            <span class="admin-load-status" role="status">학기별 부원을 불러오는 중…</span>
+        }
+        else if (rowsError is not null)
+        {
+            <div role="alert"><p>@rowsError</p><button type="button" class="btn-primary" @onclick="ReloadRowsAsync">다시 불러오기</button></div>
+        }
+        else if (rows.Count == 0)
+        {
+            <p class="dd-info">학기별 부원 행이 없습니다. xlsx를 가져오면 자동으로 만들어집니다.</p>
+        }
+        else
+        {
+            @foreach (var row in rows)
+            {
+                <div class="btn-row settings-sheet-row" style="align-items:flex-end">
+                    <div class="field" style="flex:2">
+                        <label class="form-label">@row.Label — @row.SemesterName · 출석 @(row.AttendanceCount)건</label>
+                        @if (row.MappedUserId is null)
+                        {
+                            <select class="form-control" @bind="linkTargets[row.Id]">
+                                <option value="">미매핑 — 부원 선택…</option>
+                                @foreach (var candidate in memberCandidates)
+                                {
+                                    <option value="@candidate.UserId">@candidate.Name (@candidate.StudentNumber)</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <p class="member-meta">@(row.MappedUserName ?? row.MappedUserId) 계정에 매핑됨</p>
+                        }
+                    </div>
+                    @if (row.MappedUserId is null)
+                    {
+                        <button type="button" class="btn-secondary" disabled="@(rowsBusy || string.IsNullOrEmpty(linkTargets.GetValueOrDefault(row.Id)))"
+                                @onclick="() => MapAsync(row.Id)">매핑</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-secondary" disabled="@rowsBusy" @onclick="() => UnmapAsync(row.Id)">매핑 해제</button>
+                    }
+                    <button type="button" class="btn-secondary" disabled="@rowsBusy" @onclick="() => ToggleAttendanceEditorAsync(row.Id)">출석 수정</button>
+                    <button type="button" class="btn-ghost" disabled="@rowsBusy" @onclick="() => RemoveRowAsync(row.Id)">행 삭제</button>
+                </div>
+                @if (editingRow == row.Id)
+                {
+                    <div class="day-detail" data-load-state="@(attendanceError is not null ? "error" : "ready")">
+                        <div class="dd-date">출석 정보 — @row.Label</div>
+                        @if (attendanceLoading)
+                        {
+                            <span class="admin-load-status" role="status">활동 목록을 불러오는 중…</span>
+                        }
+                        else if (attendanceError is not null)
+                        {
+                            <div role="alert"><p>@attendanceError</p></div>
+                        }
+                        else if (rowAttendance is null || rowAttendance.Activities.Count == 0)
+                        {
+                            <div class="dd-info">편집할 활동 기록이 없습니다.</div>
+                        }
+                        else
+                        {
+                            @foreach (var activity in rowAttendance.Activities)
+                            {
+                                <div class="btn-row" style="align-items:center;gap:8px">
+                                    <div class="dd-info" style="flex:1">@activity.Date.ToString("yyyy.MM.dd")@(string.IsNullOrWhiteSpace(activity.Label) ? "" : $" · {activity.Label}") — @(activity.Attended ? "출석" : "미출석")</div>
+                                    <button type="button" class="btn-secondary" disabled="@rowsBusy"
+                                            @onclick="() => SetAttendanceAsync(row.Id, activity.ActivityId, !activity.Attended)">@(activity.Attended ? "출석 취소" : "출석 처리")</button>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            }
+        }
+    </div>
+}
 
 @code {
+    private enum Section { Db, Sheet }
+    private Section section = Section.Db;
+
     private bool importing;
     private bool exporting;
     private IBrowserFile? selectedFile;
     private ActivityImportReport? importReport;
 
-    private bool unmappedLoading = true;
-    private string? unmappedError;
-    private List<UnmappedMemberDto> unmapped = [];
+    private bool rowsLoading = true;
+    private bool rowsBusy;
+    private string? rowsError;
+    private List<SemesterMemberRowDto> rows = [];
+    private List<SemesterDto> semesters = [];
     private Dictionary<int, string> linkTargets = [];
     private List<MemberListItemDto> memberCandidates = [];
-    private string UnmappedLoadState => unmappedLoading ? "loading" : unmappedError is not null ? "error" : "ready";
+    private int? semesterFilter;
+    private string newRowName = "";
+    private int newRowSemesterId;
+
+    private int? editingRow;
+    private bool attendanceLoading;
+    private string? attendanceError;
+    private SemesterRowAttendanceDto? rowAttendance;
+    private string RowsLoadState => rowsLoading ? "loading" : rowsError is not null ? "error" : "ready";
+
+    private CancellationTokenSource? loadCts;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            unmapped = await Archive.GetUnmappedAsync();
+            var rowsTask = SheetRows.GetListAsync();
+            var semestersTask = Semesters.GetSemestersAsync();
             memberCandidates = [];
             for (var page = 1; ; page++)
             {
@@ -106,20 +209,54 @@
                 memberCandidates.AddRange(result.Items);
                 if (memberCandidates.Count >= result.TotalCount || result.Items.Count == 0) break;
             }
-            linkTargets = unmapped.ToDictionary(m => m.Id, _ => "");
+            rows = await rowsTask;
+            semesters = await semestersTask;
+            linkTargets = rows.ToDictionary(r => r.Id, _ => "");
+            newRowSemesterId = semesters.Count > 0 ? semesters.OrderByDescending(s => s.StartDate).First().Id : 0;
         }
         catch (AppException ex)
         {
-            unmappedError = ex.Message;
+            rowsError = ex.Message;
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "미매핑 부원 조회 실패");
-            unmappedError = "미매핑 부원 목록을 불러오지 못했습니다.";
+            Logger.LogWarning(ex, "학기별 부원 조회 실패");
+            rowsError = "학기별 부원 목록을 불러오지 못했습니다.";
         }
         finally
         {
-            unmappedLoading = false;
+            rowsLoading = false;
+        }
+    }
+
+    private void Switch(Section target) => section = target;
+
+    private async Task ReloadRowsAsync()
+    {
+        loadCts?.Cancel();
+        loadCts = new CancellationTokenSource();
+        var token = loadCts.Token;
+        rowsLoading = true;
+        rowsError = null;
+        try
+        {
+            var loaded = await SheetRows.GetListAsync(semesterFilter);
+            if (token.IsCancellationRequested) return;
+            rows = loaded;
+            linkTargets = rows.ToDictionary(r => r.Id, _ => "");
+        }
+        catch (AppException ex)
+        {
+            if (!token.IsCancellationRequested) rowsError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "학기별 부원 조회 실패");
+            if (!token.IsCancellationRequested) rowsError = "학기별 부원 목록을 불러오지 못했습니다.";
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested) rowsLoading = false;
         }
     }
 
@@ -137,7 +274,7 @@
         {
             importReport = await Archive.ImportAsync(selectedFile);
             Snackbar.Add("활동 기록 가져오기 완료", Severity.Success);
-            await ReloadUnmappedAsync();
+            await ReloadRowsAsync();
         }
         catch (AppException ex)
         {
@@ -176,25 +313,135 @@
         }
     }
 
-    private async Task LinkAsync(int unmappedId)
+    private async Task AddRowAsync()
     {
-        var userId = linkTargets.GetValueOrDefault(unmappedId);
-        if (string.IsNullOrEmpty(userId)) return;
+        rowsBusy = true;
         try
         {
-            await Archive.LinkAsync(unmappedId, userId);
-            Snackbar.Add("연동 완료 — 출석 기록을 이관했습니다.", Severity.Success);
-            await ReloadUnmappedAsync();
+            await SheetRows.AddRowAsync(new SemesterMemberCreateRequest(newRowSemesterId, newRowName.Trim(), null));
+            Snackbar.Add("행을 추가했습니다.", Severity.Success);
+            newRowName = "";
+            await ReloadRowsAsync();
         }
         catch (AppException ex)
         {
             Snackbar.Add(ex.Message, Severity.Error);
         }
+        finally
+        {
+            rowsBusy = false;
+        }
     }
 
-    private async Task ReloadUnmappedAsync()
+    private async Task MapAsync(int rowId)
     {
-        unmapped = await Archive.GetUnmappedAsync();
-        linkTargets = unmapped.ToDictionary(m => m.Id, _ => "");
+        var userId = linkTargets.GetValueOrDefault(rowId);
+        if (string.IsNullOrEmpty(userId)) return;
+        rowsBusy = true;
+        try
+        {
+            await SheetRows.SetMappingAsync(rowId, userId);
+            Snackbar.Add("매핑 완료 — 출석 기록이 계정 통계에 합산됩니다.", Severity.Success);
+            await ReloadRowsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            rowsBusy = false;
+        }
     }
+
+    private async Task UnmapAsync(int rowId)
+    {
+        rowsBusy = true;
+        try
+        {
+            await SheetRows.SetMappingAsync(rowId, null);
+            Snackbar.Add("매핑을 해제했습니다. 행과 출석 기록은 유지됩니다.", Severity.Success);
+            await ReloadRowsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            rowsBusy = false;
+        }
+    }
+
+    private async Task RemoveRowAsync(int rowId)
+    {
+        rowsBusy = true;
+        try
+        {
+            await SheetRows.RemoveRowAsync(rowId);
+            Snackbar.Add("행을 삭제했습니다.", Severity.Success);
+            if (editingRow == rowId) editingRow = null;
+            await ReloadRowsAsync();
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            rowsBusy = false;
+        }
+    }
+
+    private async Task ToggleAttendanceEditorAsync(int rowId)
+    {
+        if (editingRow == rowId)
+        {
+            editingRow = null;
+            return;
+        }
+        editingRow = rowId;
+        rowAttendance = null;
+        attendanceError = null;
+        attendanceLoading = true;
+        try
+        {
+            rowAttendance = await SheetRows.GetRowAttendanceAsync(rowId);
+        }
+        catch (AppException ex)
+        {
+            attendanceError = ex.Message;
+        }
+        finally
+        {
+            attendanceLoading = false;
+        }
+    }
+
+    private async Task SetAttendanceAsync(int rowId, int activityId, bool attended)
+    {
+        rowsBusy = true;
+        try
+        {
+            await SheetRows.SetRowAttendanceAsync(rowId, activityId, attended);
+            rowAttendance = await SheetRows.GetRowAttendanceAsync(rowId);
+            var row = rows.FirstOrDefault(r => r.Id == rowId);
+            if (row is not null)
+            {
+                var updated = await SheetRows.GetListAsync(semesterFilter);
+                rows = updated;
+                linkTargets = rows.ToDictionary(r => r.Id, _ => "");
+            }
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            rowsBusy = false;
+        }
+    }
+
+    public void Dispose() => loadCts?.Cancel();
 }

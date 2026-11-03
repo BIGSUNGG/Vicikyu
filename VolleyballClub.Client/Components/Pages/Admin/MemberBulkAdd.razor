@@ -1,4 +1,5 @@
 @inject MemberClient MemberSvc
+@inject SemesterMemberClient SheetRows
 @inject ISnackbar Snackbar
 
 <div class="card member-bulk-add">
@@ -30,6 +31,10 @@
                 </div>
                 <button type="button" class="btn-secondary" disabled="@(rows.Count >= MemberBulkValidation.MaxRows)" @onclick="AddRow">+ 행 추가</button>
                 <p class="member-meta" role="status">미리보기 @rows.Count 행</p>
+                @if (unmappedRows.Count > 0)
+                {
+                    <p class="member-meta">★ 은 이름이 같아 추천하는 학기별 부원 행입니다. 저장 시 선택한 행이 새 계정에 연결됩니다.</p>
+                }
                 @foreach (var row in rows)
                 {
                     var index = rows.IndexOf(row) + 1;
@@ -70,6 +75,21 @@
                                 <label class="form-label" for="@(prefix + "-password")">초기 비밀번호</label>
                                 <input class="form-control" id="@(prefix + "-password")" data-field="password" type="password" autocomplete="new-password" @bind="row.Password" @bind:event="oninput" @bind:after="ClearServerErrors" maxlength="4096" />
                             </div>
+                            @if (unmappedRows.Count > 0)
+                            {
+                                <div class="field">
+                                    <label class="form-label" for="@(prefix + "-sheet-row")">시트 행 연결(선택)</label>
+                                    <select class="form-control" id="@(prefix + "-sheet-row")" value="@row.SheetRowPick"
+                                            @onchange="e => { row.SheetRowPick = int.TryParse(e.Value?.ToString(), out var picked) ? picked : 0; ClearServerErrors(); }">
+                                        <option value="0">연결 안 함</option>
+                                        @foreach (var candidate in unmappedRows)
+                                        {
+                                            var recommended = RecommendedFor(row.Name) == candidate.Id;
+                                            <option value="@candidate.Id">@(recommended ? "★ " : "")@candidate.Label · @(candidate.SemesterName ?? "미분류") · 출석 @(candidate.AttendanceCount)건</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
                         }
                         @foreach (var error in errors.Where(e => e.Row == index))
                         { <p role="alert">@error.Message</p> }
@@ -98,19 +118,45 @@
     private string defaultPassword = "";
     private string? message;
     private List<Row> rows = [];
+    private List<SemesterMemberRowDto> unmappedRows = [];
+    private bool unmappedLoaded;
     private IReadOnlyList<MemberRowError> serverErrors = [];
     private bool DefaultsReady => MemberBulkValidation.ValidDefaults(defaultRole, defaultPassword);
     private IReadOnlyList<MemberCreateRequest> Requests => rows.Select(r => r.Request()).ToArray();
     private IEnumerable<MemberRowError> Errors => MemberBulkValidation.Validate(Requests).Concat(serverErrors).Distinct();
 
-    private void Toggle()
+    private async Task Toggle()
     {
         open = !open;
         rows.Clear(); defaultPassword = ""; defaultRole = "MEMBER"; ClearServerErrors();
+        if (open && !unmappedLoaded) await LoadUnmappedRowsAsync();
+    }
+
+    private async Task LoadUnmappedRowsAsync()
+    {
+        try
+        {
+            unmappedRows = await SheetRows.GetListAsync(mapped: false);
+            foreach (var row in rows) row.SheetRowPick = RecommendedFor(row.Name);
+        }
+        catch (Exception)
+        {
+            // 추천 로드 실패는 부원 추가 자체를 막지 않는다 — 매핑은 나중에 부원 상세에서도 가능하다
+            unmappedRows = [];
+        }
+        finally { unmappedLoaded = true; }
+    }
+
+    /// <summary>이름이 정확히 같은 미매핑 행 추천(여러 개면 첫 번째).</summary>
+    private int RecommendedFor(string name)
+    {
+        var trimmed = name.Trim();
+        if (trimmed.Length == 0) return 0;
+        return unmappedRows.FirstOrDefault(u => u.Name.Trim() == trimmed)?.Id ?? 0;
     }
     private void ClearServerErrors() { serverErrors = []; message = null; }
 
-    private void AddRow() { rows.Add(new(new("", "", "", defaultPassword, defaultRole)) { Expanded = true }); ClearServerErrors(); }
+    private void AddRow() { var row = new Row(new("", "", "", defaultPassword, defaultRole)) { Expanded = true }; rows.Add(row); row.SheetRowPick = RecommendedFor(row.Name); ClearServerErrors(); }
     private void Delete(Row row) { rows.Remove(row); ClearServerErrors(); }
 
     private async Task ImportAsync(InputFileChangeEventArgs e)
@@ -127,7 +173,11 @@
             await using var stream = file.OpenReadStream(MemberBulkValidation.MaxFileBytes);
             var imported = await MemberSvc.ImportAsync(stream, file.Name, role, password);
             if (rows.Count + imported.Count > MemberBulkValidation.MaxRows) throw new AppException("미리보기는 최대 500행입니다.");
-            rows.AddRange(imported.Select(r => new Row(r)));
+            foreach (var request in imported)
+            {
+                var row = new Row(request) { SheetRowPick = RecommendedFor(request.Name) };
+                rows.Add(row);
+            }
             if (imported.Count == 0) message = "업로드한 파일에 부원 행이 없습니다.";
         }
         catch (AppException ex) { message = ex.Message; }
@@ -147,12 +197,29 @@
             serverErrors = result.Errors;
             if (result.Errors.Count > 0) return;
             Snackbar.Add($"부원 {result.Created.Count}명 추가 완료", Severity.Success);
+            await MapSheetRowsAsync(result);
             Toggle();
             await OnAdded.InvokeAsync();
         }
         catch (AppException ex) { message = ex.Message; }
         catch (HttpRequestException) { message = "응답을 확인하지 못했습니다. 부원 목록을 확인한 후 다시 시도해 주세요."; }
         finally { busy = false; }
+    }
+
+    /// <summary>선택한 학기별 행을 새 계정에 연결한다 — 실패해도 부원 추가는 완료 상태다(나중에 부원 상세에서 재연결).</summary>
+    private async Task MapSheetRowsAsync(MemberBulkResult result)
+    {
+        var byStudentNumber = result.Created.GroupBy(c => c.StudentNumber.Trim())
+            .ToDictionary(g => g.Key, g => g.First().UserId);
+        var failures = new List<string>();
+        foreach (var row in rows.Where(r => r.SheetRowPick != 0))
+        {
+            if (!byStudentNumber.TryGetValue(row.StudentNumber.Trim(), out var userId)) continue;
+            try { await SheetRows.SetMappingAsync(row.SheetRowPick, userId); }
+            catch (AppException ex) { failures.Add($"{row.Name}: {ex.Message}"); }
+        }
+        if (failures.Count > 0)
+            Snackbar.Add($"시트 행 연결 실패 {failures.Count}건 — 부원 상세의 '시트 연결'에서 다시 시도하세요. ({string.Join(" · ", failures.Take(3))})", Severity.Warning);
     }
 
     private sealed class Row(MemberCreateRequest request)
@@ -163,6 +230,7 @@
         public string Department { get; set; } = request.Department;
         public string Role { get; set; } = request.Role;
         public string Password { get; set; } = request.Password;
+        public int SheetRowPick { get; set; }
         public bool Expanded { get; set; }
         public MemberCreateRequest Request() => new(StudentNumber, Name, Department, Password, Role);
     }

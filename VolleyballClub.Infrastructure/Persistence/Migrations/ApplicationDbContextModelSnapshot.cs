@@ -192,38 +192,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Activities", (string)null);
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ActivityId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("AttendanceType")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CheckedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("ActivityId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("Attendances", (string)null);
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<int>("Id")
@@ -366,6 +334,75 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.ToTable("Guests", (string)null);
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterAttendance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ActivityId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AttendanceType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SemesterMemberId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivityId");
+
+                    b.HasIndex("SemesterMemberId", "ActivityId")
+                        .IsUnique();
+
+                    b.ToTable("SemesterAttendances", (string)null);
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MappedUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SemesterId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MappedUserId");
+
+                    b.HasIndex("SemesterId");
+
+                    b.HasIndex("MappedUserId", "SemesterId")
+                        .IsUnique()
+                        .HasFilter("\"MappedUserId\" IS NOT NULL AND \"SemesterId\" IS NOT NULL");
+
+                    b.ToTable("SemesterMembers", (string)null);
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterPeriod", b =>
                 {
                     b.Property<int>("Id")
@@ -469,53 +506,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("TeamMembers", (string)null);
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedAttendance", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ActivityId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("UnmappedMemberId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActivityId");
-
-                    b.HasIndex("UnmappedMemberId", "ActivityId")
-                        .IsUnique();
-
-                    b.ToTable("UnmappedAttendances");
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedMember", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("UnmappedMembers");
                 });
 
             modelBuilder.Entity("VolleyballClub.Infrastructure.Identity.ApplicationUser", b =>
@@ -663,17 +653,6 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.Attendance", b =>
-                {
-                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
-                        .WithMany("Attendances")
-                        .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.FeePayment", b =>
                 {
                     b.HasOne("VolleyballClub.Domain.Entities.FeePeriod", "FeePeriod")
@@ -694,6 +673,35 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Activity");
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterAttendance", b =>
+                {
+                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
+                        .WithMany("SemesterAttendances")
+                        .HasForeignKey("ActivityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VolleyballClub.Domain.Entities.SemesterMember", "SemesterMember")
+                        .WithMany("Attendances")
+                        .HasForeignKey("SemesterMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Activity");
+
+                    b.Navigation("SemesterMember");
+                });
+
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterMember", b =>
+                {
+                    b.HasOne("VolleyballClub.Domain.Entities.SemesterPeriod", "Semester")
+                        .WithMany()
+                        .HasForeignKey("SemesterId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Semester");
                 });
 
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Team", b =>
@@ -718,30 +726,11 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Navigation("Team");
                 });
 
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedAttendance", b =>
-                {
-                    b.HasOne("VolleyballClub.Domain.Entities.Activity", "Activity")
-                        .WithMany()
-                        .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("VolleyballClub.Domain.Entities.UnmappedMember", "UnmappedMember")
-                        .WithMany("Attendances")
-                        .HasForeignKey("UnmappedMemberId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-
-                    b.Navigation("UnmappedMember");
-                });
-
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Activity", b =>
                 {
-                    b.Navigation("Attendances");
-
                     b.Navigation("Guests");
+
+                    b.Navigation("SemesterAttendances");
 
                     b.Navigation("Teams");
                 });
@@ -751,14 +740,14 @@ namespace VolleyballClub.Infrastructure.Persistence.Migrations
                     b.Navigation("Payments");
                 });
 
+            modelBuilder.Entity("VolleyballClub.Domain.Entities.SemesterMember", b =>
+                {
+                    b.Navigation("Attendances");
+                });
+
             modelBuilder.Entity("VolleyballClub.Domain.Entities.Team", b =>
                 {
                     b.Navigation("Members");
-                });
-
-            modelBuilder.Entity("VolleyballClub.Domain.Entities.UnmappedMember", b =>
-                {
-                    b.Navigation("Attendances");
                 });
 #pragma warning restore 612, 618
         }
