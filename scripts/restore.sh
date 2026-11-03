@@ -71,8 +71,8 @@ if [ -f "$BACKUP/vicikyu-web.tar" ]; then
 	docker load -i "$BACKUP/vicikyu-web.tar" >/dev/null
 	ok '이미지 로드'
 else
-	info '이미지 재빌드 (수 분 소요)'
-	docker compose -p "$PROJECT" build >/dev/null
+	info 'GHCR에서 이미지 풀 (실패 시 로컬 빌드)'
+	docker compose -p "$PROJECT" pull --quiet web >/dev/null 2>&1 || docker compose -p "$PROJECT" build >/dev/null
 fi
 
 # 5) 기동·헬스체크는 run.sh 이 수행

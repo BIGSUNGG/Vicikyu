@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG TARGETARCH
 WORKDIR /src
 
 COPY VolleyballClub.Domain/*.csproj VolleyballClub.Domain/
@@ -6,10 +7,10 @@ COPY VolleyballClub.Application/*.csproj VolleyballClub.Application/
 COPY VolleyballClub.Infrastructure/*.csproj VolleyballClub.Infrastructure/
 COPY VolleyballClub.Client/*.csproj VolleyballClub.Client/
 COPY VolleyballClub.Web/*.csproj VolleyballClub.Web/
-RUN dotnet restore VolleyballClub.Web/VolleyballClub.Web.csproj
+RUN dotnet restore VolleyballClub.Web/VolleyballClub.Web.csproj -a $TARGETARCH
 
 COPY . .
-RUN dotnet publish VolleyballClub.Web/VolleyballClub.Web.csproj -c Release -o /app/publish
+RUN dotnet publish VolleyballClub.Web/VolleyballClub.Web.csproj -c Release -a $TARGETARCH -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

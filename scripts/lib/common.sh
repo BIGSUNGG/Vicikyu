@@ -6,7 +6,7 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROJECT=vicikyu # compose 프로젝트명 고정 — 폴더명이 달라져도 같은 볼륨을 찾는다
 VOLUME=vicikyu_vbdata
-IMAGE_REF=vicikyu-web:latest
+IMAGE_REF=ghcr.io/bigsungg/vicikyu:latest
 HEALTH_URL=http://localhost:5122/Account/Login
 PUBLIC_URL=https://vicikyu.site/Account/Login
 SA_PATH="$REPO_ROOT/.secrets/vicikyu-sa.json"

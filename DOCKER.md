@@ -110,6 +110,24 @@ powershell -ExecutionPolicy Bypass -File scripts\restore.ps1 D:\usb\vicikyu-2026
 ./scripts/restore.sh /mnt/usb/vicikyu-20261027-1530
 ```
 
+### 지속 배포 — 태그 push → 서버 자동 적용
+
+`v*` 태그를 push하면(예: `v0.3.0`) GitHub Actions가 테스트(`dotnet test`) → arm64/amd64 이미지 빌드 → GHCR 푸시까지 수행한다. 상시 서버(Pi)의 Watchtower가 5분 간격으로 GHCR을 폴링해 새 이미지를 내려받고 컨테이너를 자동 교체한다(DB 볼륨 유지, 중단 수 초).
+
+```bash
+git tag v0.3.0 && git push origin v0.3.0   # 이것만 — 배포 (Actions ~5분 + 폴링 최대 5분)
+```
+
+- `main` push는 테스트만 실행되고 배포되지 않는다 — 배포는 태그가 결정한다
+- 배포 기록 = git 태그 목록. 이미지도 태그명으로 남는다 (`ghcr.io/bigsungg/vicikyu:v0.3.0`)
+
+- **서버에서 Watchtower 활성화(1회)**: 리포 루트 `.env` 파일에 `COMPOSE_PROFILES=pi` 추가 후 `docker compose -p vicikyu up -d`
+- **최초 1회**: GitHub → 프로필 → Packages → `vicikyu` → Package settings → visibility **Public** (리포가 공개고 이미지에 시크릿 없음). 비공개 유지 시 서버에서 read:packages PAT로 `docker login ghcr.io`
+- 서버 아키텍처 무관 — Actions가 arm64/amd64 모두 푸시한다 (Pi=arm64, Windows PC=amd64 자동 선택)
+- **롤백**: `docker tag ghcr.io/bigsungg/vicikyu:<이전태그> ghcr.io/bigsungg/vicikyu:latest && docker compose -p vicikyu up -d web`
+- 로컬 개발(5121 `dotnet run`)과 무관. 노트북 compose에는 pi 프로필이 없어 Watchtower가 돌지 않는다
+- `run.sh`/`restore.sh`도 기동 전 GHCR 풀을 먼저 시도한다 (풀 실패 시 로컬 빌드로 폴백)
+
 ### 서비스 이전 — 새 PC 절차
 
 레지스트리 없이 로컬 빌드로 운영하므로 **백업 폴더 + 리포지토리**를 전달한다(`docker export`는 포트·볼륨·env가 누락되어 사용하지 않는다).
@@ -120,23 +138,16 @@ powershell -ExecutionPolicy Bypass -File scripts\restore.ps1 D:\usb\vicikyu-2026
 4. `restore` 실행 — 체크섬 검증, 시크릿·토큰 배치, 볼륨 복원, 기동·검증까지 자동
 5. 이후 재기동은 `run` 만 실행하면 복원된 상태 그대로 서빙된다
 
-백업 폴더에는 DB·구글 시크릿·터널 토큰 전부가 들어 있다. 보관·전송에 주의하고 git에 커밋하지 않는다(`backups/` 는 gitignore). 백업 기본값은 이미지 tar를 제외하므로 새 PC에서 재빌드된다 — 동일 아키텍처(amd64)에서 이미지까지 그대로 옮기려면 `--image` 로 백업할 것.
+백업 폴더에는 DB·구글 시크릿·터널 토큰 전부가 들어 있다. 보관·전송에 주의하고 git에 커밋하지 않는다(`backups/` 는 gitignore). 백업 기본값은 이미지 tar를 제외하므로 새 기기에서는 GHCR 이미지를 받는다(불가 시 재빌드) — 이미지까지 그대로 옮기려면 `--image` 로 백업할 것.
 
 ### ARM 대상 — Raspberry Pi 등 arm64
 
-Windows에서 빌드한 이미지는 amd64라 Pi에서 실행되지 않는다. **볼륨·시크릿·리포지토리는 위 절차 그대로** 전달하고 이미지만 아래 둘 중 하나로 바꾼다.
-
-```bash
-# 방법 1: Pi에서 직접 재빌드 (느림, ~10-25분)
-docker compose -p vicikyu up -d --build
-
-# 방법 2: 원본 Windows PC에서 크로스빌드 후 docker save (이후 절차 동일)
-docker buildx build --platform linux/arm64 -t vicikyu-web:latest .
-```
+[지속 배포](#지속-배포--태그-push--서버-자동-적용)가 arm64 이미지를 GHCR에 푸시하므로 Pi에서 빌드할 필요가 없다. **볼륨·시크릿·리포지토리는 위 이전 절차 그대로** 전달한다 — `restore.sh`가 GHCR에서 arm64 이미지를 자동으로 받는다.
 
 - OS는 64비트 필수: `uname -m` → `aarch64` 확인. Dockerfile·compose는 수정 불필요
 - SQLite WAL을 SD카드에 두면 마모·전원 단절 손상 위험 — **USB3 SSD 부팅 권장**, 불가 시 고내구 A2 카드 + 종료 전 `docker compose stop web`
 - Pi에서 Development 기동 시 마이그레이션+시드에 1~2분 소요될 수 있음 (정상)
+- 오프라인 대체: Windows PC에서 `docker buildx build --platform linux/arm64 -t ghcr.io/bigsungg/vicikyu:latest .` 후 `docker save`로 전달
 
 ### 수동 절차 (참고 — 스크립트 고장 시)
 
@@ -146,12 +157,12 @@ docker buildx build --platform linux/arm64 -t vicikyu-web:latest .
 cd C:\Projects\Vicikyu
 
 docker volume ls                     # vicikyu_vbdata 확인
-docker images                        # vicikyu-web:latest 확인
+docker images                        # ghcr.io/bigsungg/vicikyu 확인
 
 # SQLite WAL 무결성을 위해 쓰기 정지 후 백업 (down -v 절대 금지 — 데이터 삭제)
 docker compose stop web
 
-docker save -o vicikyu-web.tar vicikyu-web:latest
+docker save -o vicikyu-web.tar ghcr.io/bigsungg/vicikyu:latest
 
 docker run --rm -v vicikyu_vbdata:/data -v ${PWD}:/backup alpine `
   tar cvf /backup/vbdata.tar -C /data .

@@ -417,6 +417,9 @@ FodyWeavers.xsd
 # Server secrets (never commit)
 .secrets/
 
+# Compose 환경 파일 (COMPOSE_PROFILES 등 — 서버별 로컬 설정)
+.env
+
 # Ops script backups (DB + secrets + tunnel token — never commit)
 backups/
 

@@ -16,8 +16,9 @@ done
 wait_docker
 cd "$REPO_ROOT"
 
-if ! docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
-	info '이미지가 없어 빌드한다 (첫 실행은 수 분 소요)'
+info '원격 이미지 확인 (GHCR)'
+if ! docker compose -p "$PROJECT" pull --quiet web 2>/dev/null; then
+	info '풀 실패 — 로컬 이미지/빌드로 기동한다 (첫 실행은 수 분 소요)'
 fi
 docker compose -p "$PROJECT" up -d
 
