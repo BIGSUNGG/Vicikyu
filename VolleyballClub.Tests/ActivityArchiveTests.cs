@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
@@ -409,6 +410,61 @@ public sealed class ActivityArchiveTests
         Assert.Equal(0, reImport.ImportedActivities);
         Assert.Equal(0, reImport.ImportedAttendances);
         Assert.Equal(0, reImport.DayMarks);
+    }
+
+    [Fact]
+    public async Task 내보내기는_배포_출석부_템플릿_서식을_따른다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var kim = await host.SeedUserAsync("김민수", "2025");
+        var park = await host.SeedUserAsync("박지훈", "2026");
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026-2", new(2026, 9, 1), new(2026, 12, 31)));
+        var first = await host.AdminActivities.CreateAsync(new ActivityCreateRequest(new(2026, 9, 11), DayKind.Completed));
+        var second = await host.AdminActivities.CreateAsync(new ActivityCreateRequest(new(2026, 9, 18), DayKind.Completed));
+        await host.AdminActivities.SetAttendanceAsync(first.Key!, kim, new ActivityAttendanceRequest(true));
+        await host.AdminActivities.SetAttendanceAsync(second.Key!, park, new ActivityAttendanceRequest(true));
+
+        var bytes = await host.Archive.ExportAsync();
+
+        using var zip = new ZipArchive(new MemoryStream(bytes));
+        using var sheet = new StreamReader(zip.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        var xml = sheet.ReadToEnd();
+        Assert.Contains("<t>2학기 총 출석</t>", xml);                 // 학기명 총 출석 헤더
+        Assert.Contains("미출석", xml);                                // 완료 열 미출석 명시
+        Assert.Contains("""<f>COUNTIF(B3:C3,"출석")</f>""", xml);   // 월 출석횟수 COUNTIF 수식
+        Assert.Contains("<f>D3</f>", xml);                            // 총 출석 = 월 집계 합 수식
+        Assert.Contains("state=\"frozen\"", xml);                      // 틀 고정 B1
+        Assert.Contains("width=\"13.89\"", xml);                       // 이름 열 너비
+    }
+
+    [Fact]
+    public async Task 내보내기는_학기_소속_부원_전체를_행으로_만든다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var kim = await host.SeedUserAsync("김민수", "2025");
+        var park = await host.SeedUserAsync("박지훈", "2026"); // 0출석 — 가입일(2026-03-02)이 학기 안
+        var manager = await host.SeedUserAsync("김관리", "1");
+        await using (var db = host.Db.CreateContext())
+        {
+            var adminRole = db.Roles.Single(r => r.Name == "ADMIN");
+            db.UserRoles.Add(new IdentityUserRole<string> { UserId = manager, RoleId = adminRole.Id });
+            await db.SaveChangesAsync();
+        }
+        await host.Semester.CreateAsync(new SemesterSaveRequest("2026-1", new(2026, 2, 1), new(2026, 7, 31)));
+        var activity = await host.AdminActivities.CreateAsync(new ActivityCreateRequest(new(2026, 3, 6), DayKind.Completed));
+        await host.AdminActivities.SetAttendanceAsync(activity.Key!, kim, new ActivityAttendanceRequest(true));
+
+        var bytes = await host.Archive.ExportAsync();
+
+        using var read = new MemoryStream(bytes);
+        var tab = Assert.Single(new ActivityWorkbookReader().Read(read));
+        var labels = tab.Rows.Skip(2).Select(r => r.Count > 0 ? r[0] : "").ToList();
+        Assert.Contains(labels, l => l.StartsWith("박지훈"));           // 0출석 가입 부원도 행으로
+        Assert.DoesNotContain(labels, l => l.StartsWith("김관리"));   // ADMIN 계정은 가입일 행에서 제외
+        var parkRow = tab.Rows.Skip(2).Single(r => r.Count > 0 && r[0].StartsWith("박지훈"));
+        Assert.Equal("미출석", parkRow[1]);                            // 완료 열 미출석 명시
     }
 
     // ===== 예정 표시일 시작·라벨 활동 =====

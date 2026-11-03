@@ -25,7 +25,7 @@ public sealed class ActivityArchiveService(
 
     private sealed record MemberRef(string Id, string Name, string StudentNumber);
 
-    private sealed record UserRef(string Name, string StudentNumber, string Department);
+    private sealed record UserRef(string Name, string StudentNumber, string Department, DateOnly Joined);
 
     public async Task<ActivityImportReport> ImportAsync(Stream stream, CancellationToken ct = default)
     {
@@ -233,14 +233,25 @@ public sealed class ActivityArchiveService(
             .OrderBy(a => a.ActivityDate).ToListAsync(ct);
         var marks = await db.DayMarks.AsNoTracking().OrderBy(m => m.Date).ToListAsync(ct);
         var unmapped = await db.UnmappedMembers.AsNoTracking().Include(m => m.Attendances).ToListAsync(ct);
-        var usersById = await db.Users.AsNoTracking()
-            .ToDictionaryAsync(u => u.Id, u => new UserRef(u.Name, u.StudentNumber, u.Department), ct);
+        var userRows = await db.Users.AsNoTracking()
+            .Select(u => new { u.Id, u.Name, u.StudentNumber, u.Department, u.JoinedAt }).ToListAsync(ct);
+        var usersById = userRows.ToDictionary(u => u.Id,
+            u => new UserRef(u.Name, u.StudentNumber, u.Department, ToKstDate(u.JoinedAt)));
+        // ADMIN 역할 계정은 부원 명단이 아니므로 가입일 기준 행에 넣지 않는다(출석이 있으면 출석자 행으로 포함)
+        var adminRoleIds = await db.Roles.AsNoTracking().Where(r => r.Name == "ADMIN")
+            .Select(r => r.Id).ToListAsync(ct);
+        var adminIds = await db.UserRoles.AsNoTracking()
+            .Where(ur => adminRoleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).ToHashSetAsync(ct);
+        // 학기 귀속 규칙(MemberSemesters와 동일) — 가입일이 학기 안인 부원도 행에 포함
+        HashSet<string> SemesterJoiners(DateOnly from, DateOnly to) =>
+            new(usersById.Where(kv => kv.Value.Joined >= from && kv.Value.Joined <= to && !adminIds.Contains(kv.Key))
+                .Select(kv => kv.Key));
 
         // 학기별 그룹 — 어느 학기에도 속하지 않은 기록은 '미분류' 탭으로
         var groups = periods.Select(p => (p.Name, p.StartDate, p.EndDate))
             .Where(g => activities.Any(a => a.ActivityDate >= g.Item2 && a.ActivityDate <= g.Item3)
                 || marks.Any(m => m.Date >= g.Item2 && m.Date <= g.Item3))
-            .OrderBy(g => g.Item2)
+            .OrderByDescending(g => g.Item2) // 최신 학기 탭 먼저(배포 출석부 순서)
             .ToList<(string Name, DateOnly From, DateOnly To)>();
         var usedNames = new HashSet<string>(StringComparer.Ordinal);
         string SafeTabName(string name)
@@ -257,20 +268,20 @@ public sealed class ActivityArchiveService(
             for (var i = 2; !usedNames.Add(unique); i++) unique = $"{cleaned[..Math.Min(28, cleaned.Length)]}({i})";
             return unique;
         }
-        var tabs = groups.Select(g => BuildTab(SafeTabName(g.Name),
+        var tabs = groups.Select(g => BuildTab(SafeTabName(g.Name), SemesterTotalHeader(g.Name), SemesterJoiners(g.From, g.To),
             activities.Where(a => a.ActivityDate >= g.From && a.ActivityDate <= g.To).ToList(),
             marks.Where(m => m.Date >= g.From && m.Date <= g.To).ToList(),
             unmapped, usersById)).ToList();
         var leftoverActivities = activities.Where(a => !groups.Any(g => a.ActivityDate >= g.From && a.ActivityDate <= g.To)).ToList();
         var leftoverMarks = marks.Where(m => !groups.Any(g => m.Date >= g.From && m.Date <= g.To)).ToList();
         if (leftoverActivities.Count > 0 || leftoverMarks.Count > 0)
-            tabs.Add(BuildTab(SafeTabName("미분류"), leftoverActivities, leftoverMarks, unmapped, usersById));
+            tabs.Add(BuildTab(SafeTabName("미분류"), SemesterTotalHeader("미분류"), [], leftoverActivities, leftoverMarks, unmapped, usersById));
 
         return ActivityWorkbookWriter.Write(tabs);
     }
 
-    private static (string Name, Cell[][] Grid) BuildTab(string name, List<Activity> activities, List<DayMark> marks,
-        List<UnmappedMember> unmapped, Dictionary<string, UserRef> users)
+    private static (string Name, Cell[][] Grid) BuildTab(string name, string totalHeader, HashSet<string> joinerIds,
+        List<Activity> activities, List<DayMark> marks, List<UnmappedMember> unmapped, Dictionary<string, UserRef> users)
     {
         // 열 항목: 같은 날에는 활동이 마크보다 먼저 온다(마크는 같은 날 활동과 공존하지 않지만 정렬 안전장치)
         var items = activities.Select(a => new ExportItem(a.ActivityDate, a, null))
@@ -279,10 +290,12 @@ public sealed class ActivityArchiveService(
             .ThenBy(i => i.Activity is null ? 1 : 0)
             .ToList();
 
-        // 행: 그 학기에 출석한 매핑 부원(이름 학번 학과 라벨) + 미매핑 부원(원본 라벨)
+        // 행: 그 학기 소속 부원 전체(출석 1회 이상 또는 가입일이 학기 안 — MemberSemesters 규칙) + 미매핑 부원(원본 라벨)
         var activityIds = activities.Select(a => a.Id).ToHashSet();
         var rows = activities.SelectMany(a => a.Attendances.Select(x => x.UserId)).Distinct()
+            .Concat(joinerIds)
             .Where(users.ContainsKey)
+            .Distinct()
             .Select(id => new ExportRow(
                 $"{users[id].Name} {users[id].StudentNumber} {users[id].Department}".Trim(),
                 id,
@@ -301,13 +314,23 @@ public sealed class ActivityArchiveService(
         var monthCounts = rows.Select(_ => new Dictionary<int, int>()).ToList();
         var totals = new int[rows.Count];
         var lastMonth = -1;
+        // Excel 열 번호(1-based) 추적 — A는 부원 라벨 열, 첫 항목 열은 B(=2)
+        var col = 2;
+        var monthStartCol = 2;
+        var countCols = new List<int>();
 
         void AppendMonthCount(int month)
         {
             statusCells.Add(new(""));
             headerCells.Add(new($"{month}월 출석횟수"));
+            var from = ActivityWorkbookWriter.ColumnName(monthStartCol);
+            var to = ActivityWorkbookWriter.ColumnName(col - 1);
             for (var r = 0; r < rows.Count; r++)
-                bodyCells[r].Add(new((monthCounts[r].GetValueOrDefault(month, 0)).ToString(), Numeric: true));
+                bodyCells[r].Add(new((monthCounts[r].GetValueOrDefault(month, 0)).ToString(),
+                    Formula: $"COUNTIF({from}{r + 3}:{to}{r + 3},\"출석\")"));
+            countCols.Add(col);
+            col++;
+            monthStartCol = col;
         }
 
         foreach (var item in items)
@@ -324,7 +347,7 @@ public sealed class ActivityArchiveService(
                 {
                     var attended = rows[r].AttendedActivityIds.Contains(activity.Id);
                     if (attended) { monthCounts[r][item.Date.Month] = monthCounts[r].GetValueOrDefault(item.Date.Month) + 1; totals[r]++; }
-                    bodyCells[r].Add(new(attended ? "출석" : ""));
+                    bodyCells[r].Add(new(attended ? "출석" : "미출석"));
                 }
             }
             else
@@ -336,14 +359,16 @@ public sealed class ActivityArchiveService(
                 for (var r = 0; r < rows.Count; r++) bodyCells[r].Add(new(""));
             }
             headerCells.Add(new(header));
+            col++;
         }
         if (items.Count > 0)
         {
             AppendMonthCount(lastMonth);
             statusCells.Add(new(""));
-            headerCells.Add(new("학기 총 출석"));
+            headerCells.Add(new(totalHeader));
             for (var r = 0; r < rows.Count; r++)
-                bodyCells[r].Add(new(totals[r].ToString(), Numeric: true));
+                bodyCells[r].Add(new(totals[r].ToString(),
+                    Formula: string.Join("+", countCols.Select(c => $"{ActivityWorkbookWriter.ColumnName(c)}{r + 3}"))));
         }
 
         grid.Add([.. statusCells]);
@@ -353,14 +378,33 @@ public sealed class ActivityArchiveService(
         return (name, [.. grid]);
     }
 
+    /// <summary>학기명 끝 숫자로 총 출석 헤더를 만든다('2026-2' → '2학기 총 출석'). 숫자가 없으면 '학기 총 출석'.</summary>
+    private static string SemesterTotalHeader(string periodName)
+    {
+        var trimmed = periodName.Trim();
+        return trimmed.Length > 0 && char.IsAsciiDigit(trimmed[^1]) ? $"{trimmed[^1]}학기 총 출석" : "학기 총 출석";
+    }
+
+    private static readonly TimeZoneInfo Kst = ResolveKst();
+
+    private static TimeZoneInfo ResolveKst()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Asia/Seoul"); }
+        catch (TimeZoneNotFoundException) { return TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time"); }
+    }
+
+    /// <summary>UTC 가입일 → KST 날짜(학기 귀속 판정 — MemberSemesters와 같은 변환).</summary>
+    private static DateOnly ToKstDate(DateTime utc) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Kst));
+
     private static string HeaderText(DateOnly date) =>
         $"{date:yy}. {date.Month:D2}. {date.Day:D2}. {DowKo[(int)date.DayOfWeek]}";
 }
 
-/// <summary>내보내기 셀 — Numeric이면 숫자 칸, 아니면 인라인 문자열 칸.</summary>
-internal readonly record struct Cell(string Value, bool Numeric = false);
+/// <summary>내보내기 셀 — Numeric이면 숫자 칸, Formula가 있으면 수식+캐시 값 칸, 아니면 인라인 문자열 칸.</summary>
+internal readonly record struct Cell(string Value, bool Numeric = false, string? Formula = null);
 
-/// <summary>최소 OOXML xlsx 작성기(인라인 문자열·숫자 셀만 — 서식·수식 없음).</summary>
+/// <summary>최소 OOXML xlsx 작성기(인라인 문자열·숫자·수식 셀 + 틀 고정 B1·이름 열 너비 — 배포 출석부 서식).</summary>
 internal static class ActivityWorkbookWriter
 {
     private static readonly XNamespace Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -423,7 +467,13 @@ internal static class ActivityWorkbookWriter
                         if (string.IsNullOrEmpty(cell.Value)) continue;
                         var address = $"{ColumnName(c + 1)}{r + 1}";
                         XElement cellElement;
-                        if (cell.Numeric)
+                        if (cell.Formula is not null)
+                        {
+                            // 수식 + 캐시 값 — Excel에서 열면 재계산되고, 계산하지 않는 뷰어·재가져오기는 캐시 값을 본다
+                            cellElement = new XElement(Main + "c", new XAttribute("r", address),
+                                new XElement(Main + "f", cell.Formula), new XElement(Main + "v", cell.Value));
+                        }
+                        else if (cell.Numeric)
                         {
                             cellElement = new XElement(Main + "c", new XAttribute("r", address),
                                 new XElement(Main + "v", cell.Value));
@@ -437,13 +487,22 @@ internal static class ActivityWorkbookWriter
                     }
                     sheetData.Add(rowElement);
                 }
-                Entry($"xl/worksheets/sheet{t + 1}.xml", new XElement(Main + "worksheet", sheetData));
+                Entry($"xl/worksheets/sheet{t + 1}.xml", new XElement(Main + "worksheet",
+                    new XElement(Main + "sheetViews",
+                        new XElement(Main + "sheetView", new XAttribute("workbookViewId", "0"),
+                            new XElement(Main + "pane",
+                                new XAttribute("xSplit", "1"), new XAttribute("topLeftCell", "B1"),
+                                new XAttribute("activePane", "topRight"), new XAttribute("state", "frozen")))),
+                    new XElement(Main + "cols",
+                        new XElement(Main + "col", new XAttribute("min", "1"), new XAttribute("max", "1"),
+                            new XAttribute("width", "13.89"), new XAttribute("customWidth", "1"))),
+                    sheetData));
             }
         }
         return output.ToArray();
     }
 
-    private static string ColumnName(int column)
+    internal static string ColumnName(int column)
     {
         var letters = "";
         while (column > 0)
