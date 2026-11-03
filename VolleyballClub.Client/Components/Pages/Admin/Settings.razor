@@ -74,7 +74,7 @@ else
             </div>
             <div class="field" style="flex:1">
                 <label class="form-label">행 추가 — 이름</label>
-                <input class="form-control" @bind="newRowName" maxlength="100" placeholder="새 부원 행 이름" />
+                <input class="form-control" @bind="newRowName" @bind:event="oninput" maxlength="100" placeholder="새 부원 행 이름" />
             </div>
             <div class="field" style="flex:1">
                 <label class="form-label">행 추가 — 학기</label>
