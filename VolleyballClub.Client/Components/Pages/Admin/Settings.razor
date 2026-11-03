@@ -19,13 +19,14 @@
 <nav class="segment" aria-label="설정 섹션">
     <a class="seg-btn @(section == Section.Db ? "active" : "")" href="javascript:void(0)" @onclick="() => Switch(Section.Db)">DB 설정</a>
     <a class="seg-btn @(section == Section.Sheet ? "active" : "")" href="javascript:void(0)" @onclick="() => Switch(Section.Sheet)">시트 설정</a>
+    <a class="seg-btn @(section == Section.Mapping ? "active" : "")" href="javascript:void(0)" @onclick="() => Switch(Section.Mapping)">학기별 매핑</a>
 </nav>
 
 @if (section == Section.Db)
 {
     <DatabaseBackupSettings />
 }
-else
+else if (section == Section.Sheet)
 {
     <div class="card settings-card">
         <h2 class="card-title">활동 기록 가져오기 · 내보내기 (xlsx)</h2>
@@ -55,11 +56,13 @@ else
             </div>
         }
     </div>
-
+}
+else
+{
     <div class="card settings-card" data-load-state="@RowsLoadState">
         <h2 class="card-title">학기별 부원</h2>
-        <p class="form-label">시트에서 가져온 학기별 부원 행입니다. 계정과 매핑하면 출석 기록이 해당 계정 통계에 합산되고, 행은 삭제되지 않고 영구 보존됩니다.
-            매핑·해제는 부원 상세 페이지의 '시트 연결' 탭에서도 할 수 있습니다.</p>
+        <p class="form-label">아직 계정과 매핑되지 않은 학기별 부원 행입니다. 계정과 매핑하면 출석 기록이 해당 계정 통계에 합산되고, 행은 삭제되지 않고 영구 보존됩니다.
+            이미 매핑된 행의 해제는 부원 상세 페이지의 '시트 연결' 탭에서 할 수 있습니다.</p>
         <div class="btn-row" style="align-items:flex-end">
             <div class="field" style="flex:1">
                 <label class="form-label">학기 필터</label>
@@ -98,7 +101,7 @@ else
         }
         else if (rows.Count == 0)
         {
-            <p class="dd-info">학기별 부원 행이 없습니다. xlsx를 가져오면 자동으로 만들어집니다.</p>
+            <p class="dd-info">미매핑 부원 행이 없습니다. 모두 매핑되었거나 xlsx를 아직 가져오지 않았습니다.</p>
         }
         else
         {
@@ -107,30 +110,16 @@ else
                 <div class="btn-row settings-sheet-row" style="align-items:flex-end">
                     <div class="field" style="flex:2">
                         <label class="form-label">@row.Label — @row.SemesterName · 출석 @(row.AttendanceCount)건</label>
-                        @if (row.MappedUserId is null)
-                        {
-                            <select class="form-control" @bind="linkTargets[row.Id]">
-                                <option value="">미매핑 — 부원 선택…</option>
-                                @foreach (var candidate in memberCandidates)
-                                {
-                                    <option value="@candidate.UserId">@candidate.Name (@candidate.StudentNumber)</option>
-                                }
-                            </select>
-                        }
-                        else
-                        {
-                            <p class="member-meta">@(row.MappedUserName ?? row.MappedUserId) 계정에 매핑됨</p>
-                        }
+                        <select class="form-control" @bind="linkTargets[row.Id]">
+                            <option value="">미매핑 — 부원 선택…</option>
+                            @foreach (var candidate in memberCandidates)
+                            {
+                                <option value="@candidate.UserId">@candidate.Name (@candidate.StudentNumber)</option>
+                            }
+                        </select>
                     </div>
-                    @if (row.MappedUserId is null)
-                    {
-                        <button type="button" class="btn-secondary" disabled="@(rowsBusy || string.IsNullOrEmpty(linkTargets.GetValueOrDefault(row.Id)))"
-                                @onclick="() => MapAsync(row.Id)">매핑</button>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn-secondary" disabled="@rowsBusy" @onclick="() => UnmapAsync(row.Id)">매핑 해제</button>
-                    }
+                    <button type="button" class="btn-secondary" disabled="@(rowsBusy || string.IsNullOrEmpty(linkTargets.GetValueOrDefault(row.Id)))"
+                            @onclick="() => MapAsync(row.Id)">매핑</button>
                     <button type="button" class="btn-secondary" disabled="@rowsBusy" @onclick="() => ToggleAttendanceEditorAsync(row.Id)">출석 수정</button>
                     <button type="button" class="btn-ghost" disabled="@rowsBusy" @onclick="() => RemoveRowAsync(row.Id)">행 삭제</button>
                 </div>
@@ -169,7 +158,7 @@ else
 }
 
 @code {
-    private enum Section { Db, Sheet }
+    private enum Section { Db, Sheet, Mapping }
     private Section section = Section.Db;
 
     private bool importing;
@@ -200,7 +189,7 @@ else
     {
         try
         {
-            var rowsTask = SheetRows.GetListAsync();
+            var rowsTask = SheetRows.GetListAsync(mapped: false);
             var semestersTask = Semesters.GetSemestersAsync();
             memberCandidates = [];
             for (var page = 1; ; page++)
@@ -240,7 +229,7 @@ else
         rowsError = null;
         try
         {
-            var loaded = await SheetRows.GetListAsync(semesterFilter);
+            var loaded = await SheetRows.GetListAsync(semesterFilter, mapped: false);
             if (token.IsCancellationRequested) return;
             rows = loaded;
             linkTargets = rows.ToDictionary(r => r.Id, _ => "");
@@ -354,25 +343,6 @@ else
         }
     }
 
-    private async Task UnmapAsync(int rowId)
-    {
-        rowsBusy = true;
-        try
-        {
-            await SheetRows.SetMappingAsync(rowId, null);
-            Snackbar.Add("매핑을 해제했습니다. 행과 출석 기록은 유지됩니다.", Severity.Success);
-            await ReloadRowsAsync();
-        }
-        catch (AppException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-        finally
-        {
-            rowsBusy = false;
-        }
-    }
-
     private async Task RemoveRowAsync(int rowId)
     {
         rowsBusy = true;
@@ -428,7 +398,7 @@ else
             var row = rows.FirstOrDefault(r => r.Id == rowId);
             if (row is not null)
             {
-                var updated = await SheetRows.GetListAsync(semesterFilter);
+                var updated = await SheetRows.GetListAsync(semesterFilter, mapped: false);
                 rows = updated;
                 linkTargets = rows.ToDictionary(r => r.Id, _ => "");
             }

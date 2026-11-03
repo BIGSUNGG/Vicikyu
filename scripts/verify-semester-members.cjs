@@ -41,8 +41,8 @@ async function main() {
 	const segButtons = await seg.locator("a.seg-btn").allInnerTexts();
 	assert.deepEqual(
 		segButtons.map((t) => t.trim()),
-		["DB 설정", "시트 설정"],
-		"nav.segment에 DB 설정/시트 설정 버튼",
+		["DB 설정", "시트 설정", "학기별 매핑"],
+		"nav.segment에 DB 설정/시트 설정/학기별 매핑 버튼",
 	);
 	await assert.ok(
 		(await page
@@ -61,21 +61,29 @@ async function main() {
 		await page.getByText("활동 기록 가져오기 · 내보내기 (xlsx)").isVisible(),
 		"xlsx 가져오기 카드",
 	);
+	await page.locator("nav.segment a.seg-btn", { hasText: "학기별 매핑" }).click();
+	await page.waitForTimeout(900);
 	const sheetCard = page
 		.locator(".card")
 		.filter({ has: page.locator("h2.card-title", { hasText: "학기별 부원" }) })
 		.first();
-	await assert.ok(await sheetCard.isVisible(), "학기별 부원 관리 카드");
+	await assert.ok(await sheetCard.isVisible(), "학기별 매핑 섹션에 학기별 부원 카드");
 	await page.waitForTimeout(600); // 행 로딩
 	const rowCount = await sheetCard.locator(".settings-sheet-row").count();
 	assert.ok(rowCount > 0, `학기별 부원 행이 화면에 표시됨(${rowCount}행)`);
-	const unmappedCount = await sheetCard
-		.getByRole("button", { name: "매핑 해제" })
-		.count();
 	const mapButtons = await sheetCard
 		.getByRole("button", { name: "매핑", exact: true })
 		.count();
-	evidence.sheetRows = { rowCount, unmappedButtons: unmappedCount, mapButtons };
+	const unmapButtons = await sheetCard
+		.getByRole("button", { name: "매핑 해제" })
+		.count();
+	assert.equal(unmapButtons, 0, "매핑된 행(해제 버튼)은 표시되지 않음");
+	assert.equal(
+		await sheetCard.locator(".member-meta", { hasText: "계정에 매핑됨" }).count(),
+		0,
+		"매핑됨 표시 없음(미매핑만)",
+	);
+	evidence.sheetRows = { rowCount, mapButtons, unmapButtons };
 	await shot("02-settings-sheet");
 
 	// 행 추가·제거 왕복(UI 경로 — CSRF 보호 경유)
@@ -143,7 +151,7 @@ async function main() {
 
 	// 4) 대량 추가 — 미매핑 행 자동 추천(★)
 	await page.goto(`${base}/admin/settings`, { waitUntil: "networkidle" });
-	await page.locator("nav.segment a.seg-btn", { hasText: "시트 설정" }).click();
+	await page.locator("nav.segment a.seg-btn", { hasText: "학기별 매핑" }).click();
 	await page
 		.locator(".card")
 		.filter({ has: page.locator("h2.card-title", { hasText: "학기별 부원" }) })
@@ -185,7 +193,7 @@ async function main() {
 	// 패널 정리(저장하지 않음) + 검증 행 제거
 	await page.getByRole("button", { name: "추가 취소" }).click();
 	await page.goto(`${base}/admin/settings`, { waitUntil: "networkidle" });
-	await page.locator("nav.segment a.seg-btn", { hasText: "시트 설정" }).click();
+	await page.locator("nav.segment a.seg-btn", { hasText: "학기별 매핑" }).click();
 	await page.waitForTimeout(900);
 	await page
 		.locator(".settings-sheet-row", { hasText: "추천검증" })
