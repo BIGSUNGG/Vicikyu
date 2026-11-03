@@ -3,6 +3,7 @@ services:
     build: .
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      TZ: Asia/Seoul
       ConnectionStrings__DefaultConnection: >-
         Data Source=/data/VolleyballClub.db
       Seed__AdminPassword: "Admin1234!"

@@ -378,6 +378,107 @@ public sealed class DatabaseBackupTests
     }
 
     /// <summary>배타적 복원 게이트 검증 — 가져오기 요청 내부에서 대기한다.</summary>
+    private sealed record RetentionResponse(int Days);
+
+    private static async Task RunScheduledAsync(BackupHost host)
+    {
+        using var scope = host.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>().RunScheduledBackupAsync();
+    }
+
+    [Fact]
+    public async Task Scheduled_Backup_Creates_One_Standalone_File_Per_Local_Day()
+    {
+        await using var host = await BackupHost.StartAsync();
+        await RunScheduledAsync(host);
+        await RunScheduledAsync(host); // 같은 날 재실행(재시작 따라잡기)은 중복 백업을 만들지 않는다.
+        var backups = System.IO.Directory.GetFiles(Path.Combine(host.DirectoryPath, "database-backups"), $"scheduled-{DateTime.Now:yyyyMMdd}-*.db");
+        Assert.Single(backups);
+        await using var backup = new SqliteConnection($"Data Source={backups[0]};Mode=ReadOnly;Pooling=False");
+        await backup.OpenAsync();
+        Assert.Equal("synthetic-secret", await Scalar(backup, "SELECT Value FROM Settings WHERE Key='Test:Secret'"));
+        Assert.Equal("ok", await Scalar(backup, "PRAGMA integrity_check"));
+        Assert.False(File.Exists(backups[0] + "-wal"));
+    }
+
+    [Fact]
+    public async Task Scheduled_Backup_Prunes_Only_Expired_Scheduled_Files()
+    {
+        await using var host = await BackupHost.StartAsync();
+        await host.Execute($"INSERT INTO Settings (Key, Value, UpdatedAt) VALUES ('Backup:RetentionDays', '10', '2026-01-01')");
+        var directory = Path.Combine(host.DirectoryPath, "database-backups");
+        System.IO.Directory.CreateDirectory(directory);
+        string Scheduled(int offsetDays) => Path.Combine(directory, $"scheduled-{DateTime.Now.AddDays(offsetDays):yyyyMMdd}-120000.db");
+        var expired = Scheduled(-20); var boundary = Scheduled(-10); var recent = Scheduled(-5);
+        var restore = Path.Combine(directory, "before-restore-20260101-120000.db");
+        var garbage = Path.Combine(directory, "scheduled-broken.db");
+        foreach (var file in new[] { expired, boundary, recent, restore, garbage }) File.WriteAllText(file, "synthetic");
+        await RunScheduledAsync(host);
+        Assert.False(File.Exists(expired));
+        Assert.False(File.Exists(boundary)); // 보관 N일: 오늘-N일 이전(경계 포함) 삭제
+        Assert.True(File.Exists(recent));
+        Assert.True(File.Exists(restore)); // 복원 안전 백업은 보관 기간과 무관하게 유지
+        Assert.True(File.Exists(garbage));
+        Assert.True(Directory.GetFiles(directory, $"scheduled-{DateTime.Now:yyyyMMdd}-*.db").Length == 1);
+    }
+
+    [Fact]
+    public async Task Scheduled_Backup_Skips_While_Maintenance_Gate_Is_Blocked()
+    {
+        await using var host = await BackupHost.StartAsync();
+        host.Services.GetRequiredService<IDatabaseMaintenance>().Block();
+        await RunScheduledAsync(host);
+        Assert.False(Directory.Exists(Path.Combine(host.DirectoryPath, "database-backups")));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    [InlineData("abc")]
+    public async Task Retention_Falls_Back_To_Default_For_Missing_Or_Invalid_Stored_Value(string? stored)
+    {
+        await using var host = await BackupHost.StartAsync();
+        if (stored is not null)
+            await host.Execute($"INSERT INTO Settings (Key, Value, UpdatedAt) VALUES ('Backup:RetentionDays', '{stored}', '2026-01-01')");
+        using var scope = host.Services.CreateScope();
+        Assert.Equal(30, await scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>().GetRetentionDaysAsync());
+    }
+
+    [Fact]
+    public void Scheduler_Plan_Waits_Until_Noon_Catches_Up_Once_Then_Advances_To_Tomorrow()
+    {
+        var today = new DateTimeOffset(DateTime.Now.Date.AddHours(9)); // 로컬 시간 기준 오전 9시
+        var yesterday = DateOnly.FromDateTime(today.DateTime).AddDays(-1);
+        var (run, wait) = BackupScheduler.Plan(today, yesterday);
+        Assert.False(run);
+        Assert.Equal(TimeSpan.FromHours(3), wait); // 정오까지 대기
+
+        var afternoon = new DateTimeOffset(DateTime.Now.Date.AddHours(13));
+        (run, _) = BackupScheduler.Plan(afternoon, yesterday);
+        Assert.True(run); // 놓친 정오 따라참기
+
+        var lastRun = DateOnly.FromDateTime(today.DateTime);
+        (run, wait) = BackupScheduler.Plan(afternoon, lastRun);
+        Assert.False(run);
+        Assert.Equal(TimeSpan.FromHours(23), wait); // 당일 재실행 없이 내일 정오까지
+    }
+
+    [Fact]
+    public async Task Retention_Setting_Defaults_To_30_And_Admin_Can_Change_It()
+    {
+        await using var host = await BackupHost.StartAsync();
+        using var admin = host.Client(); using var member = host.Client();
+        await Login(admin, "admin"); await Login(member, "member");
+        Assert.Equal(30, (await admin.GetFromJsonAsync<RetentionResponse>("/api/admin/database/backup-retention"))!.Days);
+        await Status(member.GetAsync("/api/admin/database/backup-retention"), HttpStatusCode.Forbidden);
+        await Status(admin.PutAsJsonAsync("/api/admin/database/backup-retention", new { days = 60 }), HttpStatusCode.NoContent);
+        Assert.Equal(60, (await admin.GetFromJsonAsync<RetentionResponse>("/api/admin/database/backup-retention"))!.Days);
+        Assert.Equal("60", await host.Query("SELECT Value FROM Settings WHERE Key='Backup:RetentionDays'"));
+        Assert.Equal("1", await host.Query("SELECT COUNT(*) FROM AuditLogs WHERE TargetType='Backup:RetentionDays'"));
+        await Status(admin.PutAsJsonAsync("/api/admin/database/backup-retention", new { days = 0 }), HttpStatusCode.BadRequest);
+        await Status(admin.PutAsJsonAsync("/api/admin/database/backup-retention", new { days = 9999 }), HttpStatusCode.BadRequest);
+    }
+
     private sealed class PausingArchive : IActivityArchiveService
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

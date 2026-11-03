@@ -218,9 +218,20 @@ async function verify(viewport, label) {
 			await page.getByTestId("database-backup").innerText(),
 			/민감정보/,
 		);
+		// 자동 백업 보관 기간 — 기본값 30 → 7 저장 → 재로드 후 유지(리뷰 #1: UI 경로 회귀 고정)
+		const retentionInput = page.getByTestId("backup-retention-days");
+		if (label === "desktop")
+			assert.equal(await retentionInput.inputValue(), "30");
+		await retentionInput.fill("7");
+		await page.getByTestId("backup-retention-save").click();
 		assert.match(
-			await page.getByTestId("database-backup").innerText(),
-			/자동 동기화는 유지/,
+			await page.getByTestId("backup-retention-status").innerText(),
+			/7일로 저장/,
+		);
+		await go(page, "/admin/settings");
+		assert.equal(
+			await page.getByTestId("backup-retention-days").inputValue(),
+			"7",
 		);
 		await capture(page, `${label}-settings`);
 		const [download] = await Promise.all([

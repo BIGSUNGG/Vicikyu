@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Exceptions;
+using VolleyballClub.Domain.Entities;
 using VolleyballClub.Domain.Enums;
 using VolleyballClub.Infrastructure.Persistence;
 
@@ -25,12 +26,95 @@ internal sealed class DatabaseBackupService(
     ICurrentUserService current,
     IDatabaseMaintenance maintenance,
     IDatabaseSnapshot snapshot,
+    TimeProvider timeProvider,
+    IAuditLogService auditLog,
     ILogger<DatabaseBackupService> logger) : IDatabaseBackupService
 {
     private static SqliteConnection Connect(string path, SqliteOpenMode mode) => new(new SqliteConnectionStringBuilder
     {
         DataSource = path, Mode = mode, Pooling = false, DefaultTimeout = 30
     }.ToString());
+
+    public async Task<int> GetRetentionDaysAsync(CancellationToken ct = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var raw = await db.Settings.AsNoTracking()
+            .Where(s => s.Key == DatabaseBackupLimits.RetentionSettingKey)
+            .Select(s => s.Value).FirstOrDefaultAsync(ct);
+        return int.TryParse(raw, out var days) && days is >= DatabaseBackupLimits.MinRetentionDays and <= DatabaseBackupLimits.MaxRetentionDays
+            ? days : DatabaseBackupLimits.DefaultRetentionDays;
+    }
+
+    public async Task SetRetentionDaysAsync(int days, CancellationToken ct = default)
+    {
+        await current.RequireAdminAsync();
+        if (days is < DatabaseBackupLimits.MinRetentionDays or > DatabaseBackupLimits.MaxRetentionDays)
+            throw new RuleViolationException($"백업 보관 기간은 {DatabaseBackupLimits.MinRetentionDays}~{DatabaseBackupLimits.MaxRetentionDays}일 사이로 입력해 주세요.");
+        await using var db = await factory.CreateDbContextAsync(ct);
+        var setting = await db.Settings.FirstOrDefaultAsync(s => s.Key == DatabaseBackupLimits.RetentionSettingKey, ct);
+        var stamp = timeProvider.GetUtcNow().UtcDateTime;
+        if (setting is null) db.Settings.Add(new Setting { Key = DatabaseBackupLimits.RetentionSettingKey, Value = days.ToString(), UpdatedAt = stamp });
+        else { setting.Value = days.ToString(); setting.UpdatedAt = stamp; }
+        await db.SaveChangesAsync(ct);
+        await auditLog.LogAsync(AdminAction.SettingChange, DatabaseBackupLimits.RetentionSettingKey, days.ToString(),
+            $"DB 자동 백업 보관 기간 {days}일로 변경");
+    }
+
+    public async Task RunScheduledBackupAsync(CancellationToken ct = default)
+    {
+        // 단일 프로세스 게이트 참여: 복원 중단/복구 실패 상태에서는 자동 백업도 멈춘다.
+        if (maintenance.IsBlocked) return;
+        var livePath = await DatabasePathAsync(ct);
+        var backupDirectory = Path.Combine(Path.GetDirectoryName(livePath)!, "database-backups");
+        PrivateDirectory(backupDirectory);
+        var localNow = timeProvider.GetLocalNow();
+        var today = DateOnly.FromDateTime(localNow.DateTime);
+        // 하루 1건: 서버 재시작·중복 트리거가 같은 날 두 번 백업하지 않는다.
+        if (Directory.EnumerateFiles(backupDirectory, $"scheduled-{today:yyyyMMdd}-*.db").Any()) return;
+        // 공유 리스: 보통 요청과 겹칠 수 있지만 독점 복원과는 직렬화된다.
+        using (var lease = await maintenance.EnterAsync(exclusive: false, ct))
+        {
+            // 리스 획득 후에 생성: 대기 중 취소되면 0바이트 파일이 남아 당일 백업을 가로채지 않는다.
+            var backupPath = Path.Combine(backupDirectory, $"scheduled-{localNow:yyyyMMdd-HHmmss}.db");
+            PrivateFile(backupPath);
+            try
+            {
+                await using var db = await factory.CreateDbContextAsync(ct);
+                var source = (SqliteConnection)db.Database.GetDbConnection();
+                await source.OpenAsync(ct);
+                await using (var destination = Connect(backupPath, SqliteOpenMode.ReadWrite))
+                {
+                    await destination.OpenAsync(ct);
+                    snapshot.Copy(source, destination);
+                    await MakeStandaloneAsync(destination, ct);
+                }
+                using var durable = new FileStream(backupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+                durable.Flush(flushToDisk: true);
+                logger.LogInformation("DB scheduled backup written to {BackupPath}", backupPath);
+            }
+            catch { File.Delete(backupPath); throw; }
+        }
+        await PruneScheduledBackupsAsync(backupDirectory, today, ct);
+    }
+
+    private async Task PruneScheduledBackupsAsync(string backupDirectory, DateOnly today, CancellationToken ct)
+    {
+        var cutoff = today.AddDays(-await GetRetentionDaysAsync(ct));
+        foreach (var file in Directory.EnumerateFiles(backupDirectory, "scheduled-*.db"))
+        {
+            var name = Path.GetFileName(file.AsSpan());
+            // "scheduled-" 다음 8자리(YYYYMMDD)를 읽는다. 날짜로 읽을 수 없는 파일은 건드리지 않는다.
+            if (name.Length >= 18 && DateOnly.TryParseExact(name.Slice(10, 8), "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var date)
+                && date <= cutoff)
+            {
+                try { File.Delete(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    logger.LogWarning(ex, "Failed to delete expired backup {File}", file);
+                }
+            }
+        }
+    }
 
     private async Task<string> DatabasePathAsync(CancellationToken ct)
     {

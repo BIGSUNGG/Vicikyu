@@ -11,6 +11,7 @@ using MudBlazor.Services;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Infrastructure;
 using VolleyballClub.Infrastructure.Persistence;
+using VolleyballClub.Infrastructure.Services;
 using VolleyballClub.Web.Components;
 
 
@@ -54,6 +55,10 @@ builder.Services.ConfigureApplicationCookie(options =>
         }
     };
 });
+
+// 자동 DB 백업 스케줄러 — Testing 환경(통합 테스트 호스트)에서는 명시적 파일 수 기준 단언을 보호하기 위해 비활성화.
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<BackupScheduler>();
 
 var app = builder.Build();
 if (app.Services.GetRequiredService<IDatabaseMaintenance>().IsBlocked)

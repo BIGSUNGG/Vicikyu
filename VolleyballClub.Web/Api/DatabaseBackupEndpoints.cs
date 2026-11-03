@@ -10,6 +10,8 @@ internal sealed class DatabaseRestoreMetadata { }
 
 internal static class DatabaseBackupEndpoints
 {
+    internal sealed record BackupRetentionRequest(int Days);
+
     internal static void MapDatabaseBackupApi(this WebApplication app)
     {
         var database = app.MapGroup("/api/admin/database").RequireAuthorization(p => p.RequireRole("ADMIN"));
@@ -44,5 +46,12 @@ internal static class DatabaseBackupEndpoints
             await context.SignOutAsync(IdentityConstants.ApplicationScheme);
             return Results.NoContent();
         }).WithMetadata(new DatabaseRestoreMetadata(), new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(DatabaseBackupLimits.MaxFileBytes + 65536));
+        database.MapGet("/backup-retention", async (IDatabaseBackupService service, CancellationToken ct) =>
+            Results.Json(new { days = await service.GetRetentionDaysAsync(ct) }));
+        database.MapPut("/backup-retention", async (BackupRetentionRequest request, IDatabaseBackupService service, CancellationToken ct) =>
+        {
+            await service.SetRetentionDaysAsync(request.Days, ct);
+            return Results.NoContent();
+        });
     }
 }

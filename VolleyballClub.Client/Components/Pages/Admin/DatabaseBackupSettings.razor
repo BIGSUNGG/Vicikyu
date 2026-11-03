@@ -13,6 +13,23 @@
             <a class="btn-secondary" href="/api/admin/database/export" download data-testid="database-export">DB 내보내기 (.db)</a>
         }
     </section>
+    <section class="db-group" aria-labelledby="db-schedule-title">
+        <h3 class="card-title" id="db-schedule-title">자동 백업</h3>
+        <p class="member-meta">서버가 실행 중일 때 매일 오후 12시(서버 시간) 서버 DB 폴더의 database-backups에 자동 백업을 남깁니다. 보관 기간이 지나면 오래된 자동 백업부터 삭제됩니다.</p>
+        <div class="btn-row" style="align-items:flex-end">
+            <div class="field" style="flex:1;max-width:220px">
+                <label class="form-label" for="backup-retention-days">백업 보관 기간(일)</label>
+                <input id="backup-retention-days" class="form-control" type="number" min="1" max="3650" inputmode="numeric"
+                       data-testid="backup-retention-days" value="@retentionInput" @oninput="OnRetentionInput" />
+            </div>
+            <button type="button" class="btn-primary" data-testid="backup-retention-save"
+                    disabled="@(savingRetention || !retentionLoaded || retentionError is not null)" @onclick="SaveRetentionAsync">
+                @(savingRetention ? "저장 중…" : "보관 기간 저장")
+            </button>
+        </div>
+        @if (retentionStatus is not null) { <p class="member-meta" role="status" data-testid="backup-retention-status">@retentionStatus</p> }
+        @if (retentionError is not null) { <p class="text-danger" role="alert" data-testid="backup-retention-error">@retentionError</p> }
+    </section>
     <section class="db-group" aria-labelledby="db-import-title">
         <h3 class="card-title" id="db-import-title">복원 — 가져오기</h3>
         <p class="member-meta">가져오기는 계정·활동·설정 전체를 교체합니다. 현재 앱과 동일한 DB 스키마만 지원하며 최대 64MB입니다. 서버 DB 폴더의 database-backups에 교체 전 자동 백업을 보관합니다.</p>
@@ -46,6 +63,47 @@
 </section>
 
 @code {
+    private string retentionInput = "";
+    private bool retentionLoaded;
+    private bool savingRetention;
+    private string? retentionStatus;
+    private string? retentionError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { retentionInput = (await BackupSvc.GetRetentionDaysAsync()).ToString(); retentionLoaded = true; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "DB 자동 백업 설정 조회 실패");
+            retentionError = "자동 백업 설정을 불러오지 못했습니다.";
+        }
+    }
+
+    private void OnRetentionInput(ChangeEventArgs e)
+    {
+        retentionInput = e.Value?.ToString() ?? "";
+        retentionError = null; // 값을 고치면 이전 실패를 해제해 재시도할 수 있게 한다.
+        retentionStatus = null;
+    }
+
+    private async Task SaveRetentionAsync()
+    {
+        if (savingRetention || !int.TryParse(retentionInput?.Trim(), out var days)) return;
+        savingRetention = true; retentionStatus = null; retentionError = null;
+        try
+        {
+            await BackupSvc.SetRetentionDaysAsync(days);
+            retentionStatus = $"백업 보관 기간을 {days}일로 저장했습니다.";
+        }
+        catch (AppException ex) { retentionError = ex.Message; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "DB 자동 백업 설정 저장 실패");
+            retentionError = "저장하지 못했습니다. 다시 시도해 주세요.";
+        }
+        finally { savingRetention = false; }
+    }
+
     private IBrowserFile? file;
     private bool busy;
     private bool confirming;
