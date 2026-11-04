@@ -90,7 +90,7 @@
                                     </div>
                                     <div class="field">
                                         <label class="form-label" for="@(prefix + "-name")">이름</label>
-                                        <input class="form-control" id="@(prefix + "-name")" data-field="name" @bind="row.Name" @bind:event="oninput" maxlength="4096" />
+                                        <input class="form-control" id="@(prefix + "-name")" data-field="name" @bind="row.Name" @bind:event="oninput" @bind:after="() => ReseedPicks(row)" maxlength="4096" />
                                     </div>
                                     <div class="field">
                                         <label class="form-label" for="@(prefix + "-department")">학과</label>
@@ -213,6 +213,13 @@
         rows.Add(row);
         SeedPicks(row);
         ClearServerErrors();
+    }
+
+    /// <summary>이름이 바뀌면 추천을 다시 계산한다 — 수동 행 추가는 이름을 나중에 입력하므로 추가 시점 시드만으로는 부족하다.</summary>
+    private void ReseedPicks(Row row)
+    {
+        row.Picks.Clear();
+        SeedPicks(row);
     }
     private void Delete(Row row) { rows.Remove(row); ClearServerErrors(); }
 

@@ -1742,6 +1742,19 @@ button.court-head {
 	line-height: 1.5;
 }
 
+/* 추천 자동 매핑 미리보기 — 목록이 길어도 스크롤로 보여준다 */
+.auto-map-box {
+	max-width: 560px;
+}
+.auto-map-list {
+	max-height: 300px;
+	overflow-y: auto;
+	text-align: left;
+	margin: 10px 0;
+	display: grid;
+	gap: 4px;
+}
+
 /* ============================================================
    하단 탭 — 홈 · 기록 · MY · 관리자
    ============================================================ */
