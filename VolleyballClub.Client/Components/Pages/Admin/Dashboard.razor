@@ -59,11 +59,14 @@ else if (loadError is not null)
         }
 
         <div class="btn-row">
-            @if (today.Status == ActivityStatus.Ready)
+            @if (today.Status is null)
             {
-                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartActivityAsync)">활동 시작</button>
+                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartNewActivityAsync)">활동 시작</button>
             }
-            <button type="button" class="btn-primary @(IsActive || today.Status == ActivityStatus.ActivityClosed ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
+            @if (today.Status is not null)
+            {
+                <button type="button" class="btn-primary @(IsActive || today.Status == ActivityStatus.ActivityClosed ? "btn-wide" : "")" @onclick="GenerateOtpAsync">OTP @(string.IsNullOrEmpty(today.OtpCode) ? "생성" : "변경")</button>
+            }
             @if (IsActive)
             {
                 <button type="button" class="btn-danger" @onclick="ConfirmCancelActivityAsync">활동 취소</button>
@@ -200,7 +203,7 @@ else if (loadError is not null)
     private int countdownRun;
 
     private bool IsActive => today is not null
-        && today.Status != ActivityStatus.Ready
+        && today.Status is not null
         && today.Status != ActivityStatus.ActivityClosed;
 
     private string StatusBadgeClass => today?.Status switch
@@ -225,8 +228,8 @@ else if (loadError is not null)
         loadError = null;
         try
         {
-            // 기존 생성→팀 조회 순서를 유지하되 한 조회의 결과는 함께 반영한다.
-            var loadedToday = await Activities.GetOrCreateTodayAsync() ?? throw new InvalidOperationException("오늘 활동 응답이 없습니다.");
+            // 활동 조회→팀 조회 순서를 유지하되 한 조회의 결과는 함께 반영한다. 조회만으로 활동 행이 생기지 않는다.
+            var loadedToday = await Activities.GetTodayForAdminAsync() ?? throw new InvalidOperationException("오늘 활동 응답이 없습니다.");
             var loadedTeams = await Teams.GetTodayTeamsForAdminAsync() ?? throw new InvalidOperationException("팀 목록 응답이 없습니다.");
             if (generation != loadGeneration) return;
             today = loadedToday;

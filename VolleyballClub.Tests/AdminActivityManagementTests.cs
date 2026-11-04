@@ -73,50 +73,50 @@ public sealed partial class AdminActivityManagementTests
     }
 
     [Fact]
-    public async Task Ready_app_activity_completes_when_kind_set_to_completed()
+    public async Task Active_app_activity_completes_when_kind_set_to_completed()
     {
         await using var h = new Host();
         await h.Seed();
-        var ready = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
+        var active = await h.App(new(2026, 10, 1), ActivityStatus.AttendanceOpen);
 
-        var dto = await h.Service.EditAsync($"app:{ready.Id}", new ActivityEditRequest(ready.ActivityDate, DayKind.Completed));
+        var dto = await h.Service.EditAsync($"app:{active.Id}", new ActivityEditRequest(active.ActivityDate, DayKind.Completed));
 
         await using var db = h.Db.CreateContext();
-        var stored = await db.Activities.SingleAsync(a => a.Id == ready.Id);
+        var stored = await db.Activities.SingleAsync(a => a.Id == active.Id);
         Assert.Equal(ActivityStatus.ActivityClosed, stored.Status);
         Assert.NotNull(stored.ActivityClosedAt);
         Assert.Equal(ActivityStatus.ActivityClosed, dto.Status);
     }
 
     [Fact]
-    public async Task Ready_app_activity_completes_and_sets_attendance_in_one_batch_save()
+    public async Task Active_app_activity_completes_and_sets_attendance_in_one_batch_save()
     {
         await using var h = new Host();
         await h.Seed();
-        var ready = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
+        var active = await h.App(new(2026, 10, 1), ActivityStatus.AttendanceOpen);
 
         // 화면 흐름 그대로 — 완료 선택 + 출석 체크를 변경 저장 1회로
-        var dto = await h.Service.EditAsync($"app:{ready.Id}", new ActivityEditRequest(ready.ActivityDate, DayKind.Completed,
+        var dto = await h.Service.EditAsync($"app:{active.Id}", new ActivityEditRequest(active.ActivityDate, DayKind.Completed,
             Attendances: [new ActivityAttendanceSetRequest("a", true)]));
 
         await using var db = h.Db.CreateContext();
-        var stored = await db.Activities.Include(a => a.SemesterAttendances).ThenInclude(a => a.SemesterMember).SingleAsync(a => a.Id == ready.Id);
+        var stored = await db.Activities.Include(a => a.SemesterAttendances).ThenInclude(a => a.SemesterMember).SingleAsync(a => a.Id == active.Id);
         Assert.Equal(ActivityStatus.ActivityClosed, stored.Status);
         Assert.Single(stored.SemesterAttendances, x => x.SemesterMember.MappedUserId == "a");
     }
 
     [Fact]
-    public async Task Ready_app_activity_converts_to_scheduled_mark()
+    public async Task Active_app_activity_converts_to_scheduled_mark()
     {
         await using var h = new Host();
         await h.Seed();
-        var ready = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
+        var active = await h.App(new(2026, 10, 1), ActivityStatus.AttendanceOpen);
 
-        var dto = await h.Service.EditAsync($"app:{ready.Id}", new ActivityEditRequest(ready.ActivityDate, DayKind.Scheduled));
+        var dto = await h.Service.EditAsync($"app:{active.Id}", new ActivityEditRequest(active.ActivityDate, DayKind.Scheduled));
 
         await using var db = h.Db.CreateContext();
-        Assert.Equal(ActivityStatus.Ready, ready.Status); // 시드 엔티티는 그대로(컨텍스트 분리)
-        Assert.DoesNotContain(await db.Activities.ToListAsync(), a => a.Id == ready.Id); // 활동은 제거
+        Assert.Equal(ActivityStatus.AttendanceOpen, active.Status); // 시드 엔티티는 그대로(컨텍스트 분리)
+        Assert.DoesNotContain(await db.Activities.ToListAsync(), a => a.Id == active.Id); // 활동은 제거
         var mark = await db.DayMarks.SingleAsync(m => m.Date == new DateOnly(2026, 10, 1));
         Assert.Equal(DayKind.Scheduled, mark.Kind);
         Assert.Null(dto.ActivityId); // 마크 행으로 전환됐다
@@ -225,15 +225,5 @@ public sealed partial class AdminActivityManagementTests
         Assert.Empty(await verify.Activities.ToListAsync());
         Assert.Empty(await verify.SemesterAttendances.ToListAsync()); Assert.Empty(await verify.Guests.ToListAsync());
         Assert.Empty(await verify.Teams.ToListAsync()); Assert.Empty(await verify.TeamMembers.ToListAsync());
-    }
-
-    [Fact]
-    public async Task Ready_app_activity_rejects_attendance_until_started()
-    {
-        await using var h = new Host(); await h.Seed();
-        var app = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
-        await Assert.ThrowsAsync<ConflictException>(() => h.Service.SetAttendanceAsync($"app:{app.Id}", "a", new(true)));
-        await using var db = h.Db.CreateContext();
-        Assert.Empty(await db.SemesterAttendances.ToListAsync());
     }
 }

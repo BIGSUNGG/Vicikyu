@@ -640,7 +640,7 @@ public sealed class DatabaseBackupTests
                 Assert.True((await users.AddToRoleAsync(user, role)).Succeeded);
             }
             db.Settings.Add(new Setting { Key = "Test:Secret", Value = "synthetic-secret", UpdatedAt = DateTime.UtcNow });
-            db.Activities.Add(new Activity { ActivityDate = new(2026, 1, 1), Status = ActivityStatus.Ready, CreatedByUserId = "admin-id", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+            db.Activities.Add(new Activity { ActivityDate = new(2026, 1, 1), Status = ActivityStatus.AttendanceOpen, CreatedByUserId = "admin-id", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
             await db.SaveChangesAsync();
             return host;
         }

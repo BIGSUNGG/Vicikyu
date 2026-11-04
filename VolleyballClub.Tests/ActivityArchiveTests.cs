@@ -485,8 +485,7 @@ public sealed class ActivityArchiveTests
         await host.AdminActivities.CreateAsync(new ActivityCreateRequest(today, DayKind.Scheduled));
         await using (var db = host.Db.CreateContext()) Assert.Single(await db.DayMarks.ToListAsync());
 
-        var session1 = await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
+        var session1 = await host.Activity.StartNewActivityAsync();
 
         await using var db2 = host.Db.CreateContext();
         Assert.Single(await db2.Activities.ToListAsync()); // 그 날 활동은 정확히 1개

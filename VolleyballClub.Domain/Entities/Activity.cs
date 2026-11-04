@@ -14,7 +14,7 @@ public class Activity
     /// <summary>라벨 활동의 표시명(예: 'OT'). null이면 정기 활동.</summary>
     public string? DisplayName { get; set; }
 
-    public ActivityStatus Status { get; set; } = ActivityStatus.Ready;
+    public ActivityStatus Status { get; set; }
 
     /// <summary>당일 출석용 OTP(숫자 4자리). 관리자 전용으로만 노출된다.</summary>
     public string? OtpCode { get; set; }
@@ -40,10 +40,7 @@ public class Activity
 
     public List<Team> Teams { get; set; } = [];
 
-    // ---- 상태 전이 규칙(도메인 규칙): Ready → AttendanceOpen(활동 중, 출석 상시) → TeamCreated(팀 확정, 출석 계속) → ActivityClosed ----
-
-    /// <summary>활동 시작 가능(준비중 → 활동 중).</summary>
-    public bool CanStartAttendance => Status == ActivityStatus.Ready;
+    // ---- 상태 전이 규칙(도메인 규칙): AttendanceOpen(활동 중, 출석 상시) → TeamCreated(팀 확정, 출석 계속) → ActivityClosed ----
 
     /// <summary>팀 편성·확정은 활동 중 언제든 가능.</summary>
     public bool CanDrawTeams => Status is ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated;

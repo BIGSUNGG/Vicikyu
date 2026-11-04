@@ -17,10 +17,8 @@ public static class BusinessEndpoints
         admin.MapPut("/activities/{key}/members/{userId}", async (IAdminActivityService s, string key, string userId, ActivityAttendanceRequest r, CancellationToken ct) => { await s.SetAttendanceAsync(key, userId, r, ct); return Results.NoContent(); });
         admin.MapGet("/members/{userId}/activities", async (IAdminActivityService s, string userId, CancellationToken ct) => Results.Json(await s.GetMemberActivitiesAsync(userId, ct)));
         my.MapGet("/activity", async (IActivityService s, ICurrentUserService me) => { return Results.Json(await s.GetMyTodayAsync(await me.RequireUserIdAsync())); });
-        admin.MapPost("/activity/today", async (IActivityService s) => { return Results.Json(await s.GetOrCreateTodayAsync()); });
         admin.MapGet("/activity/today", async (IActivityService s) => { return Results.Json(await s.GetTodayForAdminAsync()); });
         admin.MapPost("/activity/otp", async (IActivityService s) => { return Results.Json(await s.GenerateOtpAsync()); });
-        admin.MapPost("/activity/start", async (IActivityService s) => { return Results.Json(await s.StartActivityAsync()); });
         admin.MapPost("/activity/new", async (IActivityService s) => { return Results.Json(await s.StartNewActivityAsync()); });
         admin.MapPost("/activity/cancel", async (IActivityService s) => { await s.CancelActivityAsync(); return Results.NoContent(); });
         admin.MapPost("/activity/close", async (IActivityService s) => { return Results.Json(await s.CloseActivityAsync()); });

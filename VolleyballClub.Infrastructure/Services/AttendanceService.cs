@@ -28,6 +28,8 @@ public class AttendanceService(
 
         if (activity.Status is not (ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated))
         {
+            // else(시작 전 안내)는 레거시 상태값 AttendanceClosed=2 대비 방어 — 현재 DB에는 존재하지 않으나
+            // 백업 복원으로 옛 행이 돌아올 수 있어 분기를 유지한다. Ready는 폐지되어 도달 불가.
             throw new ConflictException(activity.Status == ActivityStatus.ActivityClosed
                 ? "현재 활동이 종료되었습니다."
                 : "활동이 아직 시작되지 않았습니다.");
@@ -200,7 +202,7 @@ public class AttendanceService(
         var attendedIds = records.Select(x => x.ActivityId).ToHashSet();
         var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
         var candidates = (await db.Activities.AsNoTracking()
-            .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
+            .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd)
             .OrderByDescending(a => a.ActivityDate)
             .ThenBy(a => a.Id)
             .Select(a => new { a.Id, a.ActivityDate, a.Status })
@@ -378,7 +380,7 @@ public class AttendanceService(
 
         // 실제 개최된 활동(출석이 한 번이라도 열림)만 분모 — 이 부원에게 귀속되는 학기의 활동만 센다(비회원·방학 학기 제외)
         var semesterActivities = await db.Activities.AsNoTracking()
-            .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd && a.Status != ActivityStatus.Ready)
+            .Where(a => a.ActivityDate >= semStart && a.ActivityDate <= semEnd)
             .Select(a => new { a.Id, a.ActivityDate })
             .ToListAsync();
         var attributedPeriods = await MemberSemesters.GetAttributedPeriodsAsync(db, userId);
@@ -419,7 +421,6 @@ public class AttendanceService(
         var counts = await (
             from a in db.SemesterAttendances.AsNoTracking()
             where a.Activity!.ActivityDate >= start && a.Activity!.ActivityDate <= end
-                && a.Activity.Status != ActivityStatus.Ready
             join u in db.Users.AsNoTracking() on a.SemesterMember.MappedUserId equals u.Id
             where u.Status == MemberStatus.Active
             group a by new { u.Id, u.Name, u.Department } into g

@@ -39,15 +39,15 @@ public class ActivityCancelTests : IAsyncLifetime
         Assert.Contains("팀 1", log.Details);
 
         host.AsAdmin();
-        await Assert.ThrowsAsync<NotFoundException>(() => host.Activity.GetTodayForAdminAsync());
+        var after = await host.Activity.GetTodayForAdminAsync();
+        Assert.Null(after.Status); // 취소 후에는 시작 전 가상 '준비 중'으로 돌아간다
     }
 
     [Fact]
     public async Task CancelActivity_FromClosed_Throws()
     {
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
+        await host.Activity.StartNewActivityAsync();
         await host.Activity.CloseActivityAsync();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Activity.CancelActivityAsync());

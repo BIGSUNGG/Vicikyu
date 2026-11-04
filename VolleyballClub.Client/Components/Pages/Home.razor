@@ -26,6 +26,10 @@
         {
             <text>활동 중</text>
         }
+        else if (today is not null && today.Status is null)
+        {
+            @today.StatusText
+        }
         else
         {
             <text>일정 없음</text>
@@ -311,17 +315,8 @@ else if (hasLoaded && teams.Count > 0)
         }
     }
 
-    private async Task<MyTodayDto?> GetTodayAsync()
-    {
-        try
-        {
-            return await Activities.GetMyTodayAsync() ?? throw new InvalidOperationException("오늘 활동 응답이 없습니다.");
-        }
-        catch (NotFoundException)
-        {
-            return null;
-        }
-    }
+    /// <summary>null이면 오늘은 일정이 없다(서버가 NotFound 대신 null을 반환).</summary>
+    private Task<MyTodayDto?> GetTodayAsync() => Activities.GetMyTodayAsync();
 
     private async Task<FeeStatusDto?> GetFeeStatusAsync()
     {

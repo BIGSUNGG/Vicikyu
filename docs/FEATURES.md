@@ -71,8 +71,8 @@
 | 화면 | 출석 관리 (`/admin/attendance`) | 오늘 출석자 목록, 수동 추가/취소 | AttendancePolicyTests | ✅ |
 | API | `GET/POST /api/admin/activities`, `PUT/DELETE …/{key}` | 활동 CRUD | AdminActivityManagementTests | ✅ |
 | API | `GET/PUT /api/admin/activities/{key}/members…` | 활동 멤버 출석 조정 | AdminActivityCorrectionTests | ✅ |
-| API | `POST/GET /api/admin/activity/today` | 오늘 활동 조회/생성 | AdminActivityManagementTests | ✅ |
-| API | `POST /api/admin/activity/start·otp` | 활동 개시, OTP 발급 | OtpAttendanceTests | ✅ |
+| API | `GET /api/admin/activity/today` | 오늘 활동 조회(시작 전은 가상 '준비 중', 행 생성 없음) | ActivityStartTests | ✅ |
+| API | `POST /api/admin/activity/new·otp` | 활동 시작(OTP 자동 생성), 활동 중 OTP 재발급 | OtpAttendanceTests | ✅ |
 | API | `POST /api/admin/activity/new` | 마감 후 새 세션 시작 | StartNewActivityTests | ✅ |
 | API | `POST /api/admin/activity/cancel·close·reopen` | 활동 취소·마감·재개 | ActivityCancelTests, MidnightCloseTests | ✅ |
 | API | `GET/POST/DELETE /api/admin/attendance…` | 오늘 출석 조회·수동 추가/취소(팀 영향 확인) | AttendancePolicyTests | ✅ |

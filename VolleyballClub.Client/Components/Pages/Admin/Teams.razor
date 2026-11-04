@@ -289,7 +289,7 @@ else
     private List<TeamResultDto> drawnTeams = [];
     private TeamMemberDto? movingMember;
     private int moveTargetTeamId;
-    private ActivityStatus activityStatus = ActivityStatus.Ready;
+    private ActivityStatus? activityStatus;
     private ParticipantDto? addingParticipant;
     private int addTargetTeamId;
     private bool showRedrawConfirm;
@@ -353,17 +353,8 @@ else
         }
     }
 
-    private async Task<ActivityStatus> ReadInitialStatusAsync()
-    {
-        try
-        {
-            return (await Activities.GetTodayForAdminAsync()).Status;
-        }
-        catch (NotFoundException)
-        {
-            return ActivityStatus.Ready;
-        }
-    }
+    private async Task<ActivityStatus?> ReadInitialStatusAsync() =>
+        (await Activities.GetTodayForAdminAsync()).Status;
 
     /// <summary>팀이 있고 아직 부원에게 공개(확정)되지 않았을 때만 확정 버튼을 노출한다.</summary>
     private bool canConfirm => drawnTeams.Count > 0 && activityStatus != ActivityStatus.TeamCreated;
@@ -376,7 +367,7 @@ else
         }
         catch (AppException)
         {
-            // 활동이 아직 없으면 기본값 유지
+            // 조회 실패 시 마지막 상태 유지(시작 전 가상 상태는 null)
         }
     }
 

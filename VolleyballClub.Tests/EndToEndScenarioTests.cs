@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Application.Exceptions;
 using VolleyballClub.Domain.Enums;
@@ -7,7 +8,7 @@ namespace VolleyballClub.Tests;
 
 /// <summary>
 /// 시드 명세 §50의 전체 동작 시나리오를 서비스 레이어에서 수행한다:
-/// 활동 생성 → OTP 출석 → 중복 거부 → 관리자 직접 추가 → 게스트 →
+/// 활동 시작 → OTP 출석 → 중복 거부 → 관리자 직접 추가 → 게스트 →
 /// 랜덤 팀 편성 → 팀원 이동 → 확정 → 부원 팀 확인 → 활동 종료 → 캘린더/랭킹 반영 → 감사 로그.
 /// </summary>
 public class EndToEndScenarioTests
@@ -22,13 +23,14 @@ public class EndToEndScenarioTests
         var m3 = await host.SeedUserAsync("이정우", "202512003");
         var m4 = await host.SeedUserAsync("홍길동", "202512004");
 
-        // 1-4. 관리자: 학기 등록 → 활동 생성 → OTP 생성 → 출석 시작
+        // 1-4. 관리자: 학기 등록 → 활동 시작(OTP 자동 생성)
         host.AsAdmin(admin);
         await host.Semester.CreateAsync(new SemesterSaveRequest("2026년 2학기", new DateOnly(2026, 9, 1), new DateOnly(2026, 12, 31)));
-        var today = await host.Activity.GetOrCreateTodayAsync();
-        Assert.Equal(ActivityStatus.Ready, today.Status);
-        await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartActivityAsync();
+        var today = await host.Activity.GetTodayForAdminAsync();
+        Assert.Null(today.Status); // 시작 전 — 가상 '준비 중', DB 행 없음
+        await using (var seedDb = host.Db.CreateContext())
+            Assert.Equal(0, await seedDb.Activities.CountAsync());
+        await host.Activity.StartNewActivityAsync();
         var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode;
         Assert.Matches("^\\d{4}$", otp);
 
@@ -82,6 +84,7 @@ public class EndToEndScenarioTests
         var memberTeams = await host.Team.GetTodayTeamsAsync();
         Assert.Equal(3, memberTeams.Count);
         var myToday = await host.Activity.GetMyTodayAsync(m2);
+        Assert.NotNull(myToday);
         Assert.True(myToday.IsAttended);
 
         // 22. 활동 종료

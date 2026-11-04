@@ -45,20 +45,6 @@ public class RankingTests
         Assert.True(mine.Single(r => r.UserId == carol).IsViewer);
     }
 
-    [Fact]
-    public async Task Ranking_ExcludesReadyActivities_FromAllPeriods()
-    {
-        await using var host = new ServiceHost();
-        var alice = await host.SeedUserAsync("김민수", "202512001");
-
-        // Ready 상태(개최되지 않은) 활동의 출석은 집계에서 제외
-        await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.Ready);
-        await AddAttendanceDirectAsync(host, new DateOnly(2026, 10, 1), alice);
-
-        var all = await host.Attendance.GetRankingAsync(RankingPeriod.All);
-        Assert.Empty(all);
-    }
-
     private static async Task AddAttendanceDirectAsync(ServiceHost host, DateOnly date, string userId)
     {
         await using var db = host.Db.CreateContext();

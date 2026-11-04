@@ -16,13 +16,13 @@ public class MemberAdminAccessTests
         var member = await host.SeedUserAsync("김민수", "202512001");
 
         host.AsAdmin(admin);
-        await host.Activity.GetOrCreateTodayAsync();
+        await host.Activity.StartNewActivityAsync();
 
         // 활동 제어 전부 거부
         host.AsMember(member);
-        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.GetOrCreateTodayAsync());
+        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.GetTodayForAdminAsync());
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.GenerateOtpAsync());
-        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.StartActivityAsync());
+        await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.StartNewActivityAsync());
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.CancelActivityAsync());
         await Assert.ThrowsAsync<ForbiddenException>(() => host.Activity.CloseActivityAsync());
 
@@ -49,6 +49,7 @@ public class MemberAdminAccessTests
 
         // OTP 코드가 부원용 조회 DTO에 존재하지 않는다(구조 자체에 필드가 없음)
         var myToday = await host.Activity.GetMyTodayAsync(member);
+        Assert.NotNull(myToday); // 위에서 시작한 활동이 있으므로 null이 아니다
         Assert.Null(myToday.GetType().GetProperty("OtpCode"));
     }
 

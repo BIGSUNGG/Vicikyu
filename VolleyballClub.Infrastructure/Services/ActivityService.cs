@@ -16,49 +16,33 @@ public class ActivityService(
     IAuditLogService auditLog,
     TimeProvider timeProvider) : IActivityService
 {
-    public async Task<AdminTodayDto> GetOrCreateTodayAsync()
-    {
-        await currentUser.RequireAdminAsync();
-        var today = KstClock.Today(timeProvider);
-        await using var db = await dbFactory.CreateDbContextAsync();
-        // 진행 중(미종료) 활동이 있으면 날짜와 무관하게 그것을 계속 사용한다(자정 넘김 대응)
-        var activity = await FindCurrentOrDefaultAsync(db, today);
-        if (activity is null)
-        {
-            var adminId = await currentUser.RequireUserIdAsync();
-            var now = KstClock.NowUtc(timeProvider);
-            activity = new Activity
-            {
-                ActivityDate = today,
-                Status = ActivityStatus.Ready,
-                CreatedByUserId = adminId,
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
-            db.Activities.Add(activity);
-            // 그 날짜의 예정 표시는 실제 활동이 대체한다 — 같은 날 중복 표시·중복 활동을 남기지 않는다
-            db.DayMarks.RemoveRange(db.DayMarks.Where(m => m.Date == today));
-            await db.SaveChangesAsync();
-            await auditLog.LogAsync(AdminAction.ActivityCreate, "Activity", activity.Id.ToString(), $"{today:yyyy-MM-dd} 활동 생성");
-        }
-
-        return await LoadAdminDtoAsync(db, activity.Id);
-    }
-
     public async Task<AdminTodayDto> GetTodayForAdminAsync()
     {
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, today);
-        return await LoadAdminDtoAsync(db, activity.Id);
+        var activity = await FindCurrentOrDefaultAsync(db, today);
+        if (activity is not null) return await LoadAdminDtoAsync(db, activity.Id);
+
+        // 시작 전 — 조회만으로 행을 만들지 않고 가상 '준비 중' 상태를 반환한다
+        var totalMembers = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
+        return new AdminTodayDto(0, today, null, "준비 중", null, 0, totalMembers, 0, 0, null, null, null);
     }
 
-    public async Task<MyTodayDto> GetMyTodayAsync(string userId)
+    public async Task<MyTodayDto?> GetMyTodayAsync(string userId)
     {
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, today);
+        var activity = await FindCurrentOrDefaultAsync(db, today);
+
+        if (activity is null)
+        {
+            // 시작 전 — 오늘 예정 표시가 있으면 가상 '활동 예정', 그 외엔 일정 없음
+            var scheduled = await db.DayMarks.AsNoTracking().AnyAsync(m => m.Date == today && m.Kind == DayKind.Scheduled);
+            if (!scheduled) return null;
+            var members = await db.Users.CountAsync(u => u.Status == MemberStatus.Active);
+            return new MyTodayDto(0, today, null, "활동 예정", false, null, null, 0, members);
+        }
 
         var attendance = await db.SemesterAttendances.AsNoTracking()
             .Where(a => a.ActivityId == activity.Id && a.SemesterMember.MappedUserId == userId)
@@ -98,25 +82,6 @@ public class ActivityService(
     private static string GenerateOtpCode()
     {
         return RandomNumberGenerator.GetInt32(0, 10000).ToString().PadLeft(4, '0');
-    }
-
-    public async Task<AdminTodayDto> StartActivityAsync()
-    {
-        await currentUser.RequireAdminAsync();
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
-        if (!activity.CanStartAttendance) throw new ConflictException("이미 활동이 시작되었습니다.");
-        if (string.IsNullOrEmpty(activity.OtpCode)) activity.OtpCode = GenerateOtpCode();
-        var now = KstClock.NowUtc(timeProvider);
-        activity.Status = ActivityStatus.AttendanceOpen;
-        activity.AttendanceOpenedAt = now;
-        activity.UpdatedAt = now;
-        // 예정 표시가 남아 있으면 실제 활동으로 대체한다(예정일 시작 시 같은 날 중복 방지)
-        db.DayMarks.RemoveRange(db.DayMarks.Where(m => m.Date == activity.ActivityDate));
-        await db.SaveChangesAsync();
-        await auditLog.LogAsync(AdminAction.AttendanceOpen, "Activity", activity.Id.ToString(), "활동 시작");
-
-        return await LoadAdminDtoAsync(db, activity.Id);
     }
 
     public async Task<AdminTodayDto> StartNewActivityAsync()
@@ -236,7 +201,7 @@ public class ActivityService(
 
     internal static async Task<Activity> FindCurrentAsync(ApplicationDbContext db, DateOnly today) =>
         await FindCurrentOrDefaultAsync(db, today)
-        ?? await db.Activities.OrderByDescending(a => a.Id).FirstOrDefaultAsync() // 마감 직후에도 종료 안내/되돌리기 가능하게
+        ?? await db.Activities.OrderByDescending(a => a.Id).FirstOrDefaultAsync() // 마감 직후(자정 넘김 포함)에도 종료 안내·거부·되돌리기 가능하게
         ?? throw new NotFoundException("현재 활동이 아직 생성되지 않았습니다.");
 
     private static async Task<int> CountAttendanceAsync(ApplicationDbContext db, int activityId) =>
@@ -266,7 +231,6 @@ public class ActivityService(
 
     internal static string StatusText(ActivityStatus status) => status switch
     {
-        ActivityStatus.Ready => "준비중",
         ActivityStatus.AttendanceOpen => "활동 중",
         ActivityStatus.AttendanceClosed => "출석 마감",
         ActivityStatus.TeamCreated => "팀 편성 완료",

@@ -20,10 +20,7 @@ public class TeamGenerationTests : IAsyncLifetime
         }
 
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartActivityAsync();
-        var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
+        var otp = (await host.Activity.StartNewActivityAsync()).OtpCode!;
 
         foreach (var memberId in memberIds)
         {

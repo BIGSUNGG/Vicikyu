@@ -23,7 +23,7 @@ public sealed class AdminActivityService(
         return await ListAsync(db, ct);
     }
 
-    private static bool Editable(Activity? activity) => activity is not null && activity.Status != ActivityStatus.Ready;
+    private static bool Editable(Activity? activity) => activity is not null;
 
     private static string State(DayMark mark) => mark.Kind == DayKind.NoActivity
         ? "활동 없음" + (string.IsNullOrWhiteSpace(mark.Note) ? "" : $"({mark.Note})")
@@ -230,7 +230,7 @@ public sealed class AdminActivityService(
                 activity = await LoadActivityAsync(db, key, ct);
                 if (request.Kind is not null && activity.Status != ActivityStatus.ActivityClosed)
                 {
-                    // 진행 중·준비 중 → 완료 전환(마감). 준비 중 활동도 관리자가 완료를 지정하면 즉시 마감한다
+                    // 진행 중 → 완료 전환(마감).
                     // — 완료 요청을 조용히 무시하면 화면에는 '변경 완료'로 보이고 상태만 그대로 남는 무응답 실패가 된다
                     activity.Status = ActivityStatus.ActivityClosed;
                     var now = KstClock.NowUtc(clock);

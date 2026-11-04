@@ -84,9 +84,9 @@ public sealed class HttpApiTests
         await Status(admin.PostAsJsonAsync("/api/admin/members", new MemberCreateRequest("member", "duplicate", "", "pass")), HttpStatusCode.Conflict);
         await Status(admin.PostAsJsonAsync("/api/admin/members", new { studentNumber = "new", name = (string?)null, department = "", password = "pass" }), HttpStatusCode.BadRequest);
         await Status(admin.PutAsJsonAsync("/api/admin/members/member-id", new MemberUpdateRequest("member", "", Role: "ROOT")), HttpStatusCode.BadRequest);
-        var today = await Read<AdminTodayDto>(admin.PostAsync("/api/admin/activity/today", null));
-        Assert.Equal(ActivityStatus.Ready, today.Status);
-        await Status(admin.PostAsync("/api/admin/activity/start", null), HttpStatusCode.OK);
+        var today = await Read<AdminTodayDto>(admin.GetAsync("/api/admin/activity/today"));
+        Assert.Null(today.Status); // 시작 전 — 행 없는 가상 '준비 중'
+        await Status(admin.PostAsync("/api/admin/activity/new", null), HttpStatusCode.OK);
         var otp = await Read<string>(admin.PostAsync("/api/admin/activity/otp", null));
         await Status(member.PostAsJsonAsync("/api/my/attendance", new TextRequest("wrong")), HttpStatusCode.BadRequest);
         await Status(member.PostAsJsonAsync("/api/my/attendance", new TextRequest(otp)), HttpStatusCode.OK);

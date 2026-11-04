@@ -20,10 +20,7 @@ public class AttendancePolicyTests : IAsyncLifetime
     public async Task ActiveActivity_AllowsOtpCheckIn()
     {
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartActivityAsync();
-        var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
+        var otp = (await host.Activity.StartNewActivityAsync()).OtpCode!;
 
         host.AsMember("user-202512002");
         await host.Attendance.CheckInWithOtpAsync(otp);
@@ -42,27 +39,19 @@ public class AttendancePolicyTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ReadyActivity_RejectsOtpCheckIn()
+    public async Task BeforeStart_OtpGeneration_ThrowsNotFound()
     {
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.GenerateOtpAsync();
-
-        host.AsMember("user-202512002");
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Attendance.CheckInWithOtpAsync("1234"));
-        Assert.Contains("아직 시작", ex.Message);
-        Assert.Equal(0, await host.CountAttendancesAsync());
+        // 시작 전에는 활동 행이 없으므로 OTP 생성도 불가능하다 — 시작 시 자동 생성된다
+        await Assert.ThrowsAsync<NotFoundException>(() => host.Activity.GenerateOtpAsync());
     }
 
     [Fact]
     public async Task ActivityClosed_RejectsOtpCheckIn()
     {
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.GenerateOtpAsync();
-        await host.Activity.StartActivityAsync();
+        var otp = (await host.Activity.StartNewActivityAsync()).OtpCode!;
         await host.Activity.CloseActivityAsync();
-        var otp = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
 
         host.AsMember("user-202512002");
         var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Attendance.CheckInWithOtpAsync(otp));
@@ -80,8 +69,7 @@ public class AttendancePolicyTests : IAsyncLifetime
     public async Task ClosedActivity_RejectsAdminAttendanceChange()
     {
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
+        await host.Activity.StartNewActivityAsync();
         await host.Activity.CloseActivityAsync();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(

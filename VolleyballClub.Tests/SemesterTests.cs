@@ -230,7 +230,7 @@ public class SemesterTests
         await ctx.SaveChangesAsync();
     }
 
-    /// <summary>직접 활동+출석 행을 심는다(랭킹은 status != Ready 활동만 집계).</summary>
+    /// <summary>직접 활동+출석 행을 심는다.</summary>
     private static async Task SeedAttendanceOnAsync(TestDb db, string date)
     {
         await using var ctx = db.CreateContext();

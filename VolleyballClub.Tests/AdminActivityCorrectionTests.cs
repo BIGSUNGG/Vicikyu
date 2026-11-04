@@ -40,7 +40,7 @@ public sealed partial class AdminActivityManagementTests
     public async Task Activity_deletion_retry_is_noop_with_single_audit()
     {
         await using var h = new Host(); await h.Seed();
-        var app = await h.App(new(2026, 10, 1), ActivityStatus.Ready);
+        var app = await h.App(new(2026, 10, 1), ActivityStatus.AttendanceOpen);
         await h.Service.DeleteAsync($"app:{app.Id}");
         // 앱 키 재시도는 이미 지워졌음을 알린다(마크 키와 달리 NotFound)
         await Assert.ThrowsAsync<NotFoundException>(() => h.Service.DeleteAsync($"app:{app.Id}"));

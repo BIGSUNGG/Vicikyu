@@ -14,12 +14,11 @@ public sealed class StartNewActivityTests
     {
         await using var host = new ServiceHost();
         host.AsAdmin();
-        var session1 = await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
-        var otp1 = (await host.Activity.GetTodayForAdminAsync()).OtpCode!;
+        var session1 = await host.Activity.StartNewActivityAsync();
+        var otp1 = session1.OtpCode!;
         var member = await host.SeedUserAsync("민수", "202610001");
         host.AsMember(member);
-        await host.Attendance.CheckInWithOtpAsync(otp1); // 1세션 출석
+        await host.Attendance.CheckInWithOtpAsync(otp1!); // 1세션 출석
 
         host.AsAdmin();
         await host.Activity.CloseActivityAsync();
@@ -39,7 +38,7 @@ public sealed class StartNewActivityTests
         Assert.Equal(1, await db.SemesterAttendances.CountAsync(a => a.ActivityId == session2.ActivityId));
 
         host.AsAdmin();
-        Assert.Equal(session2.ActivityId, (await host.Activity.GetOrCreateTodayAsync()).ActivityId); // 현재 활동 = 새 세션
+        Assert.Equal(session2.ActivityId, (await host.Activity.GetTodayForAdminAsync()).ActivityId); // 현재 활동 = 새 세션
     }
 
     [Fact]
@@ -47,8 +46,7 @@ public sealed class StartNewActivityTests
     {
         await using var host = new ServiceHost();
         host.AsAdmin();
-        await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
+        await host.Activity.StartNewActivityAsync();
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => host.Activity.StartNewActivityAsync());
         Assert.Contains("먼저 마감", ex.Message);
@@ -85,7 +83,7 @@ public sealed class StartNewActivityTests
         var session2 = await host.Activity.StartNewActivityAsync();
         await host.Activity.CloseActivityAsync();
 
-        var current = await host.Activity.GetOrCreateTodayAsync();
+        var current = await host.Activity.GetTodayForAdminAsync();
         Assert.Equal(session2.ActivityId, current.ActivityId); // 최신 세션 우선
     }
 
@@ -95,8 +93,7 @@ public sealed class StartNewActivityTests
     {
         await using var host = new ServiceHost();
         host.AsAdmin();
-        var session1 = await host.Activity.GetOrCreateTodayAsync();
-        await host.Activity.StartActivityAsync();
+        var session1 = await host.Activity.StartNewActivityAsync();
         await host.Activity.CloseActivityAsync();
         var session2 = await host.Activity.StartNewActivityAsync();
         await host.Activity.CloseActivityAsync();

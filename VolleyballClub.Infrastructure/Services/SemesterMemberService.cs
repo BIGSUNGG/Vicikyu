@@ -151,9 +151,8 @@ public sealed class SemesterMemberService(
 
         // 편집 대상 활동 — 행의 학기(없으면 전체)의 완료·마감 활동
         var activities = await db.Activities.AsNoTracking()
-            .Where(a => a.Status != ActivityStatus.Ready
-                && (row.Semester == null
-                    || (a.ActivityDate >= row.Semester.StartDate && a.ActivityDate <= row.Semester.EndDate)))
+            .Where(a => row.Semester == null
+                || (a.ActivityDate >= row.Semester.StartDate && a.ActivityDate <= row.Semester.EndDate))
             .OrderByDescending(a => a.ActivityDate)
             .Select(a => new { a.Id, a.ActivityDate, a.DisplayName })
             .ToListAsync(ct);
