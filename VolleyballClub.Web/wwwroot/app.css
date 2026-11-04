@@ -261,6 +261,31 @@ body {
 	animation: reveal-in 180ms ease-out;
 }
 
+/* 공용 확장 아코디언 — .court .chips-wrap의 0fr↔1fr 그리드 패턴(열림/닫힘 모두 애니메이션).
+   접힘 상태의 내용은 visibility:hidden으로 포커스·조작도 차단한다 */
+.expand-wrap {
+	display: grid;
+	grid-template-rows: 0fr;
+	transition: grid-template-rows 0.22s ease-out;
+}
+.expand-wrap.open {
+	grid-template-rows: 1fr;
+}
+.expand-wrap > * {
+	min-height: 0;
+	overflow: hidden;
+	visibility: hidden;
+	opacity: 0;
+	transition:
+		opacity 0.22s ease-out,
+		visibility 0s linear 0.22s;
+}
+.expand-wrap.open > * {
+	visibility: visible;
+	opacity: 1;
+	transition: opacity 0.22s ease-out;
+}
+
 /* 배지 */
 .badge {
 	display: inline-flex;
@@ -818,6 +843,8 @@ body {
 	.otp-big span,
 	.otp-fs-body span,
 	.tl-sub,
+	.expand-wrap,
+	.expand-wrap > *,
 	.tl > .tl-item {
 		transition: none;
 		animation: none;
@@ -1599,9 +1626,12 @@ button.court-head {
 }
 .activity-edit-panel {
 	width: 100%;
-	margin-top: 8px;
-	padding-top: 4px;
-	border-top: 2px dashed var(--vb-border);
+	margin-top: 10px;
+	padding: 12px 14px;
+	background: var(--vb-sun-soft);
+	border: 2px solid #f2e0a6;
+	border-left: 6px solid var(--vb-sun);
+	border-radius: 16px;
 }
 .activity-edit-actions {
 	margin-top: 10px;
@@ -1667,6 +1697,12 @@ button.court-head {
 
 /* 부원 관리 — 필터 버튼 행의 세로 간격 */
 .members-toolbar {
+	margin-bottom: 12px;
+}
+
+/* 활동 관리 — 학기 필터 버튼 행의 세로 간격(members-toolbar와 동일 규격) */
+.activity-filter-bar {
+	margin-top: 12px;
 	margin-bottom: 12px;
 }
 
@@ -2197,6 +2233,47 @@ button.court-head {
 
 .settings-sheet-row {
 	position: relative;
+	margin-bottom: 12px;
+}
+
+/* 셀렉트박스와 나란한 버튼의 하단을 맞춘다 — field의 margin-bottom이 셀렉트를 위로 밀어내기 때문 */
+.settings-sheet-row .field {
+	margin-bottom: 0;
+}
+
+/* 학기별 부원 — 이름별 그룹 아코디언(축소: 이름 · N개 학기 · 총 출석, 클릭으로 학기 행 전개) */
+.settings-group-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 10px 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.settings-group + .settings-group .settings-group-head {
+	border-top: 2px dashed var(--vb-border);
+}
+.settings-group-head .member-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 0.98rem;
+	font-weight: 800;
+}
+.settings-group-head[aria-expanded="true"] .activity-chevron {
+	transform: rotate(180deg);
+}
+.settings-group-body {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.settings-group-body .day-detail {
+	margin-top: 0;
 }
 
 .settings-sheet-skeleton {
@@ -2268,4 +2345,10 @@ button.court-head {
 .bulk-row-head .member-name {
 	font-size: 0.98rem;
 	font-weight: 800;
+}
+
+/* 부원 일괄 추가 — 확장 행의 [기본 정보]/[학기 연결] 패널 전환 버튼 행 */
+.bulk-panel-tabs {
+	margin-top: 12px;
+	margin-bottom: 12px;
 }

@@ -21,9 +21,6 @@ input[type="file"] {
 	flex: 1;
 	min-width: 0;
 }
-.bulk-row > .segment {
-	margin-top: 12px;
-}
 
 /* 접힌 행 헤더 우측의 작은 ✕ 삭제 버튼 — btn-secondary의 width:100%를 되돌린다 */
 .bulk-row-close {

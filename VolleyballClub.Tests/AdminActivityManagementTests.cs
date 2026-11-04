@@ -24,7 +24,8 @@ public sealed partial class AdminActivityManagementTests
             Service = new(Db.Factory, Current, Clock);
         }
 
-        /// <summary>부원 3명(admin/a/unmapped) + 과거 기록 3종(완료 활동·예정 마크·없음 마크)을 시드한다.</summary>
+        /// <summary>부원 3명(admin/a/unmapped) + 기록 3종(완료 활동·예정 마크·없음 마크)을 시드한다.
+        /// 예정 마크는 미래 날짜로 둔다(과거 예정은 조회 지점 스윕이 취소로 전환하므로).</summary>
         public async Task Seed()
         {
             await using var db = Db.CreateContext();
@@ -36,7 +37,7 @@ public sealed partial class AdminActivityManagementTests
                 });
             await db.SaveChangesAsync();
             await Service.CreateAsync(new ActivityCreateRequest(new(2026, 9, 1), DayKind.Completed));
-            await Service.CreateAsync(new ActivityCreateRequest(new(2026, 9, 8), DayKind.Scheduled));
+            await Service.CreateAsync(new ActivityCreateRequest(new(2026, 10, 8), DayKind.Scheduled));
             await Service.CreateAsync(new ActivityCreateRequest(new(2026, 9, 15), DayKind.NoActivity, Note: "시험"));
         }
 

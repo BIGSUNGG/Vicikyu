@@ -61,7 +61,7 @@ else if (loadError is not null)
         <div class="btn-row">
             @if (today.Status is null)
             {
-                <button type="button" class="btn-primary" @onclick="() => RunAsync(Activities.StartNewActivityAsync)">활동 시작</button>
+                <button type="button" class="btn-primary btn-wide" @onclick="() => RunAsync(Activities.StartNewActivityAsync)">활동 시작</button>
             }
             @if (today.Status is not null)
             {

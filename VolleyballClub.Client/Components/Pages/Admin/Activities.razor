@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "ADMIN")]
 @implements IDisposable
 @inject AdminActivityClient ActivitySvc
+@inject SemesterClient Semesters
 @inject ISnackbar Snackbar
 @inject Microsoft.Extensions.Logging.ILogger<Activities> Logger
 @using Microsoft.Extensions.Logging
@@ -63,6 +64,27 @@
         <h2 class="card-title">활동 목록</h2>
         <button type="button" class="btn-ghost" disabled="@(busy || loading)" @onclick="ReloadAsync">새로고침</button>
     </div>
+    @if (semesters.Count > 0)
+    {
+        <div class="toolbar-row activity-filter-bar">
+            <button type="button" class="btn-secondary" @onclick="() => showSemesterFilter = !showSemesterFilter">
+                필터 @(ActiveSemesterFilterCount > 0 ? $"({ActiveSemesterFilterCount})" : "") @(showSemesterFilter ? "▲" : "▼")
+            </button>
+        </div>
+        @if (showSemesterFilter)
+        {
+            <div class="reveal">
+                <div class="filter-group">
+                    <button type="button" class="filter-btn @(semesterFilter is null ? "active" : "")" @onclick="() => SetSemesterFilter(null)">전체</button>
+                    @foreach (var semester in semesters)
+                    {
+                        <button type="button" class="filter-btn @(semesterFilter == semester.Id ? "active" : "")" @onclick="() => SetSemesterFilter(semester.Id)">@semester.Name</button>
+                    }
+                    <button type="button" class="filter-btn @(semesterFilter == 0 ? "active" : "")" @onclick="() => SetSemesterFilter(0)">미분류</button>
+                </div>
+            </div>
+        }
+    }
     @if (loading)
     {
         <span class="admin-load-status" role="status">활동을 불러오는 중…</span>
@@ -83,7 +105,11 @@
         {
             <p class="member-meta">등록된 활동이 없습니다.</p>
         }
-        @foreach (var activity in activities)
+        else if (!FilteredActivities.Any())
+        {
+            <p class="member-meta">조건에 맞는 활동이 없습니다.</p>
+        }
+        @foreach (var activity in FilteredActivities)
         {
             var isExpanded = selectedKey == activity.Key;
             <div class="member-row activity-item" @key="activity.Key" data-activity-key="@activity.Key">
@@ -98,9 +124,10 @@
                     </div>
                     <span class="activity-chevron" aria-hidden="true">▾</span>
                 </div>
-                @if (isExpanded && selected is not null)
-                {
-                    <div class="activity-edit-panel">
+                <div class="expand-wrap @(isExpanded ? "open" : "")">
+                    @if (isExpanded && selected is not null)
+                    {
+                        <div class="activity-edit-panel">
                         <h3 class="sec-title">활동 수정 — @selected.Date.ToString("yyyy.MM.dd")</h3>
                         <p class="member-meta">현재 @selected.StateText</p>
                         <EditForm Model="editForm" OnValidSubmit="SaveAsync">
@@ -181,8 +208,9 @@
                                 </div>
                             </fieldset>
                         </EditForm>
-                    </div>
-                }
+                        </div>
+                    }
+                </div>
             </div>
         }
     }
@@ -209,6 +237,9 @@
 
 @code {
     private List<ManagedActivityDto> activities = [];
+    private List<SemesterDto> semesters = [];
+    private bool showSemesterFilter;
+    private int? semesterFilter; // null=전체, 0=미분류(모든 학기 범위 밖) — Settings 학기 필터 관례
     private List<AttendanceMemberDto> members = [];
     private ManagedActivityDto? selected;
     private string? selectedKey;
@@ -227,7 +258,12 @@
     private bool EffectiveAttendance(AttendanceMemberDto item) =>
         attendanceOverrides.TryGetValue(item.UserId, out var attended) ? attended : item.IsAttended;
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        try { semesters = await Semesters.GetSemestersAsync(); }
+        catch (Exception ex) { Logger.LogWarning(ex, "학기 목록 조회 실패(활동 필터용)"); }
+    }
 
     public void Dispose()
     {
@@ -237,6 +273,20 @@
     }
 
     private static string ErrorMessage(Exception ex) => ex is AppException ? ex.Message : "요청을 처리하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+
+    private int ActiveSemesterFilterCount => semesterFilter is not null ? 1 : 0;
+
+    private void SetSemesterFilter(int? value) => semesterFilter = value;
+
+    /// 선택 학기의 [StartDate,EndDate]에 활동 날짜가 속하는 행만 표시 — 미분류(0)는 모든 학기 범위 밖.
+    private bool MatchesSemesterFilter(ManagedActivityDto activity) => semesterFilter switch
+    {
+        null => true,
+        0 => !semesters.Any(s => activity.Date >= s.StartDate && activity.Date <= s.EndDate),
+        var id => semesters.Any(s => s.Id == id && activity.Date >= s.StartDate && activity.Date <= s.EndDate),
+    };
+
+    private IEnumerable<ManagedActivityDto> FilteredActivities => activities.Where(MatchesSemesterFilter);
 
     private async Task ReloadAsync()
     {

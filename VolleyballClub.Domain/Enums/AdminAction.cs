@@ -32,4 +32,5 @@ public enum AdminAction
     SemesterCreate = 24,
     SemesterUpdate = 25,
     SemesterDelete = 26,
+    ActivityAutoExpire = 27, // 과거 '활동 예정' 마크의 '활동 없음' 자동 전환(2026-11-04 실험 빌드의 ActivityAutoCancel에서 개명 — 값 27 유지)
 }

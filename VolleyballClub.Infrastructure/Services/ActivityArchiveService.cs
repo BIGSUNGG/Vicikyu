@@ -35,6 +35,7 @@ public sealed class ActivityArchiveService(
         var now = KstClock.NowUtc(timeProvider);
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var members = await db.Users.AsNoTracking()
@@ -53,6 +54,10 @@ public sealed class ActivityArchiveService(
         var createdActivityDates = new HashSet<DateOnly>();
         var markByDate = new Dictionary<DateOnly, DayMark>();
         var createdMarkDates = new HashSet<DateOnly>();
+        // 탭별 활동일(완료·예정 열 날짜, 출석 여부 무관) — 학기 자동 생성의 첫·마지막 활동일 근거.
+        // 출석 표시가 있는 행만 쓰면 출석 0인 마지막 활동이 빠지고, 예정을 빼면 진행 중 학기의 종료일이 과거로 좁아진다.
+        // '활동 없음' 날은 활동일이 아니므로 제외한다.
+        var tabActivityDates = new Dictionary<string, HashSet<DateOnly>>();
         var importedActivities = 0;
         var dayMarks = 0;
         foreach (var tab in tabs)
@@ -61,6 +66,9 @@ public sealed class ActivityArchiveService(
             {
                 if (column.Kind != DayKind.Completed)
                 {
+                    // 예정 열은 이 탭의 활동일이다 — 마크 생성 여부와 무관하게 학기 범위 근거에 포함한다
+                    if (column.Kind == DayKind.Scheduled)
+                        (tabActivityDates.TryGetValue(tab.Name, out var tabDates) ? tabDates : tabActivityDates[tab.Name] = []).Add(column.Date);
                     // 예정/없음 마크는 그 날짜에 활동이 없을 때만 만든다(왕복 내보내기·재가져오기 불변 유지)
                     var hasActivity = createdActivityDates.Contains(column.Date)
                         || await db.Activities.AnyAsync(a => a.ActivityDate == column.Date, ct);
@@ -91,6 +99,7 @@ public sealed class ActivityArchiveService(
                 }
 
                 // 완료 열 — 마크를 실제 활동이 대체한다(이번 실행 추가분은 추적기에서 제거, DB 저장분은 삭제)
+                (tabActivityDates.TryGetValue(tab.Name, out var completedDates) ? completedDates : tabActivityDates[tab.Name] = []).Add(column.Date);
                 if (markByDate.TryGetValue(column.Date, out var addedMark))
                 {
                     db.DayMarks.Remove(addedMark); // Added 상태 제거는 삽입 취소
@@ -146,14 +155,15 @@ public sealed class ActivityArchiveService(
         // 서로 다른 라벨이 같은 계정·학기에 매핑되어 unique 위반되는 것을 여기서 막는다.
         var autoMapped = new HashSet<(string UserId, int? SemesterId)>();
 
-        // 탭 → 학기: 학기명 일치 우선, 없으면 탭의 완료 활동 날짜가 가장 많이 속하는 학기, 그래도 없으면 미분류(null)
+        // 탭 → 학기: 학기명 일치 우선, 없으면 탭의 완료 활동 날짜가 가장 많이 속하는 학기,
+        // 그래도 없으면 탭명·첫~마지막 활동일로 새 학기를 만든다(기존 학기 날짜는 수정하지 않는다)
         var semesterByTab = new Dictionary<string, int?>();
-        int? ResolveTabSemester(string tabName, IEnumerable<DateOnly> dates)
+        async Task<int?> ResolveTabSemesterAsync(string tabName, IReadOnlyCollection<DateOnly> dates)
         {
             var match = periods.FirstOrDefault(p =>
                 string.Equals(p.Name.Trim(), tabName.Trim(), StringComparison.CurrentCultureIgnoreCase));
             if (match is not null) return match.Id;
-            return dates.Select(d => periods
+            var ranged = dates.Select(d => periods
                     .Where(p => d >= p.StartDate && d <= p.EndDate)
                     .OrderBy(p => p.Id)
                     .Select(p => (int?)p.Id)
@@ -163,6 +173,19 @@ public sealed class ActivityArchiveService(
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Key)
                 .FirstOrDefault();
+            if (ranged is not null) return ranged;
+            if (dates.Count == 0) return null;
+            var created = new SemesterPeriod
+            {
+                Name = tabName.Trim(),
+                StartDate = dates.Min(),
+                EndDate = dates.Max(),
+                CreatedAt = now,
+            };
+            db.SemesterPeriods.Add(created);
+            await db.SaveChangesAsync(ct); // 새 학기 Id를 즉시 확정 — 이번 실행의 나머지 처리가 이를 참조한다
+            periods.Add(created); // 같은 실행 내 같은 탭명(공백·대소문자 차이 포함)의 중복 생성 방지
+            return created.Id;
         }
 
         foreach (var (activity, allRows) in pending)
@@ -173,10 +196,8 @@ public sealed class ActivityArchiveService(
                 var label = rowLabel.Trim();
                 if (!semesterByTab.TryGetValue(tabName, out var semesterId))
                 {
-                    semesterId = ResolveTabSemester(tabName, pending.Where(kv => kv.Value.Any(v => v.TabName == tabName))
-                        .SelectMany(kv => kv.Value.Where(v => v.TabName == tabName)
-                            .Select(_ => kv.Key.ActivityDate))
-                        .Distinct());
+                    semesterId = await ResolveTabSemesterAsync(tabName,
+                        tabActivityDates.TryGetValue(tabName, out var dates) ? dates.ToList() : []);
                     semesterByTab[tabName] = semesterId;
                 }
 

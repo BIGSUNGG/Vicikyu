@@ -21,6 +21,7 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var activity = await FindCurrentOrDefaultAsync(db, today);
         if (activity is not null) return await LoadAdminDtoAsync(db, activity.Id);
 
@@ -33,6 +34,7 @@ public class ActivityService(
     {
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var activity = await FindCurrentOrDefaultAsync(db, today);
 
         if (activity is null)
@@ -69,6 +71,7 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var activity = await FindCurrentAsync(db, today);
 
         activity.OtpCode = GenerateOtpCode();
@@ -89,6 +92,7 @@ public class ActivityService(
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var current = await FindCurrentOrDefaultAsync(db, today);
         if (current is not null && current.Status != ActivityStatus.ActivityClosed)
         {
@@ -128,7 +132,9 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
+        var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
+        var activity = await FindCurrentAsync(db, today);
         if (!activity.CanCancel)
         {
             throw new ConflictException("종료된 활동은 취소할 수 없습니다. '활동 다시 열기' 후 취소해 주세요.");
@@ -148,7 +154,9 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
+        var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
+        var activity = await FindCurrentAsync(db, today);
         if (!activity.CanClose) throw new ConflictException("이미 종료된 활동입니다.");
         var now = KstClock.NowUtc(timeProvider);
         var teams = await db.Teams.Where(t => t.ActivityId == activity.Id).ToListAsync();
@@ -170,7 +178,9 @@ public class ActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await FindCurrentAsync(db, KstClock.Today(timeProvider));
+        var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
+        var activity = await FindCurrentAsync(db, today);
         if (!activity.CanReopen)
         {
             throw new ConflictException("종료된 활동만 다시 열 수 있습니다.");

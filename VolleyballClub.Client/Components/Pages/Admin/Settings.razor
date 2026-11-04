@@ -37,11 +37,11 @@ else if (section == Section.Sheet)
                 <label class="form-label">활동 기록 xlsx (최대 8MB)</label>
                 <InputFile OnChange="OnFileSelectedAsync" accept=".xlsx" />
             </div>
-            <button type="button" class="btn-primary" disabled="@(importing || selectedFile is null)" @onclick="ImportAsync">
-                @(importing ? "가져오는 중…" : "가져오기")
-            </button>
             <button type="button" class="btn-secondary" disabled="@exporting" @onclick="ExportAsync">
                 @(exporting ? "내보내는 중…" : "전체 기록 내보내기")
+            </button>
+            <button type="button" class="btn-primary" disabled="@(importing || selectedFile is null)" @onclick="ImportAsync">
+                @(importing ? "가져오는 중…" : "가져오기")
             </button>
         </div>
         @if (importReport is not null)
@@ -62,7 +62,7 @@ else
     <div class="card settings-card" data-load-state="@RowsLoadState">
         <h2 class="card-title">학기별 부원</h2>
         <p class="form-label">아직 계정과 매핑되지 않은 학기별 부원 행입니다. 계정과 매핑하면 출석 기록이 해당 계정 통계에 합산되고, 행은 삭제되지 않고 영구 보존됩니다.
-            이미 매핑된 행의 해제는 부원 상세 페이지의 '시트 연결' 탭에서 할 수 있습니다.</p>
+            이미 매핑된 행의 해제는 부원 상세 페이지의 '학기별 매핑' 탭에서 할 수 있습니다.</p>
         <div class="btn-row" style="align-items:flex-end">
             <div class="field" style="flex:1">
                 <label class="form-label">학기 필터</label>
@@ -105,9 +105,21 @@ else
         }
         else
         {
-            @foreach (var row in rows)
+            @foreach (var group in rows.GroupBy(r => r.Name).ToList())
             {
-                <div class="btn-row settings-sheet-row" style="align-items:flex-end">
+                var groupName = group.Key;
+                var groupExpanded = expandedGroups.Contains(groupName);
+                <div class="settings-group">
+                    <button type="button" class="settings-group-head" aria-expanded="@(groupExpanded ? "true" : "false")" @onclick="() => ToggleGroup(groupName)">
+                        <span class="member-name">@groupName</span>
+                        <span class="member-meta">@(group.Count())개 학기 · 총 출석 @(group.Sum(r => r.AttendanceCount))건</span>
+                        <span class="activity-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    <div class="expand-wrap @(groupExpanded ? "open" : "")">
+                        <div class="settings-group-body">
+                        @foreach (var row in group)
+                        {
+                            <div class="btn-row settings-sheet-row" style="align-items:flex-end">
                     <div class="field" style="flex:2">
                         <label class="form-label">@row.Label — @row.SemesterName · 출석 @(row.AttendanceCount)건</label>
                         <select class="form-control" @bind="linkTargets[row.Id]">
@@ -152,6 +164,10 @@ else
                         }
                     </div>
                 }
+                }
+                        </div>
+                    </div>
+                </div>
             }
         }
     </div>
@@ -176,6 +192,7 @@ else
     private int? semesterFilter;
     private string newRowName = "";
     private int newRowSemesterId;
+    private HashSet<string> expandedGroups = [];
 
     private int? editingRow;
     private bool attendanceLoading;
@@ -219,6 +236,11 @@ else
     }
 
     private void Switch(Section target) => section = target;
+
+    private void ToggleGroup(string name)
+    {
+        if (!expandedGroups.Remove(name)) expandedGroups.Add(name);
+    }
 
     private async Task ReloadRowsAsync()
     {

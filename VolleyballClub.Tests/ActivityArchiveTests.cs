@@ -228,7 +228,21 @@ public sealed class ActivityArchiveTests
         await using var host = new ServiceHost();
         host.AsAdmin();
         var member = await host.SeedUserAsync("김민수", "2025");
-        await ImportAsync(host, ImportWorkbook());
+        // 외부인 행은 김민수와 다른 학기 탭에 둔다 — 탭명 학기가 자동 생성되어
+        // '같은 학기 한 계정 한 행' 규칙이 적용되기 때문이다.
+        await ImportAsync(host, TestWorkbook.Write(
+            ("2026-2",
+            [
+                ["활동 상태", "활동 완료"],
+                ["총 인원 : ", "26. 09. 01. 화"],
+                ["김민수 2025 체육", "출석"],
+            ]),
+            ("2025-1",
+            [
+                ["활동 상태", "활동 완료"],
+                ["총 인원 : ", "25. 03. 08. 토"],
+                ["외부인 99", "출석"],
+            ])));
 
         var list = await host.SheetRows.GetListAsync(mapped: false);
         var unmapped = Assert.Single(list);
@@ -409,12 +423,17 @@ public sealed class ActivityArchiveTests
             Assert.Equal(DayKind.Scheduled, marks[1].Kind);
         }
 
-        // 왕복 2회차(가져온 DB를 다시 내보내·가져오기)도 멱등이다
+        // 왕복 2회차(가져온 DB를 다시 내보내·가져오기) — 과거 '예정' 마크는 가져오기 시작 스윕이 '없음'으로 전환한 뒤
+        // 다시 '예정'으로 쓰므로 1건이 갱신되고, 이후 조회 지점 스윕이 다시 '없음'으로 되돌려 상태가 수렴한다
         var reExport = await target.Archive.ExportAsync();
         var reImport = await ImportAsync(target, reExport);
         Assert.Equal(0, reImport.ImportedActivities);
         Assert.Equal(0, reImport.ImportedAttendances);
-        Assert.Equal(0, reImport.DayMarks);
+        Assert.Equal(1, reImport.DayMarks);
+        await target.AdminActivities.GetActivitiesAsync();
+        await using var converged = target.Db.CreateContext();
+        var convergedMark = await converged.DayMarks.AsNoTracking().SingleAsync(m => m.Date == new DateOnly(2026, 9, 22));
+        Assert.Equal(DayKind.NoActivity, convergedMark.Kind);
     }
 
     [Fact]

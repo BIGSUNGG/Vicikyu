@@ -20,14 +20,38 @@ public sealed class AdminActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         return await ListAsync(db, ct);
+    }
+
+    /// <summary>과거 날짜의 예정 마크를 '활동 없음'으로 자동 전환한다(활동 데이터 조회·변경 지점의 진입부에서 호출).
+    /// 변경건이 있을 때만 저장하고 감사로그 1 건을 남긴다 — 트랜잭션 시작 전에 호출해야 스윕 저장이 본문 트랜잭션과 뒤섞이지 않는다.
+    /// 감사 주체는 항상 'system'이다 — 자동 전환은 시스템 동작이며, 조회를 발생시킨 부원이 주체로 기록되어서는 안 된다.</summary>
+    internal static async Task SweepStaleScheduledAsync(
+        ApplicationDbContext db, DateOnly today, TimeProvider clock, CancellationToken ct = default)
+    {
+        var stale = await db.DayMarks.Where(m => m.Kind == DayKind.Scheduled && m.Date < today).ToListAsync(ct);
+        if (stale.Count == 0) return;
+        foreach (var mark in stale) mark.Kind = DayKind.NoActivity;
+        db.AuditLogs.Add(new AuditLog
+        {
+            AdminUserId = "system",
+            Action = AdminAction.ActivityAutoExpire,
+            TargetType = "Activity",
+            TargetId = "sweep",
+            Details = $"활동 없음 자동 전환 {stale.Count}건",
+            CreatedAt = KstClock.NowUtc(clock),
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     private static bool Editable(Activity? activity) => activity is not null;
 
-    private static string State(DayMark mark) => mark.Kind == DayKind.NoActivity
-        ? "활동 없음" + (string.IsNullOrWhiteSpace(mark.Note) ? "" : $"({mark.Note})")
-        : "활동 예정";
+    private static string State(DayMark mark) => mark.Kind switch
+    {
+        DayKind.NoActivity => "활동 없음" + (string.IsNullOrWhiteSpace(mark.Note) ? "" : $"({mark.Note})"),
+        _ => "활동 예정",
+    };
 
     private static string State(Activity activity) => activity.Status == ActivityStatus.ActivityClosed
         ? "활동 완료" + (string.IsNullOrWhiteSpace(activity.DisplayName) ? "" : $"({activity.DisplayName})")
@@ -59,7 +83,7 @@ public sealed class AdminActivityService(
             if (label.Length == 0) label = null;
             else if (label.Length > 100) throw new RuleViolationException("활동 이름은 100자 이하여야 합니다.");
         }
-        if (kind == DayKind.NoActivity && !string.IsNullOrWhiteSpace(note)) note = note.Trim();
+        if (kind is DayKind.NoActivity && !string.IsNullOrWhiteSpace(note)) note = note.Trim();
         else note = null;
         if (note?.Length > 500) throw new RuleViolationException("사유는 500자 이하여야 합니다.");
         return (label, note);
@@ -76,6 +100,7 @@ public sealed class AdminActivityService(
         ValidateKind(request.Kind);
         var (label, note) = Clean(request.Kind, request.Label, request.Note);
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         ManagedActivityDto result;
@@ -121,7 +146,8 @@ public sealed class AdminActivityService(
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             await AuditAsync(db, AdminAction.ActivityCreate, request.Date,
-                request.Kind == DayKind.Scheduled ? "활동 예정 생성" : "활동 없음 표시" + (note is null ? "" : $"({note})"), ct);
+                request.Kind == DayKind.Scheduled ? "활동 예정 생성"
+                    : "활동 없음 표시" + (note is null ? "" : $"({note})"), ct);
             result = await FindDtoAsync(db, $"mark:{request.Date:yyyy-MM-dd}", ct);
         }
 
@@ -190,6 +216,7 @@ public sealed class AdminActivityService(
         if (kind is not null) ValidateKind(kind.Value);
         var (label, note) = Clean(kind ?? DayKind.Completed, request.Label, request.Note);
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         if (kind is null && request.Label is not null && key.StartsWith("app:"))
@@ -298,7 +325,8 @@ public sealed class AdminActivityService(
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             await AuditAsync(db, AdminAction.SettingChange, request.Date,
-                effectiveKind == DayKind.Scheduled ? "활동 예정 수정" : "활동 없음 수정" + (note is null ? "" : $"({note})"), ct);
+                effectiveKind == DayKind.Scheduled ? "활동 예정 수정"
+                    : "활동 없음 수정" + (note is null ? "" : $"({note})"), ct);
             result = await FindDtoAsync(db, $"mark:{request.Date:yyyy-MM-dd}", ct);
         }
 
@@ -340,6 +368,7 @@ public sealed class AdminActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (key.StartsWith("mark:"))
         {
@@ -369,13 +398,22 @@ public sealed class AdminActivityService(
         await currentUser.RequireAdminAsync();
         if (!key.StartsWith("app:")) return []; // 예정/없음 표시에는 출석이 없다
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         if (!int.TryParse(key[4..], out var activityId)) throw new NotFoundException("활동을 찾을 수 없습니다.");
+        var activity = await db.Activities.AsNoTracking().SingleOrDefaultAsync(a => a.Id == activityId, ct)
+            ?? throw new NotFoundException("활동을 찾을 수 없습니다.");
         var attendance = await db.SemesterAttendances.AsNoTracking()
             .Where(a => a.ActivityId == activityId && a.SemesterMember.MappedUserId != null)
             .Select(a => new { a.Id, a.CheckedAt, a.AttendanceType, UserId = a.SemesterMember.MappedUserId! })
             .ToDictionaryAsync(a => a.UserId, ct);
-        // 활동 종료 여부와 무관하게 전체 활성 부원을 나열한다(과거 활동도 임의 출석 부여 가능)
-        var users = await db.Users.AsNoTracking().Where(u => u.Status == MemberStatus.Active).OrderBy(u => u.Name).ToListAsync(ct);
+        // 활동이 학기에 속하면 그 학기에 매핑된 부원만 나열한다(미분류 활동은 전체 활성 부원)
+        var semesterId = await SemesterMemberRows.ResolveSemesterIdAsync(db, activity.ActivityDate, ct);
+        var users = semesterId is null
+            ? await db.Users.AsNoTracking().Where(u => u.Status == MemberStatus.Active).OrderBy(u => u.Name).ToListAsync(ct)
+            : await db.Users.AsNoTracking()
+                .Where(u => u.Status == MemberStatus.Active && db.SemesterMembers.AsNoTracking()
+                    .Any(m => m.SemesterId == semesterId && m.MappedUserId == u.Id))
+                .OrderBy(u => u.Name).ToListAsync(ct);
         return users.Select(u => { var a = attendance.GetValueOrDefault(u.Id); return new AttendanceMemberDto(u.Id, u.Name, u.StudentNumber,
             u.Department, a is not null, a?.CheckedAt, a?.AttendanceType, a?.Id ?? 0); }).ToList();
     }
@@ -436,6 +474,7 @@ public sealed class AdminActivityService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await factory.CreateDbContextAsync(ct);
+        await SweepStaleScheduledAsync(db, KstClock.Today(clock), clock, ct);
         if (!await db.Users.AnyAsync(u => u.Id == userId, ct)) throw new NotFoundException("부원을 찾을 수 없습니다.");
         var rows = await ListAsync(db, ct);
         var attendance = await db.SemesterAttendances.AsNoTracking()

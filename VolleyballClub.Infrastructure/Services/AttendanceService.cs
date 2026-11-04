@@ -24,6 +24,7 @@ public class AttendanceService(
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var activity = await ActivityService.FindCurrentAsync(db, today);
 
         if (activity.Status is not (ActivityStatus.AttendanceOpen or ActivityStatus.TeamCreated))
@@ -78,7 +79,9 @@ public class AttendanceService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
+        var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
+        var activity = await ActivityService.FindCurrentAsync(db, today);
 
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
@@ -119,7 +122,9 @@ public class AttendanceService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var activity = await ActivityService.FindCurrentAsync(db, KstClock.Today(timeProvider));
+        var today = KstClock.Today(timeProvider);
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
+        var activity = await ActivityService.FindCurrentAsync(db, today);
 
         if (activity.Status == ActivityStatus.ActivityClosed)
         {
@@ -170,6 +175,7 @@ public class AttendanceService(
     {
         await currentUser.RequireAdminAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider);
         var member = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
 
@@ -229,6 +235,7 @@ public class AttendanceService(
         await currentUser.RequireAdminAsync();
         var today = KstClock.Today(timeProvider);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, today, timeProvider);
         var currentActivityId = (await ActivityService.FindCurrentOrDefaultAsync(db, today))?.Id ?? 0;
 
         var query =
@@ -266,6 +273,7 @@ public class AttendanceService(
         var first = new DateOnly(year, month, 1);
         var last = first.AddMonths(1).AddDays(-1);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider);
 
         var myAttendances = await db.SemesterAttendances.AsNoTracking()
             .Where(x => x.SemesterMember.MappedUserId == userId && x.Activity!.ActivityDate >= first && x.Activity!.ActivityDate <= last)
@@ -336,6 +344,7 @@ public class AttendanceService(
         var first = new DateOnly(year, month, 1);
         var last = first.AddMonths(1).AddDays(-1);
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider);
 
         var activities = await db.Activities.AsNoTracking()
             .Where(a => a.ActivityDate >= first && a.ActivityDate <= last)
@@ -375,6 +384,7 @@ public class AttendanceService(
     public async Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider);
         var scope = await GetCurrentSemesterScopeAsync(db);
         var (semStart, semEnd) = (scope.Start, scope.End);
 
