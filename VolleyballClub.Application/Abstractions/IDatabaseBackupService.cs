@@ -14,6 +14,9 @@ public interface IDatabaseBackupService
 
     /// <summary>지금 시점 자동 백업 1건 생성 + 보관 기간 지난 자동 백업 정리. 당일 중복 실행은 건너뛴다(스케줄러 전용, 권한 검사 없음).</summary>
     Task RunScheduledBackupAsync(CancellationToken ct = default);
+
+    /// <summary>프로세스 종료 직전 백업 1건 생성 + 만료 자동 백업 정리(컨테이너 교체·재시작 전용, 권한 검사 없음, 당일 중복 제한 없음).</summary>
+    Task RunShutdownBackupAsync(CancellationToken ct = default);
 }
 
 public static class DatabaseBackupLimits

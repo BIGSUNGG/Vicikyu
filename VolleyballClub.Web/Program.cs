@@ -56,9 +56,14 @@ builder.Services.ConfigureApplicationCookie(options =>
     };
 });
 
-// 자동 DB 백업 스케줄러 — Testing 환경(통합 테스트 호스트)에서는 명시적 파일 수 기준 단언을 보호하기 위해 비활성화.
+// 자동 DB 백업 — Testing 환경(통합 테스트 호스트)에서는 명시적 파일 수 기준 단언을 보호하기 위해 비활성화.
 if (!builder.Environment.IsEnvironment("Testing"))
+{
+    // 컨테이너 교체(Watchtower 태그 배포)·재시작 직전 종료 백업 — 마이그레이션 전 스냅샷.
+    // 역순 정지이므로 스케줄러보다 먼저 등록해 스케줄 루프가 정지된 뒤 종료 백업이 실행된다.
+    builder.Services.AddHostedService<ShutdownBackupService>();
     builder.Services.AddHostedService<BackupScheduler>();
+}
 
 var app = builder.Build();
 if (app.Services.GetRequiredService<IDatabaseMaintenance>().IsBlocked)

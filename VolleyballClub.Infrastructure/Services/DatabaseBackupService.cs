@@ -60,7 +60,10 @@ internal sealed class DatabaseBackupService(
             $"DB 자동 백업 보관 기간 {days}일로 변경");
     }
 
-    public async Task RunScheduledBackupAsync(CancellationToken ct = default)
+    public Task RunScheduledBackupAsync(CancellationToken ct = default) => RunAutoBackupAsync("scheduled-", oncePerLocalDay: true, ct);
+    public Task RunShutdownBackupAsync(CancellationToken ct = default) => RunAutoBackupAsync("shutdown-", oncePerLocalDay: false, ct);
+
+    private async Task RunAutoBackupAsync(string prefix, bool oncePerLocalDay, CancellationToken ct)
     {
         // 단일 프로세스 게이트 참여: 복원 중단/복구 실패 상태에서는 자동 백업도 멈춘다.
         if (maintenance.IsBlocked) return;
@@ -69,13 +72,15 @@ internal sealed class DatabaseBackupService(
         PrivateDirectory(backupDirectory);
         var localNow = timeProvider.GetLocalNow();
         var today = DateOnly.FromDateTime(localNow.DateTime);
-        // 하루 1건: 서버 재시작·중복 트리거가 같은 날 두 번 백업하지 않는다.
-        if (Directory.EnumerateFiles(backupDirectory, $"scheduled-{today:yyyyMMdd}-*.db").Any()) return;
+        // 하루 1건: 서버 재시작·중복 트리거가 같은 날 두 번 백업하지 않는다(스케줄 전용).
+        if (oncePerLocalDay && Directory.EnumerateFiles(backupDirectory, $"{prefix}{today:yyyyMMdd}-*.db").Any()) return;
         // 공유 리스: 보통 요청과 겹칠 수 있지만 독점 복원과는 직렬화된다.
         using (var lease = await maintenance.EnterAsync(exclusive: false, ct))
         {
+            // 리스 획득 직후 재확인: 대기 중 복원이 복구 실패로 게이트를 막았으면 손상 가능 DB를 스냅샷하지 않는다.
+            if (maintenance.IsBlocked) return;
             // 리스 획득 후에 생성: 대기 중 취소되면 0바이트 파일이 남아 당일 백업을 가로채지 않는다.
-            var backupPath = Path.Combine(backupDirectory, $"scheduled-{localNow:yyyyMMdd-HHmmss}.db");
+            var backupPath = Path.Combine(backupDirectory, $"{prefix}{localNow:yyyyMMdd-HHmmss}.db");
             PrivateFile(backupPath);
             try
             {
@@ -90,31 +95,34 @@ internal sealed class DatabaseBackupService(
                 }
                 using var durable = new FileStream(backupPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
                 durable.Flush(flushToDisk: true);
-                logger.LogInformation("DB scheduled backup written to {BackupPath}", backupPath);
+                logger.LogInformation("DB {Prefix} backup written to {BackupPath}", prefix.TrimEnd('-'), backupPath);
             }
             catch { File.Delete(backupPath); throw; }
         }
-        await PruneScheduledBackupsAsync(backupDirectory, today, ct);
+        await PruneAutoBackupsAsync(backupDirectory, today, ct);
     }
 
-    private async Task PruneScheduledBackupsAsync(string backupDirectory, DateOnly today, CancellationToken ct)
+    private async Task PruneAutoBackupsAsync(string backupDirectory, DateOnly today, CancellationToken ct)
     {
         var cutoff = today.AddDays(-await GetRetentionDaysAsync(ct));
-        foreach (var file in Directory.EnumerateFiles(backupDirectory, "scheduled-*.db"))
-        {
-            var name = Path.GetFileName(file.AsSpan());
-            // "scheduled-" 다음 8자리(YYYYMMDD)를 읽는다. 날짜로 읽을 수 없는 파일은 건드리지 않는다.
-            if (name.Length >= 18 && DateOnly.TryParseExact(name.Slice(10, 8), "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var date)
-                && date <= cutoff)
+        foreach (var prefix in AutoBackupPrefixes)
+            foreach (var file in Directory.EnumerateFiles(backupDirectory, $"{prefix}*.db"))
             {
-                try { File.Delete(file); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                var name = Path.GetFileName(file.AsSpan());
+                // 접두어 다음 8자리(YYYYMMDD)를 읽는다. 날짜로 읽을 수 없는 파일은 건드리지 않는다.
+                if (name.Length >= prefix.Length + 8 && DateOnly.TryParseExact(name.Slice(prefix.Length, 8), "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var date)
+                    && date <= cutoff)
                 {
-                    logger.LogWarning(ex, "Failed to delete expired backup {File}", file);
+                    try { File.Delete(file); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        logger.LogWarning(ex, "Failed to delete expired backup {File}", file);
+                    }
                 }
             }
-        }
     }
+
+    private static readonly string[] AutoBackupPrefixes = ["scheduled-", "shutdown-"];
 
     private async Task<string> DatabasePathAsync(CancellationToken ct)
     {

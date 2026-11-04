@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Dtos;
 using VolleyballClub.Domain.Entities;
@@ -384,6 +385,69 @@ public sealed class DatabaseBackupTests
     {
         using var scope = host.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>().RunScheduledBackupAsync();
+    }
+
+    private static async Task RunShutdownAsync(BackupHost host)
+    {
+        using var scope = host.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IDatabaseBackupService>().RunShutdownBackupAsync();
+    }
+
+    [Fact]
+    public async Task Shutdown_Backup_Creates_A_Standalone_File_Every_Run_Without_Daily_Dedup()
+    {
+        await using var host = await BackupHost.StartAsync();
+        await RunShutdownAsync(host);
+        await Task.Delay(1100); // 초 단위 스탬프 충돌 회피(FileMode.CreateNew)
+        await RunShutdownAsync(host); // 종료 백업은 스케줄러와 달리 당일 중복 제한이 없다.
+        var backups = System.IO.Directory.GetFiles(Path.Combine(host.DirectoryPath, "database-backups"), "shutdown-*.db");
+        Assert.Equal(2, backups.Length);
+        foreach (var path in backups)
+        {
+            await using var backup = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");
+            await backup.OpenAsync();
+            Assert.Equal("synthetic-secret", await Scalar(backup, "SELECT Value FROM Settings WHERE Key='Test:Secret'"));
+            Assert.Equal("ok", await Scalar(backup, "PRAGMA integrity_check"));
+            Assert.False(File.Exists(path + "-wal"));
+        }
+    }
+
+    [Fact]
+    public async Task Shutdown_Backup_Prunes_Expired_Shutdown_Files_By_Retention()
+    {
+        await using var host = await BackupHost.StartAsync();
+        await host.Execute($"INSERT INTO Settings (Key, Value, UpdatedAt) VALUES ('Backup:RetentionDays', '10', '2026-01-01')");
+        var directory = Path.Combine(host.DirectoryPath, "database-backups");
+        System.IO.Directory.CreateDirectory(directory);
+        string Stamped(int offsetDays) => Path.Combine(directory, $"shutdown-{DateTime.Now.AddDays(offsetDays):yyyyMMdd}-120000.db");
+        var expired = Stamped(-20); var boundary = Stamped(-10); var recent = Stamped(-5);
+        var restore = Path.Combine(directory, "before-restore-20260101-120000.db");
+        foreach (var file in new[] { expired, boundary, recent, restore }) File.WriteAllText(file, "synthetic");
+        await RunShutdownAsync(host);
+        Assert.False(File.Exists(expired));
+        Assert.False(File.Exists(boundary)); // 보관 N일: 오늘-N일 이전(경계 포함) 삭제
+        Assert.True(File.Exists(recent));
+        Assert.True(File.Exists(restore)); // 복원 안전 백업은 보관 기간과 무관하게 유지
+        Assert.True(Directory.GetFiles(directory, $"shutdown-{DateTime.Now:yyyyMMdd}-*.db").Length == 1);
+    }
+
+    [Fact]
+    public async Task ShutdownBackupService_StopAsync_Swallows_Failure_And_Gate_Block()
+    {
+        var copy = new FailingSnapshot();
+        await using var host = await BackupHost.StartAsync(copy);
+        var service = new ShutdownBackupService(host.Services.GetRequiredService<IServiceScopeFactory>(),
+            host.Services.GetRequiredService<ILogger<ShutdownBackupService>>());
+        var directory = Path.Combine(host.DirectoryPath, "database-backups");
+        copy.FailBackup = true;
+        await service.StopAsync(CancellationToken.None); // 백업 실패가 예외로 새지 않고 종료를 막지 않는다
+        Assert.Empty(Directory.GetFiles(directory, "shutdown-*.db")); // 부분 파일도 남지 않는다
+        copy.FailBackup = false;
+        await service.StopAsync(CancellationToken.None);
+        Assert.True(Directory.GetFiles(directory, "shutdown-*.db").Length == 1);
+        host.Services.GetRequiredService<IDatabaseMaintenance>().Block();
+        await service.StopAsync(CancellationToken.None); // 복원 게이트 차단 시 조용히 생략
+        Assert.True(Directory.GetFiles(directory, "shutdown-*.db").Length == 1);
     }
 
     [Fact]
