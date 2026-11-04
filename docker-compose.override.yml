@@ -1,0 +1,9 @@
+# SD카드 수명 보호 — 웹 컨테이너 로그 상한 (git 추적 안 됨, 배포 시에도 유지됨)
+# docker compose 는 이 파일을 자동 병합하며, 운영 스크립트(deploy.sh/keeper.sh)도 함께 로드한다.
+services:
+  web:
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
