@@ -70,6 +70,21 @@ public sealed class HttpApiTests
     }
 
     [Fact]
+    public async Task Home_All_My_Endpoints_Succeed_When_No_Activity()
+    {
+        await using var host = await ApiHost.StartAsync();
+        using var member = host.Client();
+        await Login(member, "member");
+        // 홈 병렬 호출 5개 — 활동이 없는 상태에서 모두 성공해야 오류 배너가 뜨지 않는다
+        // /activity는 Results.Json(null)이 빈 본문을 만들어 JsonException→오류 배너를 일으켰다(2026-11-05 수정, NoContent 계약)
+        await Status(member.GetAsync("/api/my/activity"), HttpStatusCode.NoContent);
+        await Status(member.GetAsync("/api/my/teams"), HttpStatusCode.OK);
+        await Status(member.GetAsync("/api/my/stats"), HttpStatusCode.OK);
+        await Status(member.GetAsync("/api/my/fees/current"), HttpStatusCode.NoContent);
+        await Status(member.GetAsync("/api/my/fees"), HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Business_Apis_Keep_Dtos_Validation_Error_Statuses_And_Audit()
     {
         await using var host = await ApiHost.StartAsync();

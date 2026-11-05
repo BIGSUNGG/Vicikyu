@@ -16,7 +16,10 @@ public static class BusinessEndpoints
         admin.MapGet("/activities/{key}/members", async (IAdminActivityService s, string key, CancellationToken ct) => Results.Json(await s.GetMembersAsync(key, ct)));
         admin.MapPut("/activities/{key}/members/{userId}", async (IAdminActivityService s, string key, string userId, ActivityAttendanceRequest r, CancellationToken ct) => { await s.SetAttendanceAsync(key, userId, r, ct); return Results.NoContent(); });
         admin.MapGet("/members/{userId}/activities", async (IAdminActivityService s, string userId, CancellationToken ct) => Results.Json(await s.GetMemberActivitiesAsync(userId, ct)));
-        my.MapGet("/activity", async (IActivityService s, ICurrentUserService me) => { return Results.Json(await s.GetMyTodayAsync(await me.RequireUserIdAsync())); });
+        my.MapGet("/activity", async (IActivityService s, ICurrentUserService me) => {
+            var today = await s.GetMyTodayAsync(await me.RequireUserIdAsync());
+            // 활동이 없으면 NoContent — Results.Json(null)은 빈 본문을 반환해 클라이언트 JSON 파싱이 실패한다(/fees/current와 동일 계약)
+            return today is null ? Results.NoContent() : Results.Json(today); });
         admin.MapGet("/activity/today", async (IActivityService s) => { return Results.Json(await s.GetTodayForAdminAsync()); });
         admin.MapPost("/activity/otp", async (IActivityService s) => { return Results.Json(await s.GenerateOtpAsync()); });
         admin.MapPost("/activity/new", async (IActivityService s) => { return Results.Json(await s.StartNewActivityAsync()); });
