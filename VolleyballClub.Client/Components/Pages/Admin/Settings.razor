@@ -179,6 +179,10 @@ else
             <div class="confirm-box auto-map-box" @onclick:stopPropagation>
                 <h3>추천 자동 매핑 미리보기</h3>
                 <p>이름이 정확히 일치하는 @(autoMapPreview.Count)건의 행을 아래 계정에 연결합니다.</p>
+                @if (autoMapPreview.Any(p => p.Replaces))
+                {
+                    <p class="member-meta">대체 @(autoMapPreview.Count(p => p.Replaces))건 — 기존 매핑 행의 출석은 합쳐지고 그 행은 삭제됩니다.</p>
+                }
                 @if (autoMapSkipped.Count > 0)
                 {
                     <p class="member-meta">같은 학기에 같은 이름 행이 여러 개라 건너뛴 @(autoMapSkipped.Count)건은 연결하지 않습니다.</p>
@@ -186,7 +190,7 @@ else
                 <div class="auto-map-list">
                     @foreach (var pair in autoMapPreview)
                     {
-                        <div class="dd-info">@pair.Row.Label (@pair.Row.SemesterName) → @pair.Member.Name (@pair.Member.StudentNumber)</div>
+                        <div class="dd-info @(pair.Replaces ? "miss" : "")">@(pair.Replaces ? "대체 · " : "")@pair.Row.Label (@pair.Row.SemesterName) → @pair.Member.Name (@pair.Member.StudentNumber)</div>
                     }
                     @foreach (var skipped in autoMapSkipped)
                     {
@@ -195,7 +199,7 @@ else
                 </div>
                 <div class="btn-row">
                     <button type="button" class="btn-ghost" disabled="@rowsBusy" @onclick="() => showAutoMap = false">취소</button>
-                    <button type="button" class="btn-primary" disabled="@rowsBusy" @onclick="ApplyAutoMapAsync">확인 (@(autoMapPreview.Count)건 연결)</button>
+                    <button type="button" class="btn-primary" disabled="@rowsBusy" @onclick="ApplyAutoMapAsync">확인 (@(autoMapPreview.Count)건 적용)</button>
                 </div>
             </div>
         </div>
@@ -243,6 +247,10 @@ else
         try
         {
             var all = await SheetRows.GetListAsync(null, mapped: false);
+            // 이미 매핑된 (학기, 계정) — 이 추천이 기존 연결을 대체하는지 표시한다(미분류는 다중 매핑 허용이라 대상 아님)
+            var mappedKeys = (await SheetRows.GetListAsync(null, mapped: true))
+                .Where(r => r.SemesterId != null)
+                .Select(r => (r.SemesterId, r.MappedUserId!)).ToHashSet();
             var seen = new HashSet<(int? SemesterId, string UserId)>();
             var pairs = new List<AutoMapPair>();
             var skipped = new List<SemesterMemberRowDto>();
@@ -251,13 +259,13 @@ else
                 var memberId = RecommendedMemberFor(row.Name);
                 if (memberId is null) continue;
                 var member = memberCandidates.First(m => m.UserId == memberId);
-                // 같은 학기·같은 계정 추천은 첫 행만 — 나머지는 서버가 '한 학기 한 행' 규칙으로 거부하므로 미리 건너뛰어 보여준다
+                // 같은 학기·같은 계정 추천은 첫 행만 — 나머지는 첫 행(또는 그 대체 결과)과 다시 뒤바뀌므로 미리 건너뛰어 보여준다
                 if (!seen.Add((row.SemesterId, memberId)))
                 {
                     skipped.Add(row);
                     continue;
                 }
-                pairs.Add(new(row, member));
+                pairs.Add(new(row, member, mappedKeys.Contains((row.SemesterId, memberId))));
             }
             if (pairs.Count == 0)
             {
@@ -272,22 +280,28 @@ else
         finally { rowsBusy = false; }
     }
 
-    /// <summary>미리보기 그대로 순차 매핑한다 — 개별 실패(예: 이미 그 학기에 매핑됨)는 요약로 알리고 나머지는 적용한다.</summary>
+    /// <summary>미리보기 그대로 순차 매핑한다 — 같은 학기에 매핑된 행이 있으면 서버가 덮어쓴다(출석 합집합·이전 행 삭제). 개별 실패는 요약로 알리고 나머지는 적용한다.</summary>
     private async Task ApplyAutoMapAsync()
     {
         if (rowsBusy || autoMapPreview.Count == 0) { showAutoMap = false; return; }
         rowsBusy = true;
         var done = 0;
+        var replaced = 0;
         var failures = new List<string>();
         foreach (var pair in autoMapPreview)
         {
-            try { await SheetRows.SetMappingAsync(pair.Row.Id, pair.Member.UserId); done++; }
+            try
+            {
+                await SheetRows.SetMappingAsync(pair.Row.Id, pair.Member.UserId);
+                done++;
+                if (pair.Replaces) replaced++;
+            }
             catch (AppException ex) { failures.Add($"{pair.Row.Label}: {ex.Message}"); }
         }
         showAutoMap = false;
         autoMapPreview = [];
         autoMapSkipped = [];
-        Snackbar.Add($"추천 자동 매핑 완료 — {done}건 연결" + (failures.Count > 0 ? $" · 실패 {failures.Count}건" : ""),
+        Snackbar.Add($"추천 자동 매핑 완료 — 연결 {done - replaced}건 · 대체 {replaced}건" + (failures.Count > 0 ? $" · 실패 {failures.Count}건" : ""),
             failures.Count > 0 ? Severity.Warning : Severity.Success);
         if (failures.Count > 0)
             Snackbar.Add($"실패: {string.Join(" · ", failures.Take(3))}", Severity.Warning);
@@ -295,7 +309,7 @@ else
         rowsBusy = false;
     }
 
-    private sealed record AutoMapPair(SemesterMemberRowDto Row, MemberListItemDto Member);
+    private sealed record AutoMapPair(SemesterMemberRowDto Row, MemberListItemDto Member, bool Replaces);
 
     private int? editingRow;
     private bool attendanceLoading;

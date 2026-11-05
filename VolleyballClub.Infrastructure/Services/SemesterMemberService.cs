@@ -10,7 +10,7 @@ using VolleyballClub.Infrastructure.Persistence;
 namespace VolleyballClub.Infrastructure.Services;
 
 /// <summary>학기별 부원 행 관리(관리자) — 설정>시트 설정·부원 상세 시트 연결·대량 추가 추천의 공개 계약 구현.
-/// 행은 영구 보존되며 매핑은 연결만 바꾼다(삭제 아님).</summary>
+/// 행은 영구 보존이 원칙이나, 같은 학기에 이미 매핑된 행이 있을 때 다른 행을 매핑하면 이전 행의 출석을 합집합 병합 후 덮어쓴다.</summary>
 public sealed class SemesterMemberService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ICurrentUserService currentUser,
@@ -70,28 +70,50 @@ public sealed class SemesterMemberService(
 
         var member = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("부원을 찾을 수 없습니다.");
-        // 같은 학기에 한 계정은 한 행만 — 실제 학기에서만 적용(미분류 null 행은 DB 인덱스와 동일하게 여러 행 허용)
-        var conflict = row.SemesterId != null && await db.SemesterMembers.AnyAsync(
-            m => m.Id != rowId && m.MappedUserId == userId && m.SemesterId == row.SemesterId, ct);
-        if (conflict)
-            throw new ConflictException("이 부원에게 이미 이 학기에 연결된 행이 있습니다. 먼저 매핑을 해제해 주세요.");
+        // 같은 학기에 한 계정은 한 행만 — 기존 매핑 행이 있으면 덮어쓴다(미분류 null 행은 DB 인덱스와 동일하게 여러 행 허용)
+        var previous = row.SemesterId == null ? null : await db.SemesterMembers.Include(m => m.Attendances)
+            .SingleOrDefaultAsync(m => m.Id != rowId && m.MappedUserId == userId && m.SemesterId == row.SemesterId, ct);
 
         row.MappedUserId = userId;
 
-        // 같은 활동의 출석이 이 부원의 다른 행에 이미 있으면 중복 제거(행 병합 시 이쪽 행의 것을 버린다)
-        var duplicates = await db.SemesterAttendances
-            .Where(sa => sa.SemesterMemberId == rowId
-                && db.SemesterAttendances.Any(other =>
-                    other.SemesterMemberId != sa.SemesterMemberId
-                    && other.SemesterMember.MappedUserId == userId
-                    && other.ActivityId == sa.ActivityId))
-            .ToListAsync(ct);
+        // 이중 집계 방지 — 이 부원의 다른 매핑 행(덮어쓰기 대상 이전 행 제외)에 같은 활동 출석이 있으면 이 행의 것을 버린다
+        var excludeId = previous?.Id ?? -1;
+        var otherRowActivityIds = (await db.SemesterAttendances.AsNoTracking()
+                .Where(sa => sa.SemesterMemberId != rowId && sa.SemesterMemberId != excludeId
+                    && sa.SemesterMember.MappedUserId == userId)
+                .Select(sa => sa.ActivityId).Distinct().ToListAsync(ct))
+            .ToHashSet();
+        var duplicates = row.Attendances.Where(a => otherRowActivityIds.Contains(a.ActivityId)).ToList();
         db.SemesterAttendances.RemoveRange(duplicates);
+
+        // 덮어쓰기 병합 — 이전 행의 출석을 활동별 합집합으로 이 행에 옮긴다(둘 중 하나라도 출석이면 출석).
+        // 이미 이 행이나 부원의 다른 매핑 행에 있는 활동은 이전 행 쪽 기록을 버린다.
+        var keptActivities = row.Attendances.Where(a => !otherRowActivityIds.Contains(a.ActivityId))
+            .Select(a => a.ActivityId).ToHashSet();
+        var moved = 0;
+        if (previous is not null)
+        {
+            foreach (var attendance in previous.Attendances)
+            {
+                if (!otherRowActivityIds.Contains(attendance.ActivityId) && keptActivities.Add(attendance.ActivityId))
+                {
+                    attendance.SemesterMemberId = rowId;
+                    moved++;
+                }
+                else
+                {
+                    db.SemesterAttendances.Remove(attendance);
+                }
+            }
+            db.SemesterMembers.Remove(previous);
+        }
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         await auditLog.LogAsync(AdminAction.MemberUpdate, "SemesterMember", rowId.ToString(),
-            $"학기별 부원 행 '{row.Label}' → {member.Name} 매핑(영구 보존{(duplicates.Count > 0 ? $", 중복 출석 {duplicates.Count}건 정리" : "")})");
+            previous is null
+                ? $"학기별 부원 행 '{row.Label}' → {member.Name} 매핑(영구 보존{(duplicates.Count > 0 ? $", 중복 출석 {duplicates.Count}건 정리" : "")})"
+                : $"학기별 부원 행 '{row.Label}' → {member.Name} 매핑 대체 — 이전 행 '{previous.Label}' 삭제·출석 {moved}건 이동");
     }
 
     public async Task<SemesterMemberRowDto> AddRowAsync(SemesterMemberCreateRequest request, CancellationToken ct = default)

@@ -2,14 +2,15 @@ using VolleyballClub.Application.Dtos;
 
 namespace VolleyballClub.Application.Abstractions;
 
-/// <summary>학기별 부원 행 관리(관리자) — 행 추가·제거·계정 매핑·출석 편집.
-/// 행은 영구 보존되며 매핑은 연결만 바꾼다(삭제 아님).</summary>
+/// <summary>학기별 부원 행 관리(관리자) — 행 추가·제거·계정 매핑·출석 편집. 행은 영구 보존이 원칙이나,
+/// 같은 학기에 이미 매핑된 행이 있을 때 다른 행을 매핑하면 이전 행의 출석을 합집합 병합 후 덮어쓴다.</summary>
 public interface ISemesterMemberService
 {
     /// <summary>학기별 부원 행 목록. semesterId=null이면 전체(미분류 포함), mapped=true/false로 필터.</summary>
     Task<IReadOnlyList<SemesterMemberRowDto>> GetListAsync(int? semesterId = null, bool? mapped = null, CancellationToken ct = default);
 
-    /// <summary>행을 계정에 매핑(userId=null이면 해제). 행과 출석은 유지된다.</summary>
+    /// <summary>행을 계정에 매핑(userId=null이면 해제 — 행·출석 유지). 같은 학기에 이미 매핑된 행이 있으면
+    /// 그 행의 출석을 활동별 합집합으로 병합해 이전 행을 삭제하고 이 행으로 덮어쓴다.</summary>
     Task SetMappingAsync(int rowId, string? userId, CancellationToken ct = default);
 
     Task<SemesterMemberRowDto> AddRowAsync(SemesterMemberCreateRequest request, CancellationToken ct = default);
