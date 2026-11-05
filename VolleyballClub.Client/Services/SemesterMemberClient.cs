@@ -30,4 +30,7 @@ public sealed class SemesterMemberClient(ApiHttp api)
 
     public Task<MemberSheetRowsDto> GetForMemberAsync(string userId) =>
         api.GetAsync<MemberSheetRowsDto>($"api/admin/members/{userId}/sheet-rows");
+
+    public Task<ReconcileReportDto> ReconcileAsync() =>
+        api.PostAsync<ReconcileReportDto>("api/admin/semester-members/reconcile");
 }

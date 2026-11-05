@@ -150,6 +150,8 @@ public sealed class ActivityArchiveService(
         var unmappedAttendances = 0;
         var rowsByKey = new Dictionary<(int? SemesterId, string Label), SemesterMember>();
         var addedPairs = new HashSet<(int? SemesterId, string Label, int ActivityId)>();
+        // 이번 실행에 매핑 계정 행에 추가한 출석 — 새 행(Id==0)은 DB 쿼리에 안 보이므로 행 간 중복 검사에 쓴다.
+        var attendedByUser = new Dictionary<(string UserId, int ActivityId), SemesterMember>();
         var countedUnmapped = new HashSet<SemesterMember>();
         // 이번 실행에 자동 매핑한 (계정, 학기) 조합 — 새로 만든 행(Id==0)은 DB 쿼리에 보이지 않으므로
         // 서로 다른 라벨이 같은 계정·학기에 매핑되어 unique 위반되는 것을 여기서 막는다.
@@ -248,10 +250,28 @@ public sealed class ActivityArchiveService(
                     warnings.Add($"{label}: 부원 매칭 실패 — 학기별 부원 행으로 보관했습니다.");
                 }
 
-                // 멱등 — DB 저장분과 이번 실행 추가분 모두 중복 방지
+                // 멱등 — DB 저장분과 이번 실행 추가분 모두 중복 방지(같은 행)
                 var alreadyAdded = row.Id != 0 && await db.SemesterAttendances.AnyAsync(
                     a => a.SemesterMemberId == row.Id && a.ActivityId == activity.Id, ct);
-                if (alreadyAdded || !addedPairs.Add((semesterId, label, activity.Id))) continue;
+                if (alreadyAdded) continue;
+
+                // 행 간 이중 집계 방지 — 이 행이 매핑된 계정의 다른 행(학기 다른 행·미분류 등)에 이미 있는 활동은
+                // 추가하지 않고 기존 것으로 병합한다(둘 중 하나라도 출석이면 출석 — 합집합 유지).
+                if (row.MappedUserId is { } mappedUser)
+                {
+                    // 새 행(Id==0)이라도 검사 대상은 '다른 행'의 기록이라 DB에 있다 — Id 게이트 없이 조회한다.
+                    var dupInDb = await db.SemesterAttendances.AnyAsync(sa =>
+                        sa.ActivityId == activity.Id && sa.SemesterMemberId != row.Id
+                        && sa.SemesterMember.MappedUserId == mappedUser, ct);
+                    var dupInRun = attendedByUser.TryGetValue((mappedUser, activity.Id), out var owner) && owner != row;
+                    if (dupInDb || dupInRun)
+                    {
+                        warnings.Add($"{label}: 연결된 계정의 다른 학기 행에 이미 있는 출석이라 추가를 건너뛰었습니다.");
+                        continue;
+                    }
+                    attendedByUser[(mappedUser, activity.Id)] = row;
+                }
+                if (!addedPairs.Add((semesterId, label, activity.Id))) continue;
 
                 db.SemesterAttendances.Add(new SemesterAttendance
                 {

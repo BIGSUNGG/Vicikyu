@@ -84,6 +84,7 @@ public static class BusinessEndpoints
         admin.MapPost("/semester-members/{id}/mapping", async (ISemesterMemberService s, int id, SemesterMemberMappingRequest r, CancellationToken ct) => { await s.SetMappingAsync(id, r.UserId, ct); return Results.NoContent(); });
         admin.MapGet("/semester-members/{id}/attendance", async (ISemesterMemberService s, int id, CancellationToken ct) => Results.Json(await s.GetRowAttendanceAsync(id, ct)));
         admin.MapPut("/semester-members/{id}/attendance/{activityId}", async (ISemesterMemberService s, int id, int activityId, [Microsoft.AspNetCore.Mvc.FromBody] ActivityAttendanceRequest r, CancellationToken ct) => { await s.SetRowAttendanceAsync(id, activityId, r.IsAttended, ct); return Results.NoContent(); });
+        admin.MapPost("/semester-members/reconcile", async (ISemesterMemberService s, CancellationToken ct) => Results.Json(await s.ReconcileAsync(ct)));
         admin.MapGet("/members/{userId}/sheet-rows", async (ISemesterMemberService s, string userId, CancellationToken ct) => Results.Json(await s.GetForMemberAsync(userId, ct)));
         admin.MapGet("/audit", async (IAuditLogService s, int? take) => { return Results.Json(await s.GetRecentAsync(take ?? 100)); });
     }

@@ -91,7 +91,16 @@ else
             </div>
             <button type="button" class="btn-secondary" disabled="@(rowsBusy || string.IsNullOrWhiteSpace(newRowName))" @onclick="AddRowAsync">행 추가</button>
             <button type="button" class="btn-secondary" disabled="@(rowsBusy || rowsLoading)" @onclick="PreviewAutoMapAsync">추천 자동 매핑</button>
+            <button type="button" class="btn-secondary" disabled="@(rowsBusy || rowsLoading)" @onclick="() => showReconcileConfirm = true">불일치 출석 정리</button>
         </div>
+        @if (reconcileReport is not null)
+        {
+            <div class="dd-info">정리 완료 — 이동 @(reconcileReport.Moved)건 · 병합 @(reconcileReport.Merged)건 · 행 생성 @(reconcileReport.RowsCreated)개 · 빈 행 삭제 @(reconcileReport.RowsDeleted)개</div>
+            @foreach (var warning in reconcileReport.Warnings.Take(20))
+            {
+                <div class="dd-info miss">@warning</div>
+            }
+        }
         @if (rowsLoading)
         {
             <span class="admin-load-status" role="status">학기별 부원을 불러오는 중…</span>
@@ -204,6 +213,21 @@ else
             </div>
         </div>
     }
+
+    @if (showReconcileConfirm)
+    {
+        <div class="confirm-overlay" @onclick="() => showReconcileConfirm = false">
+            <div class="confirm-box" @onclick:stopPropagation>
+                <h3>불일치 출석 정리</h3>
+                <p>행의 학기와 활동 날짜가 속한 학기가 다른 출석을 올바른 학기 행으로 옮깁니다. 대상 행에 이미 있으면 병합되고,
+                    대상 행이 없으면 같은 이름의 행을 연결하거나 새로 만듭니다. 이동으로 빈 행이 된 것만 삭제됩니다.</p>
+                <div class="btn-row">
+                    <button type="button" class="btn-ghost" disabled="@rowsBusy" @onclick="() => showReconcileConfirm = false">취소</button>
+                    <button type="button" class="btn-primary" disabled="@rowsBusy" @onclick="RunReconcileAsync">정리 실행</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -230,6 +254,8 @@ else
     private bool showAutoMap;
     private List<AutoMapPair> autoMapPreview = [];
     private List<SemesterMemberRowDto> autoMapSkipped = [];
+    private bool showReconcileConfirm;
+    private ReconcileReportDto? reconcileReport;
 
     /// <summary>이름이 정확히 일치하는 첫 계정 추천(부원 추가 ★ 규칙과 동일) — 없으면 null.</summary>
     private string? RecommendedMemberFor(string rowName)
@@ -307,6 +333,33 @@ else
             Snackbar.Add($"실패: {string.Join(" · ", failures.Take(3))}", Severity.Warning);
         await ReloadRowsAsync();
         rowsBusy = false;
+    }
+
+    /// <summary>불일치 출석 정리 실행 — 서비스가 이동·병합·빈 행 삭제를 한 트랜잭션으로 처리하고 요약을 표시한다.</summary>
+    private async Task RunReconcileAsync()
+    {
+        rowsBusy = true;
+        reconcileReport = null; // 새 실행 시작 — 실패 시 이전 성공 요약이 남지 않게 한다
+        try
+        {
+            reconcileReport = await SheetRows.ReconcileAsync();
+            showReconcileConfirm = false;
+            Snackbar.Add("불일치 출석 정리를 완료했습니다.", Severity.Success);
+        }
+        catch (AppException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "불일치 출석 정리 실패");
+            Snackbar.Add("정리를 실행하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.", Severity.Error);
+        }
+        finally
+        {
+            rowsBusy = false;
+            await ReloadRowsAsync();
+        }
     }
 
     private sealed record AutoMapPair(SemesterMemberRowDto Row, MemberListItemDto Member, bool Replaces);

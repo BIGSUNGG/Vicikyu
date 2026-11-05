@@ -223,6 +223,37 @@ public sealed class ActivityArchiveTests
     }
 
     [Fact]
+    public async Task 가져오기는_연결된_계정의_다른_행에_있는_출석을_중복_추가하지_않는다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var member = await host.SeedUserAsync("김민수", "2025");
+        // 학기 밖 시절 기록 — 미분류 매핑 행이 이 활동 출석을 이미 가진다
+        var activity = await host.SeedActivityAsync(new DateOnly(2026, 9, 1), ActivityStatus.ActivityClosed);
+        var rowUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "김민수 미분류행", null));
+        await host.SheetRows.SetMappingAsync(rowUnc.Id, member);
+        await host.SheetRows.SetRowAttendanceAsync(rowUnc.Id, activity.Id, true);
+
+        // 같은 날짜 활동을 시트에서 가져오면 새 학기행이 자동 매핑되지만,
+        // 계정의 다른 행(미분류)에 이미 있는 출석이라 이중으로 추가되지 않는다(합집합 유지)
+        var report = await ImportAsync(host, TestWorkbook.Write(("2026-2",
+        [
+            ["활동 상태", "활동 완료"],
+            ["총 인원 : ", "26. 09. 01. 화"],
+            ["김민수 2025 체육", "출석"],
+        ])));
+
+        Assert.Equal(0, report.ImportedActivities); // 시드한 같은 날짜 활동 재사용
+        Assert.Equal(0, report.ImportedAttendances); // 중복이라 추가 생략
+        Assert.Contains(report.Warnings, w => w.Contains("건너뛰"));
+        await using var db = host.Db.CreateContext();
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(sa => sa.SemesterMember.MappedUserId == member));
+        var semesterRow = await db.SemesterMembers.Include(m => m.Attendances)
+            .SingleAsync(m => m.MappedUserId == member && m.SemesterId != null);
+        Assert.Empty(semesterRow.Attendances); // 학기행은 빈 상태로 보관 — 이후 정리/매핑 규칙과 동일
+    }
+
+    [Fact]
     public async Task 미매핑_행은_매핑후에도_삭제되지_않고_출석이_계정_통계에_합산된다()
     {
         await using var host = new ServiceHost();

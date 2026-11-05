@@ -253,6 +253,124 @@ public sealed class SemesterMemberService(
         return new MemberSheetRowsDto(userId, member.Name, groups);
     }
 
+    /// <summary>불일치 출석 정리 — 행의 학기와 활동 날짜 소속 학기가 다른 출석을 올바른 학기 행으로 옮긴다(합집합 유지).
+    /// 계약 설명은 ISemesterMemberService.ReconcileAsync 참고. 집계는 EF 추적 컬렉션 대신 자체 집합으로 추적해
+    /// 병합 삭제(Deleted) 기록의 컬렉션 잔류 시점과 무관하게 결정적이다.</summary>
+    public async Task<ReconcileReportDto> ReconcileAsync(CancellationToken ct = default)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        var periods = await db.SemesterPeriods.AsNoTracking().OrderBy(p => p.Id).ToListAsync(ct);
+        var rows = await db.SemesterMembers.Include(m => m.Attendances).OrderBy(m => m.Id).ToListAsync(ct);
+        var activityDates = await db.Activities.AsNoTracking().ToDictionaryAsync(a => a.Id, a => a.ActivityDate, ct);
+        var users = await db.Users.AsNoTracking().ToDictionaryAsync(u => u.Id, ct);
+        var now = KstClock.NowUtc(timeProvider);
+
+        // 날짜→학기는 라이브 출석과 동일한 정준 규칙(SemesterMemberRows.ResolveSemesterIdAsync) — 포함 학기 중 최소 Id
+        int? SemesterOf(DateOnly date) =>
+            periods.Where(p => p.StartDate <= date && p.EndDate >= date).Select(p => (int?)p.Id).FirstOrDefault();
+        string SemesterName(int? id) => id is null ? "미분류" : periods.FirstOrDefault(p => p.Id == id)?.Name ?? "?";
+
+        // 행별 활동 집합 — 이동/병합/삭제 판정의 단일 기준
+        var rowActivities = rows.ToDictionary(r => r, r => r.Attendances.Select(a => a.ActivityId).ToHashSet());
+        var touched = new HashSet<SemesterMember>();
+        var moved = 0;
+        var merged = 0;
+        var created = 0;
+        var warnings = new List<string>();
+
+        SemesterMember TargetRowFor(SemesterMember source, int? targetSemesterId)
+        {
+            if (source.MappedUserId is { } userId)
+            {
+                // 부원의 대상 학기 매핑 행(미분류는 다중 허용 — 최소 Id)이 있으면 그것을 쓴다
+                var mapped = rows.Where(r => r.MappedUserId == userId && r.SemesterId == targetSemesterId)
+                    .OrderBy(r => r.Id).FirstOrDefault();
+                if (mapped is not null) return mapped;
+                // 이름이 같은 미매핑 행을 즉시 매핑해 사용(시트 가져오기 자동매핑 관례)
+                var userName = users.GetValueOrDefault(userId)?.Name.Trim();
+                var candidate = rows.Where(r => r.MappedUserId is null && r.SemesterId == targetSemesterId
+                    && userName is not null && r.Name == userName).OrderBy(r => r.Id).FirstOrDefault();
+                if (candidate is not null)
+                {
+                    candidate.MappedUserId = userId;
+                    return candidate;
+                }
+                // 없으면 계정 라벨로 새 행(마이그레이션 관례)
+                var fresh = new SemesterMember
+                {
+                    SemesterId = targetSemesterId,
+                    Label = SemesterMemberRows.UserLabel(users.GetValueOrDefault(userId)),
+                    Name = userName ?? source.Name,
+                    MappedUserId = userId,
+                    CreatedAt = now,
+                };
+                db.SemesterMembers.Add(fresh);
+                rows.Add(fresh);
+                rowActivities[fresh] = [];
+                created++;
+                return fresh;
+            }
+            // 미매핑 행 — 같은 라벨의 대상 학기 미매핑 행(없으면 생성)
+            var byLabel = rows.Where(r => r.MappedUserId is null && r.SemesterId == targetSemesterId && r.Label == source.Label)
+                .OrderBy(r => r.Id).FirstOrDefault();
+            if (byLabel is not null) return byLabel;
+            var freshRow = new SemesterMember
+            {
+                SemesterId = targetSemesterId,
+                Label = source.Label,
+                Name = source.Name,
+                CreatedAt = now,
+            };
+            db.SemesterMembers.Add(freshRow);
+            rows.Add(freshRow);
+            rowActivities[freshRow] = [];
+            created++;
+            return freshRow;
+        }
+
+        foreach (var source in rows.Where(r => r.Attendances.Count > 0).ToList())
+        {
+            foreach (var attendance in source.Attendances.ToList())
+            {
+                if (!activityDates.TryGetValue(attendance.ActivityId, out var date)) continue; // FK로 존재 보장 — 방어
+                var targetSemesterId = SemesterOf(date);
+                if (targetSemesterId == source.SemesterId) continue; // 정상 — 이미 올바른 학기
+
+                var target = TargetRowFor(source, targetSemesterId);
+                touched.Add(source);
+                if (rowActivities[target].Contains(attendance.ActivityId))
+                {
+                    // 합집합 충족 — 대상에 이미 출석이 있으므로 이 사본만 버린다(이중 집계 해소)
+                    db.SemesterAttendances.Remove(attendance);
+                    rowActivities[source].Remove(attendance.ActivityId);
+                    merged++;
+                    warnings.Add($"{source.Label}({SemesterName(source.SemesterId)}) {date:yyyy-MM-dd} 출석이 " +
+                        $"'{target.Label}'({SemesterName(target.SemesterId)})에 이미 있어 병합");
+                }
+                else
+                {
+                    attendance.SemesterMember = target; // 출석 유형·체크 시각 원본 보존
+                    rowActivities[source].Remove(attendance.ActivityId);
+                    rowActivities[target].Add(attendance.ActivityId);
+                    moved++;
+                }
+            }
+        }
+
+        // 이동으로 출석 0건이 된 행만 삭제 — 원래 빈 행은 유지한다
+        var deletedRows = touched.Where(r => rowActivities[r].Count == 0).OrderBy(r => r.Id).ToList();
+        db.SemesterMembers.RemoveRange(deletedRows);
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        await auditLog.LogAsync(AdminAction.MemberUpdate, "SemesterMember", "reconcile",
+            $"불일치 출석 정리 — 이동 {moved}건·병합 {merged}건·행 생성 {created}개·빈 행 삭제 {deletedRows.Count}개");
+        return new ReconcileReportDto(moved, merged, created, deletedRows.Count, warnings);
+    }
+
     private static MemberSemesterSheetDto BuildSemesterGroup(int? semesterId, string semesterName, string userId, List<SemesterMember> rows)
     {
         var inSemester = rows.Where(m => m.SemesterId == semesterId).ToList();

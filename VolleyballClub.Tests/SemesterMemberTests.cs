@@ -183,4 +183,162 @@ public class SemesterMemberTests
         Assert.Null(stored.MappedUserId);
         Assert.Single(stored.Attendances);
     }
+
+    // ===== 불일치 출석 정리(ReconcileAsync) =====
+
+    [Fact]
+    public async Task 정리는_미분류와_학기행에_이중_존재하는_출석을_병합하고_빈_미분류행을_삭제한다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var member = await host.SeedUserAsync("김회장", "2026");
+        await host.Semester.CreateAsync(new SemesterSaveRequest("26년2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        var semester = await host.Db.CreateContext().SemesterPeriods.SingleAsync();
+        var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
+
+        // 배포 사례 — 미분류 매핑 행(학기 밖 시절 기록)과 학기 매핑 행에 같은 활동 출석이 이중 존재
+        var rowUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "김회장 미분류행", null));
+        await host.SheetRows.SetMappingAsync(rowUnc.Id, member);
+        await host.SheetRows.SetRowAttendanceAsync(rowUnc.Id, activity.Id, true);
+        var rowSem = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(semester.Id, "김회장 학기행", null));
+        await host.SheetRows.SetMappingAsync(rowSem.Id, member);
+        // 학기행 출석은 편집 API가 이중 집계로 막는 상태 — 가져오기로 생긴 경우를 시뮬레이션해 직접 삽입
+        await using (var seed = host.Db.CreateContext())
+        {
+            seed.SemesterAttendances.Add(new SemesterAttendance
+            {
+                SemesterMemberId = rowSem.Id, ActivityId = activity.Id, AttendanceType = AttendanceType.Import,
+                CheckedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var report = await host.SheetRows.ReconcileAsync();
+
+        Assert.Equal(0, report.Moved);
+        Assert.Equal(1, report.Merged);
+        Assert.Equal(0, report.RowsCreated);
+        Assert.Equal(1, report.RowsDeleted);
+        Assert.Contains(report.Warnings, w => w.Contains("병합"));
+        await using var db = host.Db.CreateContext();
+        var attendance = await db.SemesterAttendances.SingleAsync(sa => sa.ActivityId == activity.Id);
+        Assert.Equal(rowSem.Id, attendance.SemesterMemberId); // 학기행 것이 유지(합집합)
+        Assert.False(await db.SemesterMembers.AnyAsync(m => m.Id == rowUnc.Id)); // 빈 미분류행 삭제
+        // 부원 통계는 이중 카운트 없이 1건
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(sa => sa.SemesterMember.MappedUserId == member));
+    }
+
+    [Fact]
+    public async Task 정리는_대상_학기에_행이_없으면_같은_이름_미매핑_행을_연결해_이동한다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var member = await host.SeedUserAsync("김민수", "2025");
+        await host.Semester.CreateAsync(new SemesterSaveRequest("26년2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        var semester = await host.Db.CreateContext().SemesterPeriods.SingleAsync();
+        var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
+
+        var rowUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "김민수 미분류행", null));
+        await host.SheetRows.SetMappingAsync(rowUnc.Id, member);
+        await host.SheetRows.SetRowAttendanceAsync(rowUnc.Id, activity.Id, true);
+        var candidate = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(semester.Id, "김민수", null));
+        var emptyUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "원래빈행", null));
+
+        var report = await host.SheetRows.ReconcileAsync();
+
+        Assert.Equal(1, report.Moved);
+        Assert.Equal(0, report.Merged);
+        Assert.Equal(0, report.RowsCreated);
+        Assert.Equal(1, report.RowsDeleted);
+        await using var db = host.Db.CreateContext();
+        var adopted = await db.SemesterMembers.Include(m => m.Attendances).SingleAsync(m => m.Id == candidate.Id);
+        Assert.Equal(member, adopted.MappedUserId); // 이름 일치 미매핑 행을 즉시 연결
+        Assert.Contains(adopted.Attendances, a => a.ActivityId == activity.Id);
+        Assert.False(await db.SemesterMembers.AnyAsync(m => m.Id == rowUnc.Id));
+        Assert.True(await db.SemesterMembers.AnyAsync(m => m.Id == emptyUnc.Id)); // 원래 빈 행은 유지
+        Assert.Equal(1, await db.SemesterAttendances.CountAsync(sa => sa.SemesterMember.MappedUserId == member));
+    }
+
+    [Fact]
+    public async Task 정리는_대상_행이_없으면_계정_라벨_새_행을_만들어_이동한다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var member = await host.SeedUserAsync("김민수", "2025");
+        await host.Semester.CreateAsync(new SemesterSaveRequest("26년2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        var semester = await host.Db.CreateContext().SemesterPeriods.SingleAsync();
+        var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
+
+        var rowUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "김민수 미분류행", null));
+        await host.SheetRows.SetMappingAsync(rowUnc.Id, member);
+        await host.SheetRows.SetRowAttendanceAsync(rowUnc.Id, activity.Id, true); // Admin 유형으로 기록
+
+        var report = await host.SheetRows.ReconcileAsync();
+
+        Assert.Equal(1, report.Moved);
+        Assert.Equal(1, report.RowsCreated);
+        Assert.Equal(1, report.RowsDeleted);
+        await using var db = host.Db.CreateContext();
+        var fresh = await db.SemesterMembers.Include(m => m.Attendances)
+            .SingleAsync(m => m.MappedUserId == member && m.SemesterId == semester.Id);
+        Assert.Equal("김민수 2025 테스트학과", fresh.Label); // 계정 라벨(마이그레이션 관례)
+        var attendance = Assert.Single(fresh.Attendances);
+        Assert.Equal(activity.Id, attendance.ActivityId);
+        Assert.Equal(AttendanceType.Admin, attendance.AttendanceType); // 출석 유형 원본 보존
+    }
+
+    [Fact]
+    public async Task 정리는_미매핑_행의_불일치_출석도_같은_라벨_학기행으로_옮긴다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        await host.Semester.CreateAsync(new SemesterSaveRequest("26년2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        var semester = await host.Db.CreateContext().SemesterPeriods.SingleAsync();
+        var activity = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
+
+        var rowUnc = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(0, "외부인", null));
+        await host.SheetRows.SetRowAttendanceAsync(rowUnc.Id, activity.Id, true);
+
+        var report = await host.SheetRows.ReconcileAsync();
+
+        Assert.Equal(1, report.Moved);
+        Assert.Equal(1, report.RowsCreated);
+        Assert.Equal(1, report.RowsDeleted);
+        await using var db = host.Db.CreateContext();
+        var moved = await db.SemesterMembers.Include(m => m.Attendances)
+            .SingleAsync(m => m.SemesterId == semester.Id && m.Label == "외부인");
+        Assert.Null(moved.MappedUserId); // 미매핑 그대로 — 통계 영향 없음, 라벨만 올바른 학기로
+        Assert.Contains(moved.Attendances, a => a.ActivityId == activity.Id);
+    }
+
+    [Fact]
+    public async Task 정리는_학기_밖_활동_출석을_미분류_행으로_옮긴다()
+    {
+        await using var host = new ServiceHost();
+        host.AsAdmin();
+        var member = await host.SeedUserAsync("김회장", "2026");
+        await host.Semester.CreateAsync(new SemesterSaveRequest("26년2학기", new(2026, 9, 1), new(2026, 12, 31)));
+        var semester = await host.Db.CreateContext().SemesterPeriods.SingleAsync();
+        var inSemester = await host.SeedActivityAsync(new DateOnly(2026, 10, 1), ActivityStatus.ActivityClosed);
+        var outOfSemester = await host.SeedActivityAsync(new DateOnly(2027, 1, 15), ActivityStatus.ActivityClosed);
+
+        var rowSem = await host.SheetRows.AddRowAsync(new SemesterMemberCreateRequest(semester.Id, "김회장 학기행", null));
+        await host.SheetRows.SetMappingAsync(rowSem.Id, member);
+        await host.SheetRows.SetRowAttendanceAsync(rowSem.Id, inSemester.Id, true);
+        await host.SheetRows.SetRowAttendanceAsync(rowSem.Id, outOfSemester.Id, true); // 역방향 불일치
+
+        var report = await host.SheetRows.ReconcileAsync();
+
+        Assert.Equal(1, report.Moved);
+        Assert.Equal(1, report.RowsCreated); // 부원의 미분류 행이 없어 새로 생성
+        Assert.Equal(0, report.RowsDeleted); // 학기행에는 inSemester 출석이 남는다
+        await using var db = host.Db.CreateContext();
+        var unc = await db.SemesterMembers.Include(m => m.Attendances)
+            .SingleAsync(m => m.MappedUserId == member && m.SemesterId == null);
+        Assert.Contains(unc.Attendances, a => a.ActivityId == outOfSemester.Id);
+        var sem = await db.SemesterMembers.Include(m => m.Attendances).SingleAsync(m => m.Id == rowSem.Id);
+        Assert.Contains(sem.Attendances, a => a.ActivityId == inSemester.Id);
+        // 부원별 출석 집합은 감소하지 않는다 — 2건 유지
+        Assert.Equal(2, await db.SemesterAttendances.CountAsync(sa => sa.SemesterMember.MappedUserId == member));
+    }
 }

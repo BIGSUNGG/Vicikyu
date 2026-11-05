@@ -26,4 +26,8 @@ public interface ISemesterMemberService
 
     /// <summary>부원 상세 '시트 연결' 탭 데이터 — 학기별 매핑 행·후보.</summary>
     Task<MemberSheetRowsDto> GetForMemberAsync(string userId, CancellationToken ct = default);
+
+    /// <summary>행의 학기 ≠ 활동 날짜 소속 학기인 출석을 올바른 학기 행으로 이동·병합한다(둘 중 하나라도 출석이면 출석).
+    /// 대상 행이 없으면 같은 학기 미매핑 행을 이름으로 연결해 사용하거나 새 행을 만든다. 이동으로 출석 0건이 된 행만 삭제한다.</summary>
+    Task<ReconcileReportDto> ReconcileAsync(CancellationToken ct = default);
 }

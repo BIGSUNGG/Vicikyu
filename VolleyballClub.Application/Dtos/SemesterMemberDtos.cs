@@ -39,3 +39,11 @@ public record MemberSemesterSheetDto(
 public record SemesterMemberCreateRequest(int SemesterId, string Name, string? Label);
 
 public record SemesterMemberMappingRequest(string? UserId);
+
+/// <summary>불일치 출석 정리 결과 — 이동·병합·행 생성·빈 행 삭제 건수와 경고(병합 내역).</summary>
+public record ReconcileReportDto(
+    int Moved,
+    int Merged,
+    int RowsCreated,
+    int RowsDeleted,
+    IReadOnlyList<string> Warnings);
