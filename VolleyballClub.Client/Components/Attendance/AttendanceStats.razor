@@ -93,7 +93,13 @@
             <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
                 <p class="member-meta">조회 기간 @(DateValue(loaded.Start)) ~ @(DateValue(loaded.End))</p>
                 @{ var rows = FilteredRows(loaded); }
-                <div class="filter-group" data-testid="stats-status-filter">
+                <div class="toolbar-row members-toolbar">
+                    <button type="button" class="btn-secondary" data-testid="stats-filter-toggle"
+                            @onclick="() => showFilters = !showFilters">필터 @(showFilters ? "▲" : "▼")</button>
+                </div>
+                @if (showFilters)
+                {
+                <div class="reveal filter-group" data-testid="stats-status-filter">
                     @foreach (var (value, label) in new[]
                              {
                                  (MemberStatus.Active, "활동 부원"),
@@ -106,6 +112,7 @@
                                 @onclick="() => ToggleStatus(value)">@label</button>
                     }
                 </div>
+                }
                 <div class="stats-summary">
                     <div class="stats-metric">
                         <div class="stats-label">활동 수</div>
@@ -217,6 +224,9 @@
 
     /// <summary>상태 필터 — 아무것도 켜지 않으면 전체(모두 보기). 표와 요약 카드에 함께 적용된다.</summary>
     private readonly HashSet<MemberStatus> statuses = [];
+
+    /// <summary>필터 패널 접기/펼치기 — 기본은 접힘(부원 관리와 같은 방식). 선택 후에도 펼친 채로 둔다.</summary>
+    private bool showFilters;
 
     private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
 
