@@ -92,6 +92,20 @@
         {
             <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
                 <p class="member-meta">조회 기간 @(DateValue(loaded.Start)) ~ @(DateValue(loaded.End))</p>
+                @{ var rows = FilteredRows(loaded); }
+                <div class="filter-group" data-testid="stats-status-filter">
+                    @foreach (var (value, label) in new[]
+                             {
+                                 (MemberStatus.Active, "활동 부원"),
+                                 (MemberStatus.Withdrawn, "탈퇴 부원"),
+                                 (MemberStatus.Expelled, "퇴출 부원"),
+                             })
+                    {
+                        var on = statuses.Contains(value);
+                        <button type="button" class="filter-btn @(on ? "active" : "")" aria-pressed="@(on ? "true" : "false")"
+                                @onclick="() => ToggleStatus(value)">@label</button>
+                    }
+                </div>
                 <div class="stats-summary">
                     <div class="stats-metric">
                         <div class="stats-label">활동 수</div>
@@ -99,15 +113,15 @@
                     </div>
                     <div class="stats-metric">
                         <div class="stats-label">총 출석 건수</div>
-                        <div class="stats-value">@loaded.AttendanceCount</div>
+                        <div class="stats-value">@rows.Sum(r => r.AttendanceCount)</div>
                     </div>
                     <div class="stats-metric">
                         <div class="stats-label">평균 출석률</div>
-                        <div class="stats-value">@RateText(loaded.AverageRatePercent)</div>
+                        <div class="stats-value">@RateText(AverageRate(loaded, rows))</div>
                     </div>
                     <div class="stats-metric">
                         <div class="stats-label">대상 부원 수</div>
-                        <div class="stats-value">@loaded.TargetMemberCount</div>
+                        <div class="stats-value">@rows.Count</div>
                     </div>
                 </div>
                 @if (loaded.UnmappedRowCount > 0)
@@ -124,7 +138,7 @@
                              })
                     {
                         var selected = sort == field;
-                        <button type="button" class="sort-link @(selected ? "active" : "")" aria-pressed="@selected" @onclick="() => ToggleSort(field)">
+                        <button type="button" class="sort-link @(selected ? "active" : "")" aria-pressed="@(selected ? "true" : "false")" @onclick="() => ToggleSort(field)">
                             @label@(selected ? (ascending ? " ↑" : " ↓") : "")
                         </button>
                     }
@@ -134,6 +148,10 @@
                 {
                     <p class="empty">조회 기간에 집계할 부원이 없습니다.</p>
                 }
+                else if (rows.Count == 0)
+                {
+                    <p class="empty">선택한 상태의 부원이 없습니다.</p>
+                }
                 else
                 {
                     <div class="stats-table">
@@ -142,7 +160,7 @@
                             <span class="stats-col-count">출석 / 활동</span>
                             <span class="stats-col-rate">출석률</span>
                         </div>
-                        @foreach (var row in SortedRows)
+                        @foreach (var row in SortedRows(rows))
                         {
                             <div class="stats-table-row">
                                 <div class="stats-col-member">
@@ -197,21 +215,35 @@
     private StatsSortField sort = StatsSortField.Rate;
     private bool ascending;
 
+    /// <summary>상태 필터 — 아무것도 켜지 않으면 전체(모두 보기). 표와 요약 카드에 함께 적용된다.</summary>
+    private readonly HashSet<MemberStatus> statuses = [];
+
     private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
 
-    private List<AdminAttendanceStatRowDto> SortedRows
+    private IReadOnlyList<AdminAttendanceStatRowDto> FilteredRows(AdminAttendanceStatsDto loaded) =>
+        statuses.Count == 0 ? loaded.Rows : loaded.Rows.Where(r => statuses.Contains(r.Status)).ToList();
+
+    /// <summary>필터된 부원 기준 평균 출석률 — 활동 0회 또는 대상 0명이면 null('-' 표시). 서버 집계와 같은 공식이다.</summary>
+    private static double? AverageRate(AdminAttendanceStatsDto loaded, IReadOnlyList<AdminAttendanceStatRowDto> rows) =>
+        loaded.ActivityCount == 0 || rows.Count == 0
+            ? null
+            : Math.Round(rows.Sum(r => r.AttendanceCount) * 100.0 / (rows.Count * loaded.ActivityCount), 1, MidpointRounding.AwayFromZero);
+
+    private void ToggleStatus(MemberStatus status)
     {
-        get
+        // 화면 안에서만 유지 — 서버를 다시 부르지 않고 이미 받은 행을 거른다
+        if (!statuses.Remove(status)) statuses.Add(status);
+    }
+
+    private List<AdminAttendanceStatRowDto> SortedRows(IReadOnlyList<AdminAttendanceStatRowDto> rows)
+    {
+        var ordered = sort switch
         {
-            var rows = stats?.Rows ?? [];
-            var ordered = sort switch
-            {
-                StatsSortField.Name => rows.OrderBy(r => r.Name, StringComparer.CurrentCulture),
-                StatsSortField.Attendance => rows.OrderBy(r => r.AttendanceCount).ThenBy(r => r.Name, StringComparer.CurrentCulture),
-                _ => rows.OrderBy(r => r.RatePercent ?? -1).ThenBy(r => r.Name, StringComparer.CurrentCulture),
-            };
-            return (ascending ? ordered : ordered.Reverse()).ToList();
-        }
+            StatsSortField.Name => rows.OrderBy(r => r.Name, StringComparer.CurrentCulture),
+            StatsSortField.Attendance => rows.OrderBy(r => r.AttendanceCount).ThenBy(r => r.Name, StringComparer.CurrentCulture),
+            _ => rows.OrderBy(r => r.RatePercent ?? -1).ThenBy(r => r.Name, StringComparer.CurrentCulture),
+        };
+        return (ascending ? ordered : ordered.Reverse()).ToList();
     }
 
     private SemesterDto? SelectedSemester => semesters.FirstOrDefault(s => s.Id == selectedSemesterId);
