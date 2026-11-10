@@ -1,0 +1,362 @@
+@inject AttendanceClient AttendanceSvc
+@inject SemesterClient SemesterSvc
+@inject Microsoft.Extensions.Logging.ILogger<AttendanceStats> Logger
+@using System.Globalization
+@using Microsoft.Extensions.Logging
+
+<div class="card attendance-card" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
+    <div class="section-divider">기간</div>
+    <div class="field">
+        <label class="form-label" for="stats-semester">학기</label>
+        <select class="form-control" id="stats-semester" @bind="selectedSemesterId" @bind:after="ReloadAsync">
+            @if (semesters.Count == 0)
+            {
+                <option value="@((int?)null)">학기 없음</option>
+            }
+            @foreach (var semester in semesters)
+            {
+                <option value="@semester.Id">@semester.Name</option>
+            }
+        </select>
+    </div>
+    <div class="filter-group">
+        @foreach (var (value, label) in new[]
+                 {
+                     (StatsPreset.Month, "이번 달"),
+                     (StatsPreset.Semester, "이번 학기"),
+                     (StatsPreset.Custom, "직접"),
+                 })
+        {
+            <button type="button" class="filter-btn @(preset == value ? "active" : "")" @onclick="() => SelectPresetAsync(value)">@label</button>
+        }
+    </div>
+    @if (preset == StatsPreset.Custom)
+    {
+        <div class="btn-row" style="align-items:flex-end">
+            <div class="field" style="flex:1">
+                <label class="form-label" for="stats-start">시작일</label>
+                <input class="form-control" id="stats-start" type="date" value="@DateValue(customStart)" @onchange="OnCustomStartChangedAsync" />
+            </div>
+            <div class="field" style="flex:1">
+                <label class="form-label" for="stats-end">종료일</label>
+                <input class="form-control" id="stats-end" type="date" value="@DateValue(customEnd)" @onchange="OnCustomEndChangedAsync" />
+            </div>
+        </div>
+        @if (customRangeError is not null)
+        {
+            <p class="empty" role="alert">@customRangeError</p>
+        }
+    }
+
+    <div class="admin-load-region">
+        @if (isLoading)
+        {
+            <span class="admin-load-status" role="status">출석 통계를 불러오는 중…</span>
+            <div class="admin-load-skeleton" data-retained="@(stats is not null ? "true" : "false")" aria-hidden="true">
+                <div class="stats-summary">
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        <div class="stats-metric">
+                            <div class="stats-label"><span class="loading-placeholder">&nbsp;</span></div>
+                            <div class="stats-value"><span class="loading-placeholder">&nbsp;</span></div>
+                        </div>
+                    }
+                </div>
+                @if (stats is { TargetMemberCount: 0 })
+                {
+                    <p class="empty"><span class="loading-placeholder">&nbsp;</span></p>
+                }
+                else
+                {
+                    <div class="stats-table">
+                        @for (var i = 0; i < 3; i++)
+                        {
+                            <div class="stats-table-row">
+                                <div class="stats-col-member"><span class="loading-placeholder">&nbsp;</span></div>
+                                <span class="stats-col-count"><span class="loading-placeholder">&nbsp;</span></span>
+                                <span class="stats-col-rate"><span class="loading-placeholder">&nbsp;</span></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (loadError is not null)
+        {
+            <div role="alert">
+                <p>@loadError</p>
+                <button type="button" class="btn-primary" @onclick="ReadAsync">다시 불러오기</button>
+            </div>
+        }
+        else if (stats is { } loaded)
+        {
+            <div class="admin-load-values" aria-hidden="@(isLoading ? "true" : "false")">
+                <p class="member-meta">조회 기간 @(DateValue(loaded.Start)) ~ @(DateValue(loaded.End))</p>
+                <div class="stats-summary">
+                    <div class="stats-metric">
+                        <div class="stats-label">활동 수</div>
+                        <div class="stats-value">@loaded.ActivityCount</div>
+                    </div>
+                    <div class="stats-metric">
+                        <div class="stats-label">총 출석 건수</div>
+                        <div class="stats-value">@loaded.AttendanceCount</div>
+                    </div>
+                    <div class="stats-metric">
+                        <div class="stats-label">평균 출석률</div>
+                        <div class="stats-value">@RateText(loaded.AverageRatePercent)</div>
+                    </div>
+                    <div class="stats-metric">
+                        <div class="stats-label">대상 부원 수</div>
+                        <div class="stats-value">@loaded.TargetMemberCount</div>
+                    </div>
+                </div>
+                @if (loaded.UnmappedRowCount > 0)
+                {
+                    <p class="member-meta">미매핑 @(loaded.UnmappedRowCount)건 제외</p>
+                }
+
+                <div class="sort-strip">
+                    @foreach (var (field, label) in new[]
+                             {
+                                 (StatsSortField.Name, "이름"),
+                                 (StatsSortField.Attendance, "출석 많은순"),
+                                 (StatsSortField.Rate, "출석률순"),
+                             })
+                    {
+                        var selected = sort == field;
+                        <button type="button" class="sort-link @(selected ? "active" : "")" aria-pressed="@selected" @onclick="() => ToggleSort(field)">
+                            @label@(selected ? (ascending ? " ↑" : " ↓") : "")
+                        </button>
+                    }
+                </div>
+
+                @if (loaded.TargetMemberCount == 0)
+                {
+                    <p class="empty">조회 기간에 집계할 부원이 없습니다.</p>
+                }
+                else
+                {
+                    <div class="stats-table">
+                        <div class="stats-table-row stats-table-head">
+                            <span class="stats-col-member">부원</span>
+                            <span class="stats-col-count">출석 / 활동</span>
+                            <span class="stats-col-rate">출석률</span>
+                        </div>
+                        @foreach (var row in SortedRows)
+                        {
+                            <div class="stats-table-row">
+                                <div class="stats-col-member">
+                                    <div class="member-name">
+                                        @row.Name
+                                        @if (row.Status != MemberStatus.Active)
+                                        {
+                                            <span class="badge @(row.Status == MemberStatus.Expelled ? "badge-red" : "badge-gray")">@StatusLabel(row.Status)</span>
+                                        }
+                                    </div>
+                                    <div class="member-meta">@row.StudentNumber</div>
+                                </div>
+                                <span class="stats-col-count">@row.AttendanceCount / @loaded.ActivityCount</span>
+                                <span class="stats-col-rate">@RateText(row.RatePercent)</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>기간 프리셋 — 이번 달 / 이번 학기 / 직접 입력.</summary>
+    private enum StatsPreset
+    {
+        Month,
+        Semester,
+        Custom,
+    }
+
+    /// <summary>부원별 표 정렬 기준.</summary>
+    private enum StatsSortField
+    {
+        Name,
+        Attendance,
+        Rate,
+    }
+
+    private List<SemesterDto> semesters = [];
+    private int? selectedSemesterId;
+    private StatsPreset preset = StatsPreset.Semester;
+    private DateOnly customStart = Domain.KstClock.Today(TimeProvider.System);
+    private DateOnly customEnd = Domain.KstClock.Today(TimeProvider.System);
+    private string? customRangeError;
+    private AdminAttendanceStatsDto? stats;
+    private bool isLoading = true;
+    private bool isRefreshing;
+    private string? loadError;
+    private int loadGeneration;
+    private StatsSortField sort = StatsSortField.Rate;
+    private bool ascending;
+
+    private string LoadState => isLoading ? "loading" : isRefreshing ? "refreshing" : loadError is not null ? "error" : "ready";
+
+    private List<AdminAttendanceStatRowDto> SortedRows
+    {
+        get
+        {
+            var rows = stats?.Rows ?? [];
+            var ordered = sort switch
+            {
+                StatsSortField.Name => rows.OrderBy(r => r.Name, StringComparer.CurrentCulture),
+                StatsSortField.Attendance => rows.OrderBy(r => r.AttendanceCount).ThenBy(r => r.Name, StringComparer.CurrentCulture),
+                _ => rows.OrderBy(r => r.RatePercent ?? -1).ThenBy(r => r.Name, StringComparer.CurrentCulture),
+            };
+            return (ascending ? ordered : ordered.Reverse()).ToList();
+        }
+    }
+
+    private SemesterDto? SelectedSemester => semesters.FirstOrDefault(s => s.Id == selectedSemesterId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSemestersAsync();
+        await LoadAsync(showSkeleton: true);
+    }
+
+    private async Task LoadSemestersAsync()
+    {
+        try
+        {
+            semesters = await SemesterSvc.GetSemestersAsync();
+        }
+        catch (Exception ex)
+        {
+            // 학기 목록을 못 읽어도 기간 프리셋으로 통계를 볼 수 있어야 한다 — 서버가 기본 범위로 집계한다
+            Logger.LogWarning(ex, "학기 목록 조회 실패");
+            semesters = [];
+        }
+
+        // 기본 학기 = 현재 학기, 없으면 최근 종료 학기, 그래도 없으면 종료일이 가장 늦은 학기
+        var today = Domain.KstClock.Today(TimeProvider.System);
+        selectedSemesterId = (semesters.FirstOrDefault(s => s.IsCurrent)
+            ?? semesters.Where(s => s.EndDate < today).OrderByDescending(s => s.EndDate).FirstOrDefault()
+            ?? semesters.OrderByDescending(s => s.EndDate).FirstOrDefault())?.Id;
+    }
+
+    private Task ReadAsync() => LoadAsync(showSkeleton: true);
+
+    private Task ReloadAsync() => LoadAsync(showSkeleton: false);
+
+    private async Task LoadAsync(bool showSkeleton)
+    {
+        var (start, end) = ResolveRange();
+        if (start is { } startDate && end is { } endDate && startDate > endDate)
+        {
+            // 잘못된 범위는 서버를 부르지 않고 입력 아래 안내만 갱신한다 — 직전 조회 결과는 그대로 둔다
+            customRangeError = "종료일이 시작일보다 이전입니다.";
+            return;
+        }
+
+        customRangeError = null;
+        var generation = ++loadGeneration;
+        isLoading = showSkeleton || stats is null || isLoading;
+        isRefreshing = !isLoading;
+        loadError = null;
+        try
+        {
+            var loaded = await AttendanceSvc.GetAdminStatsAsync(start, end);
+            if (generation != loadGeneration) return; // 늦게 도착한 이전 요청 응답은 버린다
+            stats = loaded;
+        }
+        catch (AppException ex)
+        {
+            if (generation != loadGeneration) return;
+            loadError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "출석 통계 조회 실패");
+            if (generation != loadGeneration) return;
+            loadError = "출석 통계를 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        }
+        finally
+        {
+            if (generation == loadGeneration)
+            {
+                isLoading = false;
+                isRefreshing = false;
+            }
+        }
+    }
+
+    /// <summary>선택된 프리셋의 조회 범위. 학기 미등록이면 null을 보내 서버 기본 규칙(현재 학기 범위)을 쓴다.</summary>
+    private (DateOnly? Start, DateOnly? End) ResolveRange()
+    {
+        if (preset == StatsPreset.Month)
+        {
+            var today = Domain.KstClock.Today(TimeProvider.System);
+            return (new DateOnly(today.Year, today.Month, 1),
+                new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)));
+        }
+
+        if (preset == StatsPreset.Custom)
+        {
+            return (customStart, customEnd);
+        }
+
+        if (SelectedSemester is { } semester)
+        {
+            return (semester.StartDate, semester.EndDate);
+        }
+
+        return (null, null);
+    }
+
+    private async Task SelectPresetAsync(StatsPreset value)
+    {
+        if (preset == value) return;
+        preset = value;
+        await LoadAsync(showSkeleton: false);
+    }
+
+    private async Task OnCustomStartChangedAsync(ChangeEventArgs e)
+    {
+        if (TryParseDate(e.Value, out var date)) customStart = date;
+        await LoadAsync(showSkeleton: false);
+    }
+
+    private async Task OnCustomEndChangedAsync(ChangeEventArgs e)
+    {
+        if (TryParseDate(e.Value, out var date)) customEnd = date;
+        await LoadAsync(showSkeleton: false);
+    }
+
+    private void ToggleSort(StatsSortField value)
+    {
+        // 같은 정렬을 다시 누르면 오름/내림 전환, 다른 정렬은 내림차순부터 시작(부원 관리 페이지와 동일 규칙)
+        if (sort == value)
+        {
+            ascending = !ascending;
+        }
+        else
+        {
+            sort = value;
+            ascending = false;
+        }
+    }
+
+    private static bool TryParseDate(object? value, out DateOnly date) =>
+        DateOnly.TryParse(value?.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+
+    private static string DateValue(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>출석률은 소수 1자리 퍼센트 — 활동 0회(null)는 '-'로 표시한다.</summary>
+    private static string RateText(double? rate) =>
+        rate is { } value ? $"{value.ToString("0.0", CultureInfo.InvariantCulture)}%" : "-";
+
+    private static string StatusLabel(MemberStatus status) => status switch
+    {
+        MemberStatus.Withdrawn => "탈퇴",
+        MemberStatus.Expelled => "퇴출",
+        _ => "활동",
+    };
+}

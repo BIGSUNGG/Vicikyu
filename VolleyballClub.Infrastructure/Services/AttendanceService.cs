@@ -417,6 +417,72 @@ public class AttendanceService(
         return new MySemesterStatsDto(countedActivities.Count, myAttendances, rate, rank, totalActiveMembers, scope);
     }
 
+    /// <summary>관리자 출석 통계 — 기간 내 활동 수를 모든 부원의 공통 분모로 쓰고, 기간 내 매핑 출석이 있는 비활성 부원도 포함한다.
+    /// 부원과 매핑되지 않은 학기 행의 출석은 개수만 따로 알린다.</summary>
+    public async Task<AdminAttendanceStatsDto> GetAdminStatsAsync(DateOnly? start, DateOnly? end)
+    {
+        await currentUser.RequireAdminAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await AdminActivityService.SweepStaleScheduledAsync(db, KstClock.Today(timeProvider), timeProvider);
+
+        // 기간은 시작·종료를 한 쌍으로만 받는다 — 한쪽만 오면 학기 범위로 집계한다.
+        DateOnly from, to;
+        if (start is { } startValue && end is { } endValue)
+        {
+            (from, to) = (startValue, endValue);
+        }
+        else
+        {
+            var scope = await GetCurrentSemesterScopeAsync(db);
+            (from, to) = (scope.Start, scope.End);
+        }
+
+        if (from > to) throw new RuleViolationException("시작일이 종료일보다 늦습니다.");
+
+        var activityCount = await db.Activities.CountAsync(a => a.ActivityDate >= from && a.ActivityDate <= to);
+
+        // 학기 행 중 계정과 매핑된 행의 출석만 부원 집계에 들어간다(미매핑 행은 개수만 보고).
+        var counts = await db.SemesterAttendances.AsNoTracking()
+            .Where(x => x.SemesterMember.MappedUserId != null
+                && x.Activity!.ActivityDate >= from && x.Activity!.ActivityDate <= to)
+            .GroupBy(x => x.SemesterMember.MappedUserId)
+            .Select(g => new { UserId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var unmappedRowCount = await db.SemesterAttendances.AsNoTracking()
+            .CountAsync(x => x.SemesterMember.MappedUserId == null
+                && x.Activity!.ActivityDate >= from && x.Activity!.ActivityDate <= to);
+
+        // 대상 = 활성 부원 전원(기간 출석 0회 포함) + 기간 내 매핑 출석이 있는 비활성 부원
+        var attendedIds = counts.Select(c => c.UserId!).ToList();
+        var targets = await db.Users.AsNoTracking()
+            .Where(u => u.Status == MemberStatus.Active || attendedIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.Name, u.StudentNumber, u.Status })
+            .ToListAsync();
+
+        var countByUser = counts.ToDictionary(c => c.UserId!, c => c.Count);
+        var rows = targets
+            .Select(u =>
+            {
+                var count = countByUser.GetValueOrDefault(u.Id);
+                return new AdminAttendanceStatRowDto(
+                    u.Id,
+                    u.Name,
+                    u.StudentNumber,
+                    u.Status,
+                    count,
+                    activityCount == 0 ? null : Math.Round(count * 100.0 / activityCount, 1, MidpointRounding.AwayFromZero));
+            })
+            .ToList();
+
+        var total = rows.Sum(r => r.AttendanceCount);
+        var averageRate = activityCount == 0 || targets.Count == 0
+            ? (double?)null
+            : Math.Round(total * 100.0 / (targets.Count * activityCount), 1, MidpointRounding.AwayFromZero);
+
+        return new AdminAttendanceStatsDto(from, to, activityCount, total, targets.Count, unmappedRowCount, averageRate, rows);
+    }
+
     public async Task<List<AttendanceRankingDto>> GetRankingAsync(RankingPeriod period, string? viewerUserId = null)
     {
         var today = KstClock.Today(timeProvider);

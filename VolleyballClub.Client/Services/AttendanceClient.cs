@@ -1,3 +1,4 @@
+using System.Globalization;
 using VolleyballClub.Application.Abstractions;
 using VolleyballClub.Application.Dtos;
 namespace VolleyballClub.Client.Services;
@@ -13,4 +14,12 @@ public sealed class AttendanceClient(ApiHttp api)
     public Task<MyCalendarDto> GetMyCalendarAsync(int year, int month) => api.GetAsync<MyCalendarDto>($"api/my/calendar?year={year}&month={month}");
     public Task<MyRecordsDto> GetMyRecordsAsync(int year, int month) => api.GetAsync<MyRecordsDto>($"api/my/records?year={year}&month={month}");
     public Task<MySemesterStatsDto> GetMySemesterStatsAsync() => api.GetAsync<MySemesterStatsDto>($"api/my/stats");
+    /// <summary>기간을 비우면 서버가 현재 학기 범위로 집계한다.</summary>
+    public Task<AdminAttendanceStatsDto> GetAdminStatsAsync(DateOnly? start, DateOnly? end)
+    {
+        var query = start is { } fromDate && end is { } toDate
+            ? $"?start={fromDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&end={toDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"
+            : "";
+        return api.GetAsync<AdminAttendanceStatsDto>($"api/admin/attendance/stats{query}");
+    }
 }

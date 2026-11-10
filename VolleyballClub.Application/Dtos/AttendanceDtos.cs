@@ -100,3 +100,23 @@ public record MemberAttendanceAdminDto(
     SemesterScopeDto Semester,
     IReadOnlyList<MemberAttendanceRecordDto> Records,
     IReadOnlyList<ActivityOptionDto> AddableActivities);
+
+/// <summary>관리자 출석 통계 — 기간 활동 수·총 출석·평균 출석률과 부원별 행.</summary>
+public record AdminAttendanceStatsDto(
+    DateOnly Start,
+    DateOnly End,
+    int ActivityCount,
+    int AttendanceCount,
+    int TargetMemberCount,
+    int UnmappedRowCount,
+    double? AverageRatePercent,
+    IReadOnlyList<AdminAttendanceStatRowDto> Rows);
+
+/// <summary>부원 1명의 기간 출석 — RatePercent는 활동 0회면 null.</summary>
+public record AdminAttendanceStatRowDto(
+    string UserId,
+    string Name,
+    string StudentNumber,
+    MemberStatus Status,
+    int AttendanceCount,
+    double? RatePercent);

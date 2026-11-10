@@ -152,6 +152,11 @@ body {
 	box-shadow: 0 3px 0 #d99e0f;
 }
 
+/* 섹션 전환 세그먼트 — 아래 카드와의 간격만 보탬 */
+.section-switch {
+	margin-bottom: 12px;
+}
+
 /* ============================================================
    공통 — 카드·배지·칩·버튼·폼
    ============================================================ */
@@ -1693,6 +1698,69 @@ button.court-head {
 .sort-link.active {
 	background: var(--vb-sun-soft);
 	color: #b45309;
+}
+
+/* 관리자 출석 통계 — 요약 지표(2열) + 부원별 표(이름 | 출석/활동 | 출석률).
+   393px 화면에서도 가로 스크롤이 생기지 않도록 남는 폭은 이름 열이 흡수한다. */
+.stats-summary {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+	margin-bottom: 10px;
+}
+
+.stats-metric {
+	border: 2px solid var(--vb-border);
+	border-radius: 16px;
+	padding: 10px 12px;
+	background: #fff;
+}
+
+.stats-label {
+	font-size: 0.72rem;
+	font-weight: 800;
+	color: var(--vb-muted);
+}
+
+.stats-value {
+	font-size: 1rem;
+	font-weight: 900;
+	letter-spacing: -0.02em;
+}
+
+.stats-table-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 0;
+}
+
+.stats-table-row + .stats-table-row {
+	border-top: 2px dashed var(--vb-border);
+}
+
+.stats-table-head {
+	padding-bottom: 6px;
+	font-size: 0.72rem;
+	font-weight: 800;
+	color: var(--vb-muted);
+}
+
+.stats-col-member {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.stats-col-count,
+.stats-col-rate {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.stats-col-rate {
+	min-width: 3.6em;
+	font-weight: 800;
 }
 
 /* 부원 관리 — 필터 버튼 행의 세로 간격 */

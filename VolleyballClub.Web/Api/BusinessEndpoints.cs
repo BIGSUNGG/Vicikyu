@@ -28,6 +28,7 @@ public static class BusinessEndpoints
         admin.MapPost("/activity/reopen", async (IActivityService s) => { return Results.Json(await s.ReopenActivityAsync()); });
         my.MapPost("/attendance", async (IAttendanceService s, TextRequest request) => { return Results.Json(await s.CheckInWithOtpAsync(request.Value)); });
         admin.MapGet("/attendance", async (IAttendanceService s, string? search) => { return Results.Json(await s.GetTodayMembersAsync(search)); });
+        admin.MapGet("/attendance/stats", async (IAttendanceService s, DateOnly? start, DateOnly? end) => { return Results.Json(await s.GetAdminStatsAsync(start, end)); });
         admin.MapPost("/attendance/{userId}", async (IAttendanceService s, string userId) => { await s.AdminAddAsync(userId); return Results.NoContent(); });
         admin.MapDelete("/attendance/{userId}", async (IAttendanceService s, string userId, [Microsoft.AspNetCore.Mvc.FromBody] AttendanceChangeRequest request) => { await s.AdminCancelAsync(userId, request.ConfirmTeamImpact); return Results.NoContent(); });
         admin.MapPost("/members/{userId}/attendance/{activityId}", async (IAttendanceService s, string userId, int activityId) => { await s.AdminAddForActivityAsync(userId, activityId); return Results.NoContent(); });

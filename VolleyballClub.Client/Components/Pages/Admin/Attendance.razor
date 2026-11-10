@@ -15,6 +15,13 @@
           Badge="@(isLoading ? "\u00a0" : hasLoaded ? $"출석 {attendedCount}명" : null)"
           BadgeClass="@(isLoading ? "badge-green loading-placeholder" : "badge-green")" />
 
+<nav class="segment section-switch" aria-label="출석 관리 섹션">
+    <a class="seg-btn @(ShowStats ? "" : "active")" href="/admin/attendance">오늘 출석</a>
+    <a class="seg-btn @(ShowStats ? "active" : "")" href="/admin/attendance?tab=stats">출석 통계</a>
+</nav>
+
+@if (!ShowStats)
+{
 <div class="card attendance-card" aria-busy="@(isLoading ? "true" : "false")" data-load-state="@LoadState">
     <div class="field">
         <input class="form-control" type="search" placeholder="이름 / 학번 검색" @bind="search" @bind:after="OnSearchSet" />
@@ -78,6 +85,11 @@
         }
     </div>
 </div>
+}
+else
+{
+    <AttendanceStats />
+}
 
 @if (leaveTarget is not null)
 {
@@ -108,6 +120,11 @@
 }
 
 @code {
+    /// <summary>섹션 전환 — ?tab=stats 쿼리 하나로 통계 섹션을 열고, 새로고침·뒤로가기·링크 공유에서 유지한다.</summary>
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    private bool ShowStats => string.Equals(Tab, "stats", StringComparison.OrdinalIgnoreCase);
     private bool isLoading = true;
     private bool hasLoaded;
     private bool isRefreshing;
@@ -136,6 +153,7 @@
             || m.StudentNumber.Contains(search.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToList()
         : members;
 
+    // 통계 섹션에서도 오늘 출석 목록을 1회 읽는다 — AdminNav 배지(출석 N명)가 두 섹션 모두에 필요하다.
     protected override Task OnInitializedAsync() => ReadAsync();
 
     protected override void OnInitialized()
@@ -163,12 +181,24 @@
     private ValueTask OnLocationChanging(LocationChangingContext context)
     {
         if (disposed || leaving || pendingCount == 0) return ValueTask.CompletedTask;
+        // 같은 페이지의 섹션 전환(?tab=stats)은 컴포넌트 인스턴스가 유지돼 미저장 변경이 그대로 남으므로 이탈 확인을 띄우지 않는다
+        if (IsSamePage(context.TargetLocation)) return ValueTask.CompletedTask;
         context.PreventNavigation();
         leaveTarget = context.TargetLocation;
         // 이 콜백은 자동 재렌더가 없다 — 확인창을 그리기 위해 직접 렌더를 요청한다
         InvokeAsync(StateHasChanged);
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>이동 대상이 현재 페이지와 같은 경로인지(쿼리 제외) 판정한다.</summary>
+    private bool IsSamePage(string target)
+    {
+        var current = PagePath(Navigation.ToAbsoluteUri(Navigation.Uri));
+        var next = PagePath(Navigation.ToAbsoluteUri(target));
+        return string.Equals(current, next, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string PagePath(Uri uri) => uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
 
     private async Task ConfirmLeaveAsync()
     {

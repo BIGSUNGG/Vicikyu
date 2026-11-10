@@ -34,4 +34,7 @@ public interface IAttendanceService
     Task<MySemesterStatsDto> GetMySemesterStatsAsync(string userId);
 
     Task<List<AttendanceRankingDto>> GetRankingAsync(RankingPeriod period, string? viewerUserId = null);
+
+    /// <summary>관리자 출석 통계. start·end가 null이면 현재 학기 범위(학기 미등록 시 기본 규칙)를 쓴다.</summary>
+    Task<AdminAttendanceStatsDto> GetAdminStatsAsync(DateOnly? start, DateOnly? end);
 }
